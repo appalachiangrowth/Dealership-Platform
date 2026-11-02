@@ -26,16 +26,20 @@ export const ROLES: Record<DealerRoleId, { label: string; desc: string; perms: P
   CUSTOM: { label: 'Custom', desc: 'Pick exactly what this person can do.', perms: [] },
 };
 
-/** Permissions a CUSTOM user may hold: everything except managing the team. */
+/** Permissions a non-ADMIN user may hold: everything except managing the team. */
 export const CUSTOM_ALLOWED: Permission[] = ALL_PERMISSIONS.filter((p) => p !== 'users');
 
-export function cleanPerms(list: unknown): Permission[] {
+export function cleanPerms(list: unknown, allowUsers = false): Permission[] {
   if (!Array.isArray(list)) return [];
   const out = new Set<Permission>();
-  for (const p of list) if (typeof p === 'string' && (CUSTOM_ALLOWED as string[]).includes(p)) out.add(p as Permission);
+  const allowed = allowUsers ? (ALL_PERMISSIONS as string[]) : (CUSTOM_ALLOWED as string[]);
+  for (const p of list) if (typeof p === 'string' && allowed.includes(p)) out.add(p as Permission);
   return [...out];
 }
 
 export function permsFor(role: DealerRoleId, custom: string[] = []): Permission[] {
-  return role === 'CUSTOM' ? cleanPerms(custom) : ROLES[role].perms;
+  if (Array.isArray(custom) && custom.length > 0) {
+    return cleanPerms(custom, role === 'ADMIN');
+  }
+  return ROLES[role]?.perms || [];
 }

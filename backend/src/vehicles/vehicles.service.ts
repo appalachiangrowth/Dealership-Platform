@@ -8,6 +8,17 @@ import { CargurusService } from '../cargurus/cargurus.service.js';
 import type { Prisma, VehicleStatus } from '../generated/prisma/client.js';
 import type { AuthUser } from '../common/auth.types.js';
 
+/** Additional file columns sent by the import: { header: value }, at most 60 columns. */
+function cleanExtra(v: unknown): Record<string, string> | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const out: Record<string, string> = {};
+  for (const [k, x] of Object.entries(v as Record<string, unknown>).slice(0, 60)) {
+    const key = clean(k, 80);
+    if (key) out[key] = clean(x === null || x === undefined ? '' : String(x), 2000);
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 export interface VehicleQuery {
   q?: string;
   status?: string;
@@ -204,7 +215,10 @@ export class VehiclesService {
     for (let i = 0; i < rows.length; i++) {
       const rowNo = Number((rows[i] as { _row?: unknown })._row) || i + 1;
       try {
-        const input = Object.fromEntries(Object.entries(rows[i]).filter(([k, v]) => k !== '_row' && v !== '' && v !== null && v !== undefined && !(Array.isArray(v) && !v.length)));
+        const extra = cleanExtra((rows[i] as { extra?: unknown }).extra);
+        const input = Object.fromEntries(
+          Object.entries(rows[i]).filter(([k, v]) => k !== '_row' && k !== 'extra' && v !== '' && v !== null && v !== undefined && !(Array.isArray(v) && !v.length)),
+        );
         const data = cleanVehicleInput(input) as Record<string, unknown>;
         const imgs = (data.images as string[] | undefined) ?? [];
         if (!imgs.length) delete data.images;
@@ -216,10 +230,9 @@ export class VehiclesService {
         const stock = data.stockNumber ? String(data.stockNumber).toLowerCase() : '';
         const id: string | undefined = (vin ? byVin.get(vin) : undefined) ?? (stock ? byStock.get(stock) : undefined);
         if (id) {
-          if (data.status === 'PUBLISHED') {
-            const cur = await this.prisma.vehicle.findUnique({ where: { id }, select: { images: true } });
-            if (!imgs.length && !cur?.images.length) data.status = 'DRAFT';
-          }
+          const cur = (await this.prisma.vehicle.findUnique({ where: { id } })) as unknown as { images: string[]; extra?: unknown } | null;
+          if (data.status === 'PUBLISHED' && !imgs.length && !cur?.images.length) data.status = 'DRAFT';
+          if (extra) data.extra = { ...(cur?.extra && typeof cur.extra === 'object' ? (cur.extra as Record<string, string>) : {}), ...extra };
           await this.prisma.vehicle.update({ where: { id }, data: data as Prisma.VehicleUncheckedUpdateInput });
           res.updated++;
         } else {
@@ -227,7 +240,16 @@ export class VehiclesService {
           if (body.mode === 'draft' || (status === 'PUBLISHED' && !imgs.length)) status = 'DRAFT';
           const slug = await this.uniqueSlug(tenantId, vehicleName(data as never));
           const v = await this.prisma.vehicle.create({
-            data: { vehicleType: 'Car', condition: 'Used', ...(data as Prisma.VehicleUncheckedCreateInput), tenantId, slug, status, soldAt: status === 'SOLD' ? new Date() : null },
+            data: {
+              vehicleType: 'Car',
+              condition: 'Used',
+              ...(data as Prisma.VehicleUncheckedCreateInput),
+              ...(extra ? ({ extra } as object) : {}),
+              tenantId,
+              slug,
+              status,
+              soldAt: status === 'SOLD' ? new Date() : null,
+            },
           });
           if (v.vin) byVin.set(v.vin, v.id);
           if (v.stockNumber) byStock.set(v.stockNumber.toLowerCase(), v.id);

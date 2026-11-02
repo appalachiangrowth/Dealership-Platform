@@ -88,6 +88,8 @@ export interface CgRecord {
   _raw: Record<string, string>;
   _issues: Partial<Record<ColumnKey, string[]>>;
   _warn: Partial<Record<ColumnKey, string[]>>;
+  /** additional columns of the dealer's file (header → value) — not checked, added at the end of the master CSV */
+  _extra?: Record<string, string>;
 }
 
 export interface DealerMeta {
@@ -364,14 +366,39 @@ function csvCell(v: string) {
   return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
 }
 
-export function csv(records: CgRecord[], m: DealerMeta, onlyValid = false): string {
-  const lines = [headerRow().map(csvCell).join(',')];
+/** Additional column names of the records, in the order they first appear (never one of the 20 CarGurus columns). */
+export function extraHeaders(records: CgRecord[]): string[] {
+  const taken = new Set(headerRow().map(norm));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const r of records)
+    for (const h of Object.keys(r._extra || {})) {
+      const n = norm(h);
+      if (!h.trim() || taken.has(n) || seen.has(n)) continue;
+      seen.add(n);
+      out.push(h);
+    }
+  return out;
+}
+
+/**
+ * The 20 CarGurus columns in CarGurus order. withExtra (CarGurus master CSV for the Platform Admin): the dealer's
+ * additional file columns are added at the END, so the 20 CarGurus columns keep their exact order and names.
+ */
+export function csv(records: CgRecord[], m: DealerMeta, onlyValid = false, withExtra = false): string {
+  const extra = withExtra ? extraHeaders(records) : [];
+  const lines = [[...headerRow(), ...extra].map(csvCell).join(',')];
   for (const r of records) {
     if (onlyValid && !recordValid(r)) continue;
-    lines.push(exportValues(r, m).map(csvCell).join(','));
+    const ex = r._extra || {};
+    const byNorm = new Map(Object.entries(ex).map(([k, v]) => [norm(k), v]));
+    lines.push([...exportValues(r, m), ...extra.map((h) => String(ex[h] ?? byNorm.get(norm(h)) ?? ''))].map(csvCell).join(','));
   }
   return lines.join('\n') + '\n';
 }
+
+/** Dealer columns of the CarGurus file (filled in automatically from the dealership profile, never kept as extra). */
+export const DEALER_COLUMN_NORMS = new Set(COLUMNS.filter((c) => c[3] === 'dealer').map((c) => norm(c[1])));
 
 export function audit(records: CgRecord[], m: DealerMeta) {
   const checks = VEHICLE_MANDATORY.map((k) => ({ key: k, label: label(k), failed: 0 }));

@@ -203,7 +203,7 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
       return null;
     }
     // every vehicle for sale: adding, editing or deleting a car refreshes the waiting batch
-    const hash = createHash('md5').update(cg.csv(records, meta)).digest('hex');
+    const hash = createHash('md5').update(cg.csv(records, meta, false, true)).digest('hex');
     if (hash === lastHash) return null;
     const res = await this.create(tenantId, records, 'website', 'Website inventory (automatic)', '', by);
     await this.log2(tenantId, 'auto.hash', { hash, id: res.submission.id });
@@ -250,6 +250,10 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException({ message: `The file is missing these required columns: ${missing.join(', ')}. Nothing was saved.`, missing, found });
     }
     const records = cg.ingestRows(headers, rows, map);
+    // additional columns of the file (not a CarGurus vehicle column, not a dealer column) go to the master CSV
+    const used = new Set(Object.values(map));
+    const extraCols = headers.map((h, i) => [h, i] as const).filter(([h, i]) => h.trim() && !used.has(i) && !cg.DEALER_COLUMN_NORMS.has(cg.norm(h)));
+    if (extraCols.length) for (const r of records) r._extra = Object.fromEntries(extraCols.map(([h, i]) => [h, rows[r._row - 2]?.[i] ?? '']));
     const res = await this.create(tenantId, records, 'upload', fileName.slice(0, 200), text, user.login);
     await this.audit.record('cargurus.upload', { tenantId, actor: user.login, detail: { total: records.length } });
     return { ...res, found };
@@ -320,7 +324,8 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
   async masterCsv(tenantId: string, id: string) {
     const sub = await this.prisma.cargurusSubmission.findFirst({ where: { id, tenantId } });
     if (!sub) throw new NotFoundException('Submission not found');
-    return cg.csv(sub.records as unknown as cg.CgRecord[], await this.meta(tenantId), false);
+    // the 20 CarGurus columns + every additional column of the dealer's file, at the end
+    return cg.csv(sub.records as unknown as cg.CgRecord[], await this.meta(tenantId), false, true);
   }
 
   async approve(tenantId: string, id: string, b: { includeInvalid?: boolean; note?: string }, user: AuthUser) {

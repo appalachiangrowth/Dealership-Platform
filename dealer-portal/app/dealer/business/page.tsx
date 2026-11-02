@@ -12,6 +12,7 @@ import {
   ChevronUp,
   Loader2,
   Image as ImageIcon,
+  Globe,
 } from 'lucide-react';
 import { useSettings } from '@/lib/useSettings';
 import { useTenant } from '@/components/DealerShell';
@@ -21,7 +22,7 @@ import { HoursEditor } from '@/components/HoursEditor';
 import { MapPicker } from '@/components/MapPicker';
 
 const KEYS = [
-  'name', 'legalName', 'tagline', 'logo', 'phone', 'email',
+  'name', 'legalName', 'tagline', 'logo', 'phone', 'email', 'siteUrl', 'themeColor',
   'street', 'city', 'state', 'stateName', 'zip', 'country', 'lat', 'lng',
   'hours', 'hoursShort',
   'facebook', 'instagram', 'google', 'googleReviews', 'youtube', 'tiktok', 'messenger',
@@ -53,7 +54,7 @@ interface OsmItem {
 
 export default function BusinessPage() {
   const { form, set, save, saving, dirty, error } = useSettings(KEYS);
-  const { refreshTenant } = useTenant();
+  const { tenant, refreshTenant } = useTenant();
 
   // OpenStreetMap search state
   const [osmQuery, setOsmQuery] = useState('');
@@ -376,8 +377,45 @@ export default function BusinessPage() {
           </Card>
         </div>
 
-        {/* Right Side Column (Logo & Social Links as previous) */}
+        {/* Right Side Column (Website Address, Logo & Social Links) */}
         <div className="space-y-4">
+          {/* Main Website Address Card (Relocated from Advanced settings) */}
+          <Card
+            title={
+              <div className="flex items-center gap-2 text-slate-900">
+                <Globe className="h-4 w-4 text-blue-600" />
+                <span>Website address</span>
+              </div>
+            }
+            pad={false}
+          >
+            <div className="space-y-3 p-4 sm:p-5">
+              <Field
+                label="Main website address"
+                hint="e.g. https://www.bluemotors.com — every vehicle link and feed uses it."
+              >
+                <Input
+                  type="url"
+                  value={form.siteUrl ?? ''}
+                  onChange={(e) => set('siteUrl', e.target.value)}
+                  placeholder="https://www.yourdealership.com"
+                  className="h-9 text-xs sm:text-sm"
+                />
+              </Field>
+
+              <div className="rounded-lg bg-slate-50 p-2.5 text-xs text-slate-600 space-y-1">
+                <div>
+                  <span className="font-semibold text-slate-700">Dealer ID: </span>
+                  <b>{tenant?.dealerCode || '—'}</b>
+                </div>
+                <div>
+                  <span className="font-semibold text-slate-700">Connected domains: </span>
+                  <span>{tenant?.domains?.length ? tenant.domains.join(', ') : 'None yet'}</span>
+                </div>
+              </div>
+            </div>
+          </Card>
+
           {/* Logo Card */}
           <Card
             title={

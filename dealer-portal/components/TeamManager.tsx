@@ -51,7 +51,13 @@ export function TeamManager({ title = true }: { title?: boolean }) {
           title="Team & permissions"
           desc="Give each person their own login and choose what they can do."
           actions={
-            <Button onClick={() => setEdit({ role: 'STAFF', perms: [], name: '', email: '', login: '', password: '' })}>
+            <Button
+              onClick={() => {
+                const initialRole = 'STAFF';
+                const defaultPerms = roles[initialRole]?.perms ? [...roles[initialRole].perms] : [];
+                setEdit({ role: initialRole, perms: defaultPerms, name: '', email: '', login: '', password: '' });
+              }}
+            >
               <Plus className="h-4 w-4" /> Add person
             </Button>
           }
@@ -59,7 +65,14 @@ export function TeamManager({ title = true }: { title?: boolean }) {
       )}
       {!title && (
         <div className="mb-3 flex justify-end">
-          <Button size="sm" onClick={() => setEdit({ role: 'STAFF', perms: [], name: '', email: '', login: '', password: '' })}>
+          <Button
+            size="sm"
+            onClick={() => {
+              const initialRole = 'STAFF';
+              const defaultPerms = roles[initialRole]?.perms ? [...roles[initialRole].perms] : [];
+              setEdit({ role: initialRole, perms: defaultPerms, name: '', email: '', login: '', password: '' });
+            }}
+          >
             <Plus className="h-3.5 w-3.5" /> Add login
           </Button>
         </div>
@@ -73,13 +86,24 @@ export function TeamManager({ title = true }: { title?: boolean }) {
                 <div className="text-xs text-slate-500">{u.login}</div>
               </Td>
               <Td>
-                {roles[u.role]?.label || u.role}
-                {u.role === 'CUSTOM' && <div className="text-xs text-slate-500">{u.perms.map((p: string) => perms[p]?.label || p).join(', ')}</div>}
+                <div className="font-medium text-slate-900">{roles[u.role]?.label || u.role}</div>
+                {u.perms && u.perms.length > 0 && (
+                  <div className="text-xs text-slate-500">{u.perms.map((p: string) => perms[p]?.label || p).join(', ')}</div>
+                )}
               </Td>
               <Td className="text-xs">{ago(u.lastLoginAt)}</Td>
               <Td>{u.disabled ? <Badge color="red">Disabled</Badge> : <Badge color="green">Active</Badge>}</Td>
               <Td className="text-right">
-                <Button size="sm" variant="secondary" onClick={() => setEdit({ ...u, password: '' })}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    const userPerms = Array.isArray(u.perms) && u.perms.length > 0
+                      ? [...u.perms]
+                      : (roles[u.role]?.perms ? [...roles[u.role].perms] : []);
+                    setEdit({ ...u, password: '', perms: userPerms });
+                  }}
+                >
                   Edit
                 </Button>
               </Td>
@@ -143,26 +167,42 @@ export function TeamManager({ title = true }: { title?: boolean }) {
             ) : (
               <>
                 <Field label="Role">
-                  <Select value={edit.role} onChange={(e) => setEdit({ ...edit, role: e.target.value })}>
-                    {Object.entries(roles).map(([k, r]) => (
-                      <option key={k} value={k}>
-                        {r.label} — {r.desc}
-                      </option>
-                    ))}
+                  <Select
+                    value={edit.role}
+                    onChange={(e) => {
+                      const nextRole = e.target.value;
+                      const nextPerms = roles[nextRole]?.perms ? [...roles[nextRole].perms] : [];
+                      setEdit({ ...edit, role: nextRole, perms: nextPerms });
+                    }}
+                  >
+                    {Object.entries(roles)
+                      .filter(([k]) => k !== 'CUSTOM')
+                      .map(([k, r]) => (
+                        <option key={k} value={k}>
+                          {r.label} — {r.desc}
+                        </option>
+                      ))}
                   </Select>
                 </Field>
                 <div className="rounded-xl border border-slate-200 p-4">
-                  <div className="mb-3 text-xs font-bold uppercase text-slate-500">What this person can do</div>
+                  <div className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">What this person can do</div>
+                  <p className="mb-3 text-xs text-slate-500">
+                    Default permissions for <b>{roles[edit.role]?.label || edit.role}</b> are pre-selected. You can toggle any permission on or off.
+                  </p>
                   <div className="space-y-3">
                     {Object.entries(perms).map(([k, p]) => {
-                      const preset = edit.role !== 'CUSTOM';
-                      const on = preset ? roles[edit.role].perms.includes(k) : edit.perms.includes(k);
-                      const allowed = me.catalog.customAllowed.includes(k);
+                      const allowed = edit.role === 'ADMIN' || me.catalog.customAllowed.includes(k);
+                      const on = (edit.perms || []).includes(k);
                       return (
-                        <div key={k} className={preset || !allowed ? 'opacity-60' : ''}>
+                        <div key={k} className={!allowed ? 'opacity-50 pointer-events-none' : ''}>
                           <Toggle
                             checked={on}
-                            onChange={(v) => !preset && allowed && setEdit({ ...edit, perms: v ? [...edit.perms, k] : edit.perms.filter((x: string) => x !== k) })}
+                            onChange={(v) => {
+                              if (!allowed) return;
+                              const cur = edit.perms || [];
+                              const next = v ? Array.from(new Set([...cur, k])) : cur.filter((x: string) => x !== k);
+                              setEdit({ ...edit, perms: next });
+                            }}
                             label={p.label}
                             desc={p.desc}
                           />
@@ -170,7 +210,6 @@ export function TeamManager({ title = true }: { title?: boolean }) {
                       );
                     })}
                   </div>
-                  {edit.role !== 'CUSTOM' && <p className="mt-3 text-xs text-slate-500">Choose “Custom” to pick permissions one by one.</p>}
                 </div>
                 {edit.id && <Toggle checked={!!edit.disabled} onChange={(v) => setEdit({ ...edit, disabled: v })} label="Disable this login" />}
               </>

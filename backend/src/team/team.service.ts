@@ -29,6 +29,8 @@ export class TeamService {
     if (!(role in ROLES)) throw new BadRequestException('Unknown role');
     if (await this.prisma.dealerUser.findUnique({ where: { tenantId_login: { tenantId, login } } })) throw new ConflictException('That login already exists');
     const email = clean(b.email, 160).toLowerCase();
+    const allowUsers = role === 'ADMIN';
+    const perms = cleanPerms(b.perms !== undefined ? b.perms : ROLES[role as DealerRoleId]?.perms, allowUsers);
     const u = await this.prisma.dealerUser.create({
       data: {
         tenantId,
@@ -37,7 +39,7 @@ export class TeamService {
         email: isEmail(email) ? email : isEmail(login) ? login : '',
         phone: clean(b.phone, 40),
         role,
-        perms: role === 'CUSTOM' ? cleanPerms(b.perms) : [],
+        perms,
         passwordHash: await hashPassword(String(b.password)),
         source,
       },
@@ -67,7 +69,9 @@ export class TeamService {
       const role = String(b.role || u.role).toUpperCase() as DealerRole;
       if (!(role in ROLES)) throw new BadRequestException('Unknown role');
       data.role = role;
-      data.perms = role === 'CUSTOM' ? cleanPerms(b.perms ?? u.perms) : [];
+      const allowUsers = role === 'ADMIN';
+      const permsList = 'perms' in b ? (Array.isArray(b.perms) ? b.perms : []) : (u.perms.length > 0 ? u.perms : ROLES[role as DealerRoleId]?.perms || []);
+      data.perms = cleanPerms(permsList, allowUsers);
     }
     if ('disabled' in b) {
       if (self) throw new ForbiddenException('You cannot disable your own login');

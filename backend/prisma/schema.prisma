@@ -396,6 +396,8 @@ model Vehicle {
   safetyFeatures  String[]      @default([])
   /// ordered photo URLs: "/uploads/<tenant>/…" or absolute https links
   images          String[]      @default([])
+  /// extra columns from the dealer's inventory file (header → value), kept for the CarGurus master CSV
+  extra           Json          @default("{}")
   status          VehicleStatus @default(DRAFT)
   featured        Boolean       @default(false)
   soldAt          DateTime?

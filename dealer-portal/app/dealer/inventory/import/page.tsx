@@ -65,9 +65,15 @@ const CG_REQ_N = IMP_CG.filter((c) => c[2] === 'req').length; // 12 mandatory Ca
 /** CarGurus name → field (for "Fix") */
 const IMP_FIX: Record<string, string> = Object.fromEntries(IMP_CG.filter((c) => c[2] === 'req').map((c) => [c[1], c[0]]));
 const STATUS_TXT: Record<string, string> = { PUBLISHED: 'for sale', DRAFT: 'draft', SOLD: 'sold' };
+/** Dealer columns of a CarGurus file — filled in from your Business details automatically, so not kept per vehicle. */
+const DEALER_COLS = new Set(['dealerid', 'dealername', 'dealerstreetaddress', 'dealercity', 'dealerstate', 'dealerzip', 'dealercrmemail']);
+const CG_FIELDS = new Set(IMP_CG.map((c) => c[0]));
 
 const impNorm = (h: string) => String(h || '').toLowerCase().replace(/[^a-z0-9#]/g, '');
 const impGuess = (h: string) => IMP_FIELDS.find((f) => f[2].includes(impNorm(h)))?.[0] || '';
+/** Columns of the file that are not one of the CarGurus columns: kept with each vehicle and added to the CarGurus master CSV. */
+const extraColumns = (headers: string[], map: Record<string, string>) =>
+  headers.filter((h) => !(map[h] && CG_FIELDS.has(map[h])) && !DEALER_COLS.has(impNorm(h))).slice(0, 60);
 
 function parseDelimited(text: string, sep: string): Parsed {
   const rows: string[][] = [];
@@ -350,8 +356,11 @@ export default function ImportPage() {
   async function run(rows: Row[], which: string) {
     setBusy(which);
     try {
+      const extraCols = P ? extraColumns(P.headers, map) : [];
       const body = rows.map((r) => {
         const o: V = { _row: r.row, ...r.v };
+        const rec = P?.records[r.row - 2];
+        if (rec && extraCols.length) o.extra = Object.fromEntries(extraCols.map((h) => [h, rec[h] ?? '']));
         if (!r.ex && !o.status) o.status = (o.images || []).length ? 'PUBLISHED' : 'DRAFT';
         return o;
       });
@@ -472,7 +481,7 @@ export default function ImportPage() {
         const total = R.rows.length;
         const blocking = !cols.make || !cols.model;
         const extra = P.headers.filter((h) => map[h] && !IMP_CG.some((c) => c[0] === map[h]));
-        const ignored = P.headers.filter((h) => !map[h]);
+        const kept = extraColumns(P.headers, map);
         const dups = R.rows.filter((r) => r.ex);
         const list = R.rows.filter((r) => (filter === 'all' ? true : filter === 'bad' ? !r.ok : filter === 'dup' ? !!r.ex : r.ok));
         const keep = (r: Row) => !(dupMode === 'skip' && r.ex);
@@ -525,8 +534,7 @@ export default function ImportPage() {
             {IMP_CG.every((c) => cols[c[0]]) ? (
               <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
                 ✓ All {IMP_CG.length} CarGurus columns found in your file
-                {extra.length > 0 && ` · also imported: ${extra.join(', ')}`}
-                {ignored.length > 0 && ` · not used: ${ignored.join(', ')}`}
+                {extra.length > 0 && ` · also imported to your website: ${extra.join(', ')}`}
               </div>
             ) : (
               <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -548,13 +556,15 @@ export default function ImportPage() {
                     );
                   })}
                 </div>
-                {(extra.length > 0 || ignored.length > 0) && (
-                  <p className="mt-3 text-xs text-slate-500">
-                    {extra.length > 0 && `Also imported to your website: ${extra.join(', ')}. `}
-                    {ignored.length > 0 && `Not used: ${ignored.join(', ')}.`}
-                  </p>
-                )}
+                {extra.length > 0 && <p className="mt-3 text-xs text-slate-500">Also imported to your website: {extra.join(', ')}.</p>}
               </section>
+            )}
+
+            {kept.length > 0 && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                <b>{kept.length} additional column{kept.length === 1 ? '' : 's'} kept with your vehicles:</b> {kept.join(', ')}.{' '}
+                <span className="text-blue-800">They are not checked by CarGurus and are added at the end of the CarGurus master CSV.</span>
+              </div>
             )}
 
             {/* already in the inventory */}

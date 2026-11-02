@@ -7,13 +7,13 @@ import { SingleImage } from '@/components/ImageUploader';
 import { HoursEditor } from '@/components/HoursEditor';
 
 const KEYS = [
-  'name', 'legalName', 'tagline', 'logo', 'phone', 'email', 'street', 'city', 'state', 'stateName', 'zip', 'country', 'lat', 'lng', 'hours',
+  'name', 'legalName', 'tagline', 'logo', 'phone', 'email', 'siteUrl', 'street', 'city', 'state', 'stateName', 'zip', 'country', 'lat', 'lng', 'hours',
   'facebook', 'instagram', 'google', 'googleReviews', 'youtube', 'tiktok', 'messenger',
 ];
 
 export default function BusinessPage() {
   const { form, set, save, saving, dirty, error } = useSettings(KEYS);
-  const { refreshTenant } = useTenant();
+  const { tenant, refreshTenant } = useTenant();
   if (error) return <ErrorBox error={error} />;
   if (!form) return <Loading />;
   const text = (k: string, label: string, hint?: string, type = 'text') => (
@@ -67,6 +67,14 @@ export default function BusinessPage() {
           </Card>
         </div>
         <div className="space-y-6">
+          <Card title="Website address">
+            <div className="space-y-3">
+              {text('siteUrl', 'Main website address', 'e.g. https://www.bluemotors.com')}
+              <div className="text-xs text-slate-500">
+                Dealer ID: <b>{tenant?.dealerCode}</b>. Connected domains: {tenant?.domains.join(', ') || 'none yet'}.
+              </div>
+            </div>
+          </Card>
           <Card title="Logo">
             <SingleImage value={form.logo || ''} onChange={(v) => set('logo', v)} label="Upload logo" />
             <p className="mt-3 text-xs text-slate-500">A PNG with a transparent background looks best.</p>

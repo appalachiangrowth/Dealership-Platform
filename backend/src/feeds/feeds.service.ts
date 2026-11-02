@@ -17,6 +17,47 @@ const list = (name: string, item: string, arr: string[], ind = '    ') =>
   arr.length ? `${ind}<${name}>\n${arr.map((v) => `${ind}  <${item}>${xmlEsc(v)}</${item}>`).join('\n')}\n${ind}</${name}>` : `${ind}<${name}/>`;
 
 /**
+ * Additional columns of a dealer's file that are also vehicle fields: the master CSV shows the vehicle's CURRENT value
+ * (so later edits in the vehicle editor are included). Any other column keeps the value from the file.
+ */
+const EXTRA_FIELD: Record<string, keyof Vehicle & string> = {
+  interiorcolor: 'interiorColor', intcolor: 'interiorColor', interiorcolour: 'interiorColor', interior: 'interiorColor',
+  bodystyle: 'bodyStyle', body: 'bodyStyle', bodytype: 'bodyStyle', vehicletype: 'vehicleType', type: 'vehicleType',
+  engine: 'engine', enginedescription: 'engine', horsepower: 'horsepower', hp: 'horsepower', drivetrain: 'drivetrain', drivetype: 'drivetrain',
+  fueltype: 'fuelType', fuel: 'fuelType', mpg: 'mpg', fueleconomy: 'mpg', fueltanksize: 'fuelTank', tanksize: 'fuelTank',
+  doors: 'doors', seats: 'seats', seating: 'seats', owners: 'owners', previousowners: 'owners', accidents: 'accidents',
+  condition: 'condition', newused: 'condition', certified: 'certified', cpo: 'certified', iscertified: 'certified', msrp: 'msrp',
+  deal: 'dealLabel', deallabel: 'dealLabel', dealbadge: 'dealLabel', safety: 'safetyFeatures', safetyfeatures: 'safetyFeatures',
+  status: 'status', title: 'title',
+};
+
+/** A vehicle's additional file columns with up-to-date values (header → text). */
+export function vehicleExtra(v: Vehicle): Record<string, string> {
+  const stored = (v as unknown as { extra?: unknown }).extra;
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {};
+  const out: Record<string, string> = {};
+  for (const [h, raw] of Object.entries(stored as Record<string, unknown>)) {
+    const f = EXTRA_FIELD[cg.norm(h)];
+    if (!f) {
+      out[h] = String(raw ?? '');
+      continue;
+    }
+    const cur = (v as unknown as Record<string, unknown>)[f];
+    out[h] =
+      cur === null || cur === undefined
+        ? ''
+        : Array.isArray(cur)
+          ? cur.join(' | ')
+          : typeof cur === 'boolean'
+            ? cur ? 'Yes' : 'No'
+            : f === 'status'
+              ? String(cur).toLowerCase()
+              : String(cur);
+  }
+  return out;
+}
+
+/**
  * Inventory feeds per dealership, built live from the database:
  *  - inventory.xml (public)
  *  - CarGurus CSV of the website inventory (20 columns, only vehicles passing every CarGurus check)
@@ -163,6 +204,10 @@ export class FeedsService {
     const { t, s, site } = await this.context(tenantId);
     const vehicles = await this.prisma.vehicle.findMany({ where: { tenantId, status: 'PUBLISHED' }, orderBy: { createdAt: 'desc' } });
     const records = cg.ingestRows(null, this.inventoryRows(vehicles, site));
+    records.forEach((r, i) => {
+      const ex = vehicleExtra(vehicles[i]);
+      if (Object.keys(ex).length) r._extra = ex;
+    });
     const meta = this.dealerMeta(t, s, site);
     const skipped = records
       .map((r, i) => ({ id: vehicles[i].id, name: [r.year || '', r.make, r.model].join(' ').trim(), issues: Object.values(r._issues).flat() }))

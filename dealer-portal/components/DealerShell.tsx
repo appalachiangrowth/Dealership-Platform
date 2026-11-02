@@ -97,7 +97,6 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
       title: 'Settings',
       items: [
         { href: '/dealer/team', label: 'Team & permissions', icon: Users, perm: ['users'] },
-        { href: '/dealer/advanced', label: 'Advanced settings', icon: Settings2, perm: ['settings'] },
       ],
     },
   ];

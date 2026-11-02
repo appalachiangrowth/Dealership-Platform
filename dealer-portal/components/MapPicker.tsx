@@ -173,6 +173,8 @@ export function MapPicker({ lat, lng, onLocationSelect, className }: MapPickerPr
   useEffect(() => {
     if (!mapInstance.current || !hasValidCoords) return;
     import('leaflet').then((L) => {
+      if (!mapInstance.current) return;
+
       const pinIcon = L.divIcon({
         className: 'custom-map-pin',
         html: `
