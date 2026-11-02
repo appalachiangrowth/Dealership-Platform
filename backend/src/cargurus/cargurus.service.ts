@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { Client as FtpClient } from 'basic-ftp';
 import { Readable } from 'stream';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -11,11 +12,36 @@ import { cleanMl } from '../common/util.js';
 import type { AuthUser } from '../common/auth.types.js';
 import type { CargurusSubmission } from '../generated/prisma/client.js';
 
+/** CarGurus column → field of the vehicle editor in the Dealership Portal (for "Fix" links). */
+export const CG_FORM_FIELD: Record<string, string> = {
+  vin: 'vin', make: 'make', model: 'model', year: 'year', trim: 'trim', price: 'price', mileage: 'mileage', images: 'images',
+  ext: 'exteriorColor', comments: 'description', stock: 'stockNumber', trans: 'transmission', options: 'features',
+};
+
+export type CgIssue = { field: string; column: string; label: string; msg: string };
+
+/** One vehicle's CarGurus problems in plain words (empty = CarGurus ready). */
+export function issuesOf(r: cg.CgRecord): CgIssue[] {
+  const out: CgIssue[] = [];
+  for (const [k, msgs] of Object.entries(r._issues || {})) for (const m of msgs || []) out.push({ field: CG_FORM_FIELD[k] || k, column: k, label: cg.label(k as cg.ColumnKey), msg: m });
+  return out;
+}
+
+const csvCell = (v: string) => (/[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+const keyOf = (vin: string, stock: string) => {
+  const v = String(vin || '').toUpperCase().replace(/[\s-]+/g, '');
+  if (v) return 'vin:' + v;
+  const st = String(stock || '').trim().toLowerCase();
+  return st ? 'stock:' + st : '';
+};
+
 /**
- * CarGurus ingestion, verification & dispatch pipeline.
+ * CarGurus ingestion, verification & dispatch pipeline (same flow as the old platform, v2.1).
  * Nothing reaches CarGurus without Platform Admin approval:
- *   dealer uploads a file (or submits the website inventory) → PENDING submission
+ *   every inventory save → the vehicles for sale are checked and, when they changed, staged automatically as a
+ *   PENDING submission (afterInventoryChange) · vehicles sold / deleted / hidden leave the LIVE feed at once
  *   Platform Admin audits it → Approve & Sync (writes the live feed and uploads by FTP) or Reject with feedback.
+ * The dealer sees a read-only monitor (Dealership Portal › CarGurus feed); vehicles are added and fixed in Inventory.
  */
 @Injectable()
 export class CargurusService implements OnModuleInit, OnModuleDestroy {
@@ -76,7 +102,140 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
     return { submission: this.summaryOf(sub), summary, issues: cg.issueList(records), warnings: cg.warningList(records) };
   }
 
-  // ───────── dealer ─────────
+  // ───────── Dealership Portal: readiness, automatic staging, live feed ─────────
+
+  async cargurusOn(tenantId: string) {
+    const t = await this.tenants.get(tenantId);
+    return !!(await this.tenants.features(t)).cargurus;
+  }
+
+  private async liveSub(tenantId: string) {
+    return this.prisma.cargurusSubmission.findFirst({ where: { tenantId, status: 'APPROVED' }, orderBy: { reviewedAt: 'desc' } });
+  }
+
+  /** VIN / stock keys and row count of a feed CSV. */
+  private feedKeys(csvText: string | null | undefined) {
+    const vins = new Set<string>();
+    if (!csvText) return { vins, rows: 0 };
+    const [h, rows] = cg.parse(csvText);
+    const iv = h.indexOf('VIN');
+    for (const r of rows) if (iv > -1 && r[iv]) vins.add(r[iv].toUpperCase());
+    return { vins, rows: rows.length };
+  }
+
+  /** Every vehicle for sale checked against the CarGurus rules: vehicle id → issues ([] = ready). */
+  async readiness(tenantId: string) {
+    const { records, vehicles } = await this.feeds.cargurusFromInventory(tenantId);
+    const map = new Map<string, CgIssue[]>();
+    records.forEach((r, i) => map.set(vehicles[i].id, issuesOf(r)));
+    return map;
+  }
+
+  /** Dealership Portal › CarGurus feed (read only): ready / needs attention / live / last feed sent. */
+  async monitor(tenantId: string) {
+    if (!(await this.cargurusOn(tenantId))) {
+      throw new ForbiddenException({ message: 'CarGurus is not switched on for your dealership. Contact the platform team.', code: 'cargurus_off' });
+    }
+    const { records, vehicles, meta } = await this.feeds.cargurusFromInventory(tenantId);
+    const { site } = await this.feeds.context(tenantId);
+    const live = await this.liveSub(tenantId);
+    const lk = this.feedKeys(live?.feedCsv);
+    const ready: unknown[] = [];
+    const attention: unknown[] = [];
+    records.forEach((r, i) => {
+      const v = vehicles[i];
+      const base = {
+        id: v.id,
+        name: [r.year || '', r.make, r.model, r.trim].join(' ').replace(/\s+/g, ' ').trim(),
+        vin: r.vin,
+        stock: r.stock,
+        price: v.price !== null ? Number(v.price) : null,
+        mileage: v.mileage,
+        photos: v.images.length,
+        image: v.images[0] || '',
+      };
+      const iss = issuesOf(r);
+      if (!iss.length) ready.push({ ...base, live: !!r.vin && lk.vins.has(r.vin.toUpperCase()) });
+      else attention.push({ ...base, issues: iss });
+    });
+    const pending = await this.prisma.cargurusSubmission.findFirst({ where: { tenantId, status: 'PENDING' }, orderBy: { createdAt: 'desc' } });
+    const pr = cg.profile(meta);
+    return {
+      ready,
+      attention,
+      liveCount: lk.rows,
+      approved: live ? { at: live.reviewedAt, vehicles: lk.rows, by: live.reviewedBy } : null,
+      lastSync: live?.dispatchResult ?? null,
+      pending: pending ? { id: pending.id, at: pending.createdAt, vehicles: (pending.summary as { total?: number })?.total ?? 0 } : null,
+      dealer: meta,
+      dealerWarnings: pr.missing.map((m) => m.issue),
+      xmlUrl: `${site}/inventory.xml`,
+    };
+  }
+
+  /**
+   * After every inventory change (add / edit / publish / sold / delete / import), like the old inventory.php:
+   *  1. vehicles that are no longer for sale leave the LIVE feed at once (only removing, never adding)
+   *  2. when the vehicles for sale changed, they are staged automatically for Platform Admin verification.
+   * Never throws: a CarGurus problem must not block saving a vehicle.
+   */
+  async afterInventoryChange(tenantId: string, by: string) {
+    try {
+      await this.pruneLive(tenantId);
+      if (await this.cargurusOn(tenantId)) await this.autosubmit(tenantId, by);
+    } catch (e) {
+      this.log.warn(`after inventory change ${tenantId}: ${(e as Error).message}`);
+    }
+  }
+
+  /** pa_cg_autosubmit */
+  async autosubmit(tenantId: string, by: string) {
+    const { records, meta } = await this.feeds.cargurusFromInventory(tenantId);
+    const last = await this.prisma.cargurusLog.findFirst({ where: { tenantId, event: 'auto.hash' }, orderBy: { createdAt: 'desc' } });
+    const lastHash = (last?.detail as { hash?: string } | null)?.hash ?? null;
+    if (!records.length) {
+      // nothing for sale any more: withdraw the waiting batch
+      await this.prisma.cargurusSubmission.updateMany({
+        where: { tenantId, status: 'PENDING' },
+        data: { status: 'REPLACED', reviewedBy: 'system', reviewNote: 'No vehicles for sale any more.', reviewedAt: new Date() },
+      });
+      if (lastHash) await this.log2(tenantId, 'auto.hash', { hash: '' });
+      return null;
+    }
+    // every vehicle for sale: adding, editing or deleting a car refreshes the waiting batch
+    const hash = createHash('md5').update(cg.csv(records, meta)).digest('hex');
+    if (hash === lastHash) return null;
+    const res = await this.create(tenantId, records, 'website', 'Website inventory (automatic)', '', by);
+    await this.log2(tenantId, 'auto.hash', { hash, id: res.submission.id });
+    return res;
+  }
+
+  /** pa_cg_prune_live: vehicles deleted, sold or hidden leave the live CarGurus feed straight away. */
+  async pruneLive(tenantId: string) {
+    const live = await this.liveSub(tenantId);
+    if (!live?.feedCsv) return 0;
+    const forSale = await this.prisma.vehicle.findMany({ where: { tenantId, status: 'PUBLISHED' }, select: { vin: true, stockNumber: true } });
+    const keys = new Set<string>();
+    for (const v of forSale) for (const k of [keyOf(v.vin, ''), keyOf('', v.stockNumber)]) if (k) keys.add(k);
+    const [h, rows] = cg.parse(live.feedCsv);
+    const iv = h.indexOf('VIN');
+    const is = h.indexOf('Stock Number');
+    const keep = rows.filter((r) => {
+      const kv = keyOf(iv > -1 ? r[iv] : '', '');
+      const ks = keyOf('', is > -1 ? r[is] : '');
+      return (kv !== '' && keys.has(kv)) || (ks !== '' && keys.has(ks));
+    });
+    const gone = rows.length - keep.length;
+    if (!gone) return 0;
+    const feedCsv = [h, ...keep].map((r) => r.map(csvCell).join(',')).join('\n') + '\n';
+    await this.prisma.cargurusSubmission.update({ where: { id: live.id }, data: { feedCsv } });
+    await this.log2(tenantId, 'live_pruned', { removed: gone, left: keep.length });
+    await this.audit.record('cargurus.live_pruned', { tenantId, actor: 'system', detail: { removed: gone, left: keep.length } });
+    await this.dispatch(tenantId, 'vehicles removed from inventory'); // tell CarGurus now, not at the next scheduled upload
+    return gone;
+  }
+
+  // ───────── dealer (file upload — kept for the API, the portal now stages the inventory automatically) ─────────
 
   template() {
     return cg.vehicleTemplate().join(',') + '\n';
@@ -208,8 +367,9 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
     if (!csv) return { sent: false, reason: 'No approved feed yet' };
     const s = await this.prisma.tenantSettings.findUnique({ where: { tenantId } });
     if (!s?.cargurusFtpHost || !s.cargurusFtpUser || !s.cargurusFtpPass) {
-      const r = { sent: false, reason: 'CarGurus FTP is not set up for this dealership (feed approved, waiting for FTP details)' };
-      await this.log2(tenantId, 'dispatch.skipped', { trigger, ...r });
+      const r = { sent: false, status: 'not_configured', reason: 'CarGurus FTP is not set up for this dealership (feed approved, waiting for FTP details)', at: new Date().toISOString(), trigger };
+      await this.prisma.cargurusSubmission.updateMany({ where: { tenantId, status: 'APPROVED' }, data: { dispatchResult: r } });
+      await this.log2(tenantId, 'dispatch.skipped', r);
       return r;
     }
     const client = new FtpClient(30_000);
@@ -223,12 +383,13 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
       });
       if (s.cargurusRemoteDir) await client.ensureDir(s.cargurusRemoteDir);
       await client.uploadFrom(Readable.from([Buffer.from(csv, 'utf8')]), s.cargurusRemoteName || 'inventory.csv');
-      const r = { sent: true, at: new Date().toISOString(), bytes: csv.length, trigger };
+      const r = { sent: true, status: 'uploaded', at: new Date().toISOString(), bytes: csv.length, trigger };
       await this.prisma.cargurusSubmission.updateMany({ where: { tenantId, status: 'APPROVED' }, data: { dispatchedAt: new Date(), dispatchResult: r } });
       await this.log2(tenantId, 'dispatch.ok', r);
       return r;
     } catch (e) {
-      const r = { sent: false, reason: (e as Error).message, trigger };
+      const r = { sent: false, status: 'failed', reason: (e as Error).message, at: new Date().toISOString(), trigger };
+      await this.prisma.cargurusSubmission.updateMany({ where: { tenantId, status: 'APPROVED' }, data: { dispatchResult: r } });
       await this.log2(tenantId, 'dispatch.failed', r);
       this.log.warn(`dispatch ${tenantId} failed: ${r.reason}`);
       return r;

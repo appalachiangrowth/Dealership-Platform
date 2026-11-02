@@ -1,7 +1,12 @@
 'use client';
 
-import { EMPTY_VEHICLE, VehicleForm } from '@/components/VehicleForm';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { Loading } from '@/components/ui';
 
-export default function NewVehicle() {
-  return <VehicleForm initial={EMPTY_VEHICLE} />;
+/** Moved: /dealer/vehicles/new → /dealer/inventory/new */
+export default function Moved() {
+  const router = useRouter();
+  useEffect(() => router.replace('/dealer/inventory/new'), [router]);
+  return <Loading />;
 }

@@ -6,9 +6,38 @@ import { api, mediaUrl } from '@/lib/api';
 import { useToast } from './toast';
 import { Button, Input, Spinner, cx } from './ui';
 
+/**
+ * Like the old upload.php: photos are stored as JPG / PNG / GIF (CarGurus refuses WebP, AVIF …) and very large
+ * photos are made smaller. Converted in the browser before upload; JPG / PNG / GIF under the limits are sent as they are.
+ */
+const MAX_SIDE = 2400;
+async function webReady(f: File): Promise<File> {
+  if (!/^image\//.test(f.type) || f.type === 'image/gif') return f;
+  const okType = f.type === 'image/jpeg' || f.type === 'image/png';
+  if (okType && f.size <= 2.5 * 1024 * 1024) return f;
+  try {
+    const bmp = await createImageBitmap(f);
+    const k = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+    if (okType && k === 1 && f.type === 'image/png') return f; // keep PNG transparency when no resize is needed
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * k);
+    c.height = Math.round(bmp.height * k);
+    const g = c.getContext('2d');
+    if (!g) return f;
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/jpeg', 0.88));
+    if (!blob) return f;
+    return new File([blob], f.name.replace(/\.[a-z0-9]+$/i, '') + '.jpg', { type: 'image/jpeg' });
+  } catch {
+    return f; // the browser cannot read this format: the server decides
+  }
+}
+
 async function uploadFiles(files: FileList | File[], folder?: string): Promise<string[]> {
   const form = new FormData();
-  for (const f of Array.from(files)) form.append('files', f);
+  for (const f of Array.from(files)) form.append('files', await webReady(f));
   const r = await api<{ files: { url: string }[]; errors: { file: string; error: string }[] }>(`/dealer/media${folder ? `?folder=${folder}` : ''}`, { form });
   if (r.errors.length) throw new Error(r.errors.map((e) => `${e.file}: ${e.error}`).join('\n'));
   return r.files.map((f) => f.url);

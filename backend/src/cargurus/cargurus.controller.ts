@@ -6,7 +6,7 @@ import { FeedsService } from '../feeds/feeds.service.js';
 import { CurrentUser, Perms, PlatformOnly, TenantId } from '../common/decorators.js';
 import type { AuthUser } from '../common/auth.types.js';
 
-/** Dealership Portal › Inventory › Feeds & CarGurus */
+/** Dealership Portal › CarGurus feed (+ feed downloads) */
 @Controller('dealer/feeds')
 @Perms('inventory')
 export class DealerFeedsController {
@@ -35,6 +35,12 @@ export class DealerFeedsController {
   @Header('Content-Disposition', 'attachment; filename="cargurus-template.csv"')
   template() {
     return this.cg.template();
+  }
+
+  /** Dealership Portal › CarGurus feed (read only) */
+  @Get('cargurus/monitor')
+  monitor(@TenantId() t: string) {
+    return this.cg.monitor(t);
   }
 
   @Get('cargurus')

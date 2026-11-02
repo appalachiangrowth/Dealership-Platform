@@ -87,8 +87,8 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
     {
       title: 'Inventory',
       items: [
-        { href: '/dealer/vehicles', label: 'Vehicles', icon: Car, perm: ['inventory'] },
-        { href: '/dealer/feeds', label: 'Feeds & CarGurus', icon: Rss, perm: ['inventory'] },
+        { href: '/dealer/inventory', label: 'Inventory', icon: Car, perm: ['inventory'] },
+        { href: '/dealer/cargurus', label: 'CarGurus feed', icon: Rss, perm: ['inventory'], feature: 'cargurus' },
         { href: '/dealer/blog', label: 'Blog & news', icon: Newspaper, perm: ['blog'], feature: 'blog' },
       ],
     },
@@ -130,7 +130,7 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
       </div>
       {can('inventory') && (
         <div className="px-4 pb-3">
-          <Link href="/dealer/vehicles/new" className="flex items-center justify-center gap-2 rounded-lg bg-emerald-500 py-2.5 text-sm font-bold text-white hover:bg-emerald-600">
+          <Link href="/dealer/inventory/new" className="flex items-center justify-center gap-2 rounded-lg bg-emerald-500 py-2.5 text-sm font-bold text-white hover:bg-emerald-600">
             <Plus className="h-4 w-4" /> Add vehicle
           </Link>
         </div>
@@ -221,7 +221,7 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
             </button>
             <span className="font-heading text-sm font-bold">{tenant.name}</span>
             {can('inventory') ? (
-              <Link href="/dealer/vehicles/new" className="rounded-lg bg-emerald-500 p-1.5 text-white">
+              <Link href="/dealer/inventory/new" className="rounded-lg bg-emerald-500 p-1.5 text-white">
                 <Plus className="h-4 w-4" />
               </Link>
             ) : (

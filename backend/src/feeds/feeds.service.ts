@@ -30,7 +30,8 @@ export class FeedsService {
     if (s?.siteUrl) return s.siteUrl.replace(/\/+$/, '');
     const primary = t.domains?.find((d) => d.isPrimary) ?? t.domains?.[0];
     if (primary && !primary.domain.endsWith('localhost')) return `https://${primary.domain}`;
-    return `http://${t.id}.localhost:3000`;
+    // on this computer the dealer websites are the website app (port 3002); SITE_PATTERN can change it
+    return (process.env.SITE_PATTERN || 'http://{id}.localhost:3002').replace('{id}', t.id).replace(/\/+$/, '');
   }
 
   absUrl(u: string, site: string): string {
@@ -60,7 +61,11 @@ export class FeedsService {
     });
   }
 
-  /** Published vehicles as CarGurus rows (canonical keys). Stock number empty → last 8 of the VIN. */
+  /**
+   * Published vehicles as CarGurus rows (canonical keys) — exactly what the dealer entered, like the old platform:
+   * an empty Stock Number stays empty so the vehicle is flagged "Missing Stock Number" (the XML feed still falls back
+   * to the last 8 characters of the VIN).
+   */
   inventoryRows(vehicles: Vehicle[], site: string) {
     return vehicles.map((v) => ({
       vin: v.vin,
@@ -73,7 +78,7 @@ export class FeedsService {
       images: v.images.map((u) => this.absUrl(u, site)),
       ext: v.exteriorColor,
       comments: v.description,
-      stock: v.stockNumber || (v.vin.length === 17 ? v.vin.slice(-8) : ''),
+      stock: v.stockNumber,
       trans: v.transmission,
       options: [...v.features, ...v.safetyFeatures],
     }));

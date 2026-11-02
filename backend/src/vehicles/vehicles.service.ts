@@ -3,7 +3,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { TenantsService } from '../tenants/tenants.service.js';
 import { clean, slugify } from '../common/util.js';
-import { CARGURUS_RULES, cleanVehicleInput, DEFAULT_RULES, missingRequired, RULE_FIELDS, vehicleName } from './vehicle.fields.js';
+import { CARGURUS_RULES, cleanVehicleInput, DEFAULT_RULES, publishProblems, RULE_FIELDS, vehicleName } from './vehicle.fields.js';
+import { CargurusService } from '../cargurus/cargurus.service.js';
 import type { Prisma, VehicleStatus } from '../generated/prisma/client.js';
 import type { AuthUser } from '../common/auth.types.js';
 
@@ -14,6 +15,8 @@ export interface VehicleQuery {
   page?: string;
   pageSize?: string;
   sort?: string;
+  /** CarGurus filter: ready | bad */
+  cg?: string;
 }
 
 const SORTS: Record<string, Prisma.VehicleOrderByWithRelationInput> = {
@@ -32,7 +35,13 @@ export class VehiclesService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly tenants: TenantsService,
+    private readonly cargurus: CargurusService,
   ) {}
+
+  /** Every inventory change: update the CarGurus queue / live feed (never blocks the save). */
+  private changed(tenantId: string, user: AuthUser) {
+    return this.cargurus.afterInventoryChange(tenantId, user.login);
+  }
 
   async list(tenantId: string, q: VehicleQuery) {
     const page = Math.max(1, parseInt(q.page || '1', 10) || 1);
@@ -53,13 +62,25 @@ export class VehiclesService {
         ...(Number.isFinite(n) && n > 1900 && n < 2100 ? [{ year: n }] : []),
       ];
     }
-    const [items, total, counts] = await Promise.all([
+    // CarGurus readiness of every vehicle for sale (same checks as the CarGurus feed)
+    const cargurusOn = await this.cargurus.cargurusOn(tenantId);
+    const ready = cargurusOn ? await this.cargurus.readiness(tenantId) : new Map();
+    let cgReady = 0;
+    let cgExcluded = 0;
+    for (const iss of ready.values()) iss.length ? cgExcluded++ : cgReady++;
+    if (cargurusOn && (q.cg === 'ready' || q.cg === 'bad')) {
+      const ids = [...ready.entries()].filter(([, iss]) => (q.cg === 'bad') === iss.length > 0).map(([id]) => id);
+      where.status = 'PUBLISHED';
+      where.id = { in: ids };
+    }
+    const [rows, total, counts] = await Promise.all([
       this.prisma.vehicle.findMany({ where, orderBy: SORTS[q.sort || 'newest'] ?? SORTS.newest, skip: (page - 1) * pageSize, take: pageSize }),
       this.prisma.vehicle.count({ where }),
       this.prisma.vehicle.groupBy({ by: ['status'], where: { tenantId }, _count: true }),
     ]);
     const byStatus = Object.fromEntries(counts.map((c) => [c.status, c._count]));
-    return { items, total, page, pageSize, counts: { PUBLISHED: 0, DRAFT: 0, SOLD: 0, ...byStatus } };
+    const items = rows.map((v) => ({ ...v, cargurus: cargurusOn && v.status === 'PUBLISHED' ? { issues: ready.get(v.id) ?? [] } : null }));
+    return { items, total, page, pageSize, cargurusOn, counts: { PUBLISHED: 0, DRAFT: 0, SOLD: 0, ...byStatus, cgReady, cgExcluded } };
   }
 
   async get(tenantId: string, id: string) {
@@ -96,20 +117,21 @@ export class VehiclesService {
     }
   }
 
-  private async check(tenantId: string, merged: Record<string, unknown>) {
-    const { rules, skipDraft } = await this.rules(tenantId);
-    const missing = missingRequired(merged, rules, skipDraft);
-    if (missing.length) throw new BadRequestException(`Please fill in: ${missing.join(', ')}`);
+  /** Same rules as the old portal: publishing needs Year, Make, Model, Price, Mileage and a photo; a draft needs a make or model. */
+  private check(merged: Record<string, unknown>) {
+    const problem = publishProblems(merged);
+    if (problem) throw new BadRequestException(problem);
   }
 
   async create(tenantId: string, body: Record<string, unknown>, user: AuthUser) {
     const data = cleanVehicleInput(body) as Record<string, unknown>;
-    if (!data.status) data.status = 'DRAFT';
-    await this.check(tenantId, data);
+    if (!data.status) data.status = 'PUBLISHED';
+    this.check(data);
     const slug = await this.uniqueSlug(tenantId, String(data.slug || vehicleName(data as never) || 'vehicle'));
     const v = await this.prisma.vehicle.create({ data: { ...(data as Prisma.VehicleUncheckedCreateInput), tenantId, slug } });
     await this.audit.record('vehicle.create', { tenantId, actor: user.login, detail: { id: v.id, name: vehicleName(v) } });
     if (v.status === 'PUBLISHED') await this.tenants.setOnboarding(tenantId, 'first_vehicle');
+    await this.changed(tenantId, user);
     return v;
   }
 
@@ -117,10 +139,12 @@ export class VehiclesService {
     const cur = await this.get(tenantId, id);
     const data = cleanVehicleInput(body) as Record<string, unknown>;
     if (data.status === cur.status) delete data.soldAt;
-    await this.check(tenantId, { ...cur, ...data });
+    this.check({ ...cur, ...data });
     if (data.slug) data.slug = await this.uniqueSlug(tenantId, String(data.slug), id);
     const v = await this.prisma.vehicle.update({ where: { id }, data });
     await this.audit.record('vehicle.update', { tenantId, actor: user.login, detail: { id, name: vehicleName(v), fields: Object.keys(data) } });
+    if (v.status === 'PUBLISHED') await this.tenants.setOnboarding(tenantId, 'first_vehicle');
+    await this.changed(tenantId, user);
     return v;
   }
 
@@ -128,6 +152,7 @@ export class VehiclesService {
     const v = await this.get(tenantId, id);
     await this.prisma.vehicle.delete({ where: { id } });
     await this.audit.record('vehicle.delete', { tenantId, actor: user.login, detail: { id, name: vehicleName(v) } });
+    await this.changed(tenantId, user);
     return { ok: true };
   }
 
@@ -137,7 +162,8 @@ export class VehiclesService {
     let count = 0;
     switch (body.action) {
       case 'publish':
-        count = (await this.prisma.vehicle.updateMany({ where, data: { status: 'PUBLISHED', soldAt: null } })).count;
+        // like the old portal: a vehicle without photos cannot be published
+        count = (await this.prisma.vehicle.updateMany({ where: { ...where, NOT: { images: { isEmpty: true } } }, data: { status: 'PUBLISHED', soldAt: null } })).count;
         break;
       case 'draft':
         count = (await this.prisma.vehicle.updateMany({ where, data: { status: 'DRAFT', soldAt: null } })).count;
@@ -158,49 +184,64 @@ export class VehiclesService {
         throw new BadRequestException('Unknown action');
     }
     await this.audit.record(`vehicle.bulk.${body.action}`, { tenantId, actor: user.login, detail: { count } });
-    return { ok: true, count };
+    await this.changed(tenantId, user);
+    return { ok: true, count, skipped: ids.length - count };
   }
 
   /**
-   * Import (CSV / TSV / XML parsed in the admin). Existing vehicles are matched by VIN, then stock number,
-   * and updated; their other fields — and photos when the row has none — are kept.
+   * Import (CSV / TSV / XML read and checked in the portal, 3 steps like the old platform).
+   * Existing vehicles are matched by VIN, then stock number, and updated with the non-empty values of the row;
+   * their other fields (and photos when the row has none) are kept. New vehicles: the row's status when the file
+   * has one, otherwise published when they have photos and saved as drafts when they have none.
    */
   async import(tenantId: string, body: { rows?: Record<string, unknown>[]; mode?: 'publish' | 'draft' }, user: AuthUser) {
     const rows = Array.isArray(body.rows) ? body.rows.slice(0, 2000) : [];
     const res = { created: 0, updated: 0, skipped: [] as { row: number; reason: string }[] };
     const existing = await this.prisma.vehicle.findMany({ where: { tenantId }, select: { id: true, vin: true, stockNumber: true } });
-    const byVin = new Map(existing.filter((v) => v.vin).map((v) => [v.vin, v.id]));
-    const byStock = new Map(existing.filter((v) => v.stockNumber).map((v) => [v.stockNumber.toLowerCase(), v.id]));
+    const byVin = new Map<string, string>(existing.filter((v) => v.vin).map((v) => [v.vin, v.id]));
+    const byStock = new Map<string, string>(existing.filter((v) => v.stockNumber).map((v) => [v.stockNumber.toLowerCase(), v.id]));
 
     for (let i = 0; i < rows.length; i++) {
+      const rowNo = Number((rows[i] as { _row?: unknown })._row) || i + 1;
       try {
-        const data = cleanVehicleInput(rows[i]) as Record<string, unknown>;
-        delete data.status;
+        const input = Object.fromEntries(Object.entries(rows[i]).filter(([k, v]) => k !== '_row' && v !== '' && v !== null && v !== undefined && !(Array.isArray(v) && !v.length)));
+        const data = cleanVehicleInput(input) as Record<string, unknown>;
         const imgs = (data.images as string[] | undefined) ?? [];
         if (!imgs.length) delete data.images;
         if (!data.make && !data.model && !data.vin) {
-          res.skipped.push({ row: i + 1, reason: 'No make, model or VIN' });
+          res.skipped.push({ row: rowNo, reason: 'No make, model or VIN' });
           continue;
         }
         const vin = data.vin ? String(data.vin) : '';
         const stock = data.stockNumber ? String(data.stockNumber).toLowerCase() : '';
-        const id: string | undefined = (vin && byVin.get(vin)) || (stock && byStock.get(stock)) || undefined;
+        const id: string | undefined = (vin ? byVin.get(vin) : undefined) ?? (stock ? byStock.get(stock) : undefined);
         if (id) {
+          if (data.status === 'PUBLISHED') {
+            const cur = await this.prisma.vehicle.findUnique({ where: { id }, select: { images: true } });
+            if (!imgs.length && !cur?.images.length) data.status = 'DRAFT';
+          }
           await this.prisma.vehicle.update({ where: { id }, data: data as Prisma.VehicleUncheckedUpdateInput });
           res.updated++;
         } else {
-          const status: VehicleStatus = body.mode === 'publish' && imgs.length ? 'PUBLISHED' : 'DRAFT';
+          let status = (data.status as VehicleStatus | undefined) ?? (imgs.length ? 'PUBLISHED' : 'DRAFT');
+          if (body.mode === 'draft' || (status === 'PUBLISHED' && !imgs.length)) status = 'DRAFT';
           const slug = await this.uniqueSlug(tenantId, vehicleName(data as never));
-          const v = await this.prisma.vehicle.create({ data: { ...(data as Prisma.VehicleUncheckedCreateInput), tenantId, slug, status } });
+          const v = await this.prisma.vehicle.create({
+            data: { vehicleType: 'Car', condition: 'Used', ...(data as Prisma.VehicleUncheckedCreateInput), tenantId, slug, status, soldAt: status === 'SOLD' ? new Date() : null },
+          });
           if (v.vin) byVin.set(v.vin, v.id);
           if (v.stockNumber) byStock.set(v.stockNumber.toLowerCase(), v.id);
           res.created++;
         }
       } catch (e) {
-        res.skipped.push({ row: i + 1, reason: (e as Error).message });
+        res.skipped.push({ row: rowNo, reason: (e as Error).message });
       }
     }
     await this.audit.record('vehicle.import', { tenantId, actor: user.login, detail: { created: res.created, updated: res.updated, skipped: res.skipped.length } });
+    if (res.created || res.updated) {
+      if (await this.prisma.vehicle.count({ where: { tenantId, status: 'PUBLISHED' } })) await this.tenants.setOnboarding(tenantId, 'first_vehicle');
+      await this.changed(tenantId, user);
+    }
     return res;
   }
 }

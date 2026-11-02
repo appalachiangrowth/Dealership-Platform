@@ -116,3 +116,21 @@ export function missingRequired(v: Record<string, unknown>, rules: Record<string
   }
   return missing;
 }
+
+/**
+ * The old portal's save rules (admin.js vehicleEditor):
+ *  - publishing needs Year, Make, Model, Price and Mileage filled in, and at least one photo;
+ *  - a draft / sold vehicle needs at least a make or a model.
+ * The CarGurus fields are NOT required to save: a vehicle can be on the website and join CarGurus once complete.
+ */
+export function publishProblems(v: Record<string, unknown>): string {
+  const empty = (x: unknown) => x === null || x === undefined || String(x).trim() === '';
+  if (v.status === 'PUBLISHED') {
+    const miss = [['year', 'Year'], ['make', 'Make'], ['model', 'Model'], ['price', 'Price'], ['mileage', 'Mileage']].filter(([k]) => empty(v[k])).map(([, l]) => l);
+    if (miss.length) return `Fill in ${miss.join(', ')} to publish this vehicle, or save it as a draft.`;
+    if (!Array.isArray(v.images) || !v.images.length) return 'Add at least one photo to publish. You can save it as a draft without photos.';
+    return '';
+  }
+  if (empty(v.make) && empty(v.model)) return 'Enter at least a make or model.';
+  return '';
+}
