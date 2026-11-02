@@ -29,12 +29,13 @@ export class DashboardController {
     const counts = Object.fromEntries(byStatus.map((b) => [b.status, b._count])) as Record<string, number>;
     const onb = (t.onboarding || {}) as Record<string, boolean>;
     const checklist = [
-      { id: 'business', label: 'Add your business details', done: !!(s?.name && s?.phone && (s?.street || s?.city)), href: '/dealer/business' },
-      { id: 'logo', label: 'Upload your logo', done: !!s?.logo, href: '/dealer/business' },
-      { id: 'design', label: 'Choose your website design', done: !!onb.theme_chosen, href: '/dealer/design' },
-      { id: 'content', label: 'Write your website text', done: !!onb.content_edited || contentCount > 0, href: '/dealer/content' },
-      { id: 'vehicle', label: 'Add your first vehicle', done: (counts.PUBLISHED || 0) > 0, href: '/dealer/vehicles/new' },
-      { id: 'leads', label: 'Set where inquiries are emailed', done: !!s?.leadTo, href: '/dealer/leads' },
+      { id: 'business', label: 'Add your business details', desc: 'Dealership name, phone number and address.', done: !!(s?.name && s?.phone && (s?.street || s?.city)), href: '/dealer/business' },
+      { id: 'logo', label: 'Upload your logo', desc: 'Shown in the header and footer of every theme.', done: !!s?.logo, href: '/dealer/business' },
+      { id: 'hours', label: 'Set your opening hours', desc: 'So visitors know when to call or visit.', done: !!(s?.hours && Object.keys(s?.hours as object || {}).length > 0), href: '/dealer/business' },
+      { id: 'design', label: 'Choose your website design', desc: 'Preview the themes and pick the one you like.', done: !!onb.theme_chosen || !!t.themeId, href: '/dealer/design' },
+      { id: 'content', label: 'Write your website text', desc: 'Headlines, your story and customer reviews.', done: !!onb.content_edited || contentCount > 0, href: '/dealer/content' },
+      { id: 'leads', label: 'Choose where inquiries go', desc: 'The email address that receives customer messages.', done: !!s?.leadTo || !!s?.email, href: '/dealer/leads' },
+      { id: 'vehicle', label: 'Add your first vehicle', desc: 'Publish vehicles with photos and prices.', done: (counts.PUBLISHED || 0) > 0, href: '/dealer/vehicles/new' },
     ];
     return {
       vehicles: { published: counts.PUBLISHED || 0, draft: counts.DRAFT || 0, sold: counts.SOLD || 0 },
