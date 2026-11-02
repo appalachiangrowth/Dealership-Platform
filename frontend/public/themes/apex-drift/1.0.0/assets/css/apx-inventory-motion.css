@@ -1,0 +1,208 @@
+/* Inventory filter section presentation — deliberately scoped to the inventory page. */
+body[data-page="inventory"] .apx-content-section {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse at 8% 16%, rgba(72, 84, 153, .11), transparent 34%),
+    radial-gradient(ellipse at 91% 26%, rgba(255, 181, 71, .075), transparent 29%),
+    linear-gradient(180deg, #080a16 0%, #0b0d1b 52%, #080a16 100%);
+}
+body[data-page="inventory"] .apx-content-section::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  left: max(var(--apx-gut), calc((100% - var(--apx-wrap)) / 2));
+  right: max(var(--apx-gut), calc((100% - var(--apx-wrap)) / 2));
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,181,71,.42), rgba(255,111,125,.2), transparent);
+  pointer-events: none;
+}
+body[data-page="inventory"] .apx-content-section > .apx-wrap {
+  position: relative;
+}
+body[data-page="inventory"] .apx-content-section .apx-section-head {
+  margin-bottom: clamp(22px, 2.4vw, 32px);
+  align-items: end;
+}
+body[data-page="inventory"] .apx-section-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-shadow: 0 0 20px rgba(255,181,71,.2);
+}
+body[data-page="inventory"] .apx-section-kicker::before {
+  content: "";
+  display: inline-block;
+  width: 22px;
+  height: 1px;
+  background: linear-gradient(90deg, #ffb547, #ff8c6d);
+  box-shadow: 0 0 12px rgba(255,181,71,.3);
+}
+body[data-page="inventory"] .apx-content-section .apx-section-head .apx-title {
+  text-shadow: 0 5px 28px rgba(0,0,0,.22);
+}
+body[data-page="inventory"] .apx-content-section .apx-section-head > .apx-muted {
+  line-height: 1.75;
+  max-width: 44ch !important;
+}
+body[data-page="inventory"] #apxFilterForm.apx-toolbar {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  gap: 12px;
+  padding: clamp(14px, 1.3vw, 19px);
+  margin-bottom: 27px;
+  border: 1px solid rgba(143,151,181,.23);
+  border-radius: 22px;
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(94,105,174,.12), transparent 50%),
+    linear-gradient(145deg, rgba(22,26,51,.98), rgba(11,14,30,.98));
+  box-shadow: 0 22px 54px -38px rgba(0,0,0,.92), inset 0 1px 0 rgba(255,255,255,.035);
+  transition: border-color .35s ease, box-shadow .35s ease, transform .35s ease;
+}
+body[data-page="inventory"] #apxFilterForm.apx-toolbar::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -55%;
+  bottom: -55%;
+  left: -45%;
+  width: 28%;
+  transform: rotate(17deg) translateX(-180%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.045), transparent);
+  pointer-events: none;
+}
+body[data-page="inventory"] #apxFilterForm.apx-toolbar.apx-motion-visible::before {
+  animation: apxFilterSheen 1.25s .32s ease-out both;
+}
+body[data-page="inventory"] #apxFilterForm.apx-toolbar:hover {
+  border-color: rgba(255,181,71,.34);
+  box-shadow: 0 26px 60px -38px rgba(0,0,0,.95), 0 0 35px -29px rgba(255,181,71,.45), inset 0 1px 0 rgba(255,255,255,.045);
+}
+body[data-page="inventory"] #apxFilterForm .apx-toolbar-fields {
+  gap: 12px;
+}
+body[data-page="inventory"] #apxFilterForm .apx-field {
+  gap: 8px;
+}
+body[data-page="inventory"] #apxFilterForm .apx-field label {
+  padding-left: 2px;
+  color: #a5acc6;
+  letter-spacing: .14em;
+}
+body[data-page="inventory"] #apxFilterForm .apx-field input,
+body[data-page="inventory"] #apxFilterForm .apx-field select {
+  min-height: 56px;
+  border-radius: 13px;
+  border-color: rgba(177,186,215,.16);
+  background-color: rgba(7,10,24,.86);
+  transition: border-color .22s ease, background-color .22s ease, box-shadow .22s ease, transform .22s ease;
+}
+body[data-page="inventory"] #apxFilterForm .apx-field input:hover,
+body[data-page="inventory"] #apxFilterForm .apx-field select:hover {
+  border-color: rgba(255,181,71,.36);
+  background-color: rgba(10,13,29,.98);
+}
+body[data-page="inventory"] #apxFilterForm .apx-field input:focus,
+body[data-page="inventory"] #apxFilterForm .apx-field select:focus {
+  border-color: rgba(255,181,71,.82);
+  box-shadow: 0 0 0 3px rgba(255,181,71,.09), 0 8px 24px -18px rgba(255,181,71,.6);
+}
+body[data-page="inventory"] #apxFilterForm > div:last-child {
+  padding-top: 7px !important;
+}
+body[data-page="inventory"] #apxFilterForm .apx-note {
+  color: #a0a8c4;
+}
+body[data-page="inventory"] #apxFilterForm button[type="submit"] {
+  min-height: 54px;
+  padding-inline: 25px;
+  border: 1px solid rgba(255,255,255,.2);
+  background: linear-gradient(105deg, #ffc15b 0%, #ffb547 54%, #ff986b 100%);
+  box-shadow: 0 9px 24px -16px rgba(255,181,71,.8), inset 0 1px 0 rgba(255,255,255,.25);
+  transition: transform .23s ease, box-shadow .23s ease, filter .23s ease;
+}
+body[data-page="inventory"] #apxFilterForm button[type="submit"]:hover {
+  transform: translateY(-2px);
+  filter: saturate(1.08) brightness(1.035);
+  box-shadow: 0 13px 30px -15px rgba(255,181,71,.7), inset 0 1px 0 rgba(255,255,255,.32);
+}
+body[data-page="inventory"] #apxFilterForm button.ghost {
+  min-height: 48px;
+  border-color: rgba(177,186,215,.25);
+  transition: border-color .23s ease, background .23s ease, transform .23s ease;
+}
+body[data-page="inventory"] #apxFilterForm button.ghost:hover {
+  transform: translateY(-1px);
+  background: rgba(255,255,255,.035);
+  border-color: rgba(255,181,71,.6);
+}
+body[data-page="inventory"] .apx-results-head {
+  position: relative;
+  margin: 0 0 20px;
+  padding: 0 2px 0 12px;
+  min-height: 27px;
+  border-left: 2px solid rgba(255,181,71,.66);
+}
+body[data-page="inventory"] .apx-results-head strong {
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Staggered reveal: the section rises into view rather than abruptly appearing. */
+body[data-page="inventory"] .apx-motion-ready {
+  opacity: 0;
+  transform: translate3d(0, 24px, 0) scale(.992);
+  filter: blur(3px);
+  transition:
+    opacity .72s cubic-bezier(.2,.75,.25,1) var(--apx-motion-delay, 0ms),
+    transform .72s cubic-bezier(.2,.75,.25,1) var(--apx-motion-delay, 0ms),
+    filter .72s ease var(--apx-motion-delay, 0ms);
+  will-change: opacity, transform, filter;
+}
+body[data-page="inventory"] .apx-motion-ready.apx-motion-visible {
+  opacity: 1;
+  transform: translate3d(0,0,0) scale(1);
+  filter: blur(0);
+}
+@keyframes apxFilterSheen {
+  0% { transform: rotate(17deg) translateX(-180%); opacity: 0; }
+  12% { opacity: 1; }
+  100% { transform: rotate(17deg) translateX(610%); opacity: 0; }
+}
+@media (max-width: 800px) {
+  body[data-page="inventory"] #apxFilterForm.apx-toolbar { gap: 12px; border-radius: 19px; }
+  body[data-page="inventory"] #apxFilterForm .apx-toolbar-fields { gap: 11px; }
+  body[data-page="inventory"] #apxFilterForm .apx-field input,
+  body[data-page="inventory"] #apxFilterForm .apx-field select { min-height: 52px; }
+}
+@media (max-width: 560px) {
+  body[data-page="inventory"] .apx-content-section { padding-top: 43px; padding-bottom: 52px; }
+  body[data-page="inventory"] .apx-content-section .apx-section-head { gap: 15px; margin-bottom: 22px; }
+  body[data-page="inventory"] .apx-content-section .apx-section-head .apx-title { font-size: clamp(2rem, 9.5vw, 2.85rem) !important; line-height: 1.02; }
+  body[data-page="inventory"] .apx-content-section .apx-section-head > .apx-muted { font-size: .91rem; line-height: 1.65; }
+  body[data-page="inventory"] #apxFilterForm.apx-toolbar { padding: 12px; margin-bottom: 22px; border-radius: 17px; }
+  body[data-page="inventory"] #apxFilterForm .apx-field label { font-size: .53rem; }
+  body[data-page="inventory"] #apxFilterForm .apx-field input,
+  body[data-page="inventory"] #apxFilterForm .apx-field select { min-height: 50px; padding: 11px 12px; }
+  body[data-page="inventory"] #apxFilterForm > div:last-child { gap: 10px !important; align-items: stretch !important; }
+  body[data-page="inventory"] #apxFilterForm .apx-note { flex: 1 0 100%; }
+  body[data-page="inventory"] #apxFilterForm button.ghost,
+  body[data-page="inventory"] #apxFilterForm button[type="submit"] { flex: 1 1 0; min-height: 47px; padding: 11px 12px; font-size: .88rem; }
+  body[data-page="inventory"] .apx-results-head { align-items: flex-start; font-size: .8rem; gap: 10px; }
+  body[data-page="inventory"] .apx-results-head > span:last-child { text-align: right; max-width: 46%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body[data-page="inventory"] .apx-motion-ready,
+  body[data-page="inventory"] .apx-motion-ready.apx-motion-visible {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+    transition: none !important;
+    will-change: auto !important;
+  }
+  body[data-page="inventory"] #apxFilterForm.apx-toolbar::before { display: none; animation: none !important; }
+  body[data-page="inventory"] #apxFilterForm button[type="submit"],
+  body[data-page="inventory"] #apxFilterForm button.ghost { transition: none !important; }
+}

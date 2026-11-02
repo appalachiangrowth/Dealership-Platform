@@ -1,0 +1,21 @@
+# PostgreSQL connection (same style as Tabibistan)
+DATABASE_URL="postgresql://postgres:[password]@localhost:5432/dealer_platform?schema=public"
+# Optional: direct (non-pooled) URL used by prisma migrate
+# DIRECT_URL="postgresql://postgres:[password]@localhost:5432/dealer_platform?schema=public"
+
+PORT=4000
+# Long random string — signs login tokens. CHANGE THIS in production.
+JWT_SECRET="44366d089efc17bbd8c0b32acebd3deaa0a90c27ada0fb6c5a22fdb71037b98998cb6d92f0f583ba4950ada32d758ce4"
+JWT_EXPIRES_IN="7d"
+
+# Dealer used when the public website is opened on localhost without a known domain
+DEFAULT_TENANT="blue-motors"
+
+# Optional: require this key when creating the first platform owner (/setup in the admin)
+SETUP_KEY=""
+
+# Run the CarGurus upload job automatically (hour of day, 0-23, server time). Empty = off.
+CARGURUS_CRON_HOUR="3"
+
+# One-off: path of the OLD PHP project, used by `npm run migrate:legacy`
+LEGACY_PATH="C:/Users/DELL/Documents/ags-dealer-platform-3.0.0 1"

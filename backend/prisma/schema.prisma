@@ -1,0 +1,636 @@
+// Dealer Platform — PostgreSQL schema (replaces the old storage/*.json files)
+//
+// Old JSON file                              -> table
+// storage/platform/users.json                -> PlatformOwner
+// storage/platform/tenants.json              -> Tenant + TenantDomain
+// storage/platform/settings.json             -> PlatformSetting
+// storage/platform/theme-pricing.json        -> Theme (price fields)
+// storage/platform/audit.log, tenants/*/audit.log -> AuditLog
+// tenants/<id>/settings.json                 -> TenantSettings
+// tenants/<id>/users.json                    -> DealerUser
+// tenants/<id>/inventory.json  vehicles      -> Vehicle
+// tenants/<id>/inventory.json  posts         -> BlogPost
+// tenants/<id>/data/messages.json            -> Lead + LeadReply
+// tenants/<id>/content.json (+ history)      -> ContentValue + ContentVersion
+// tenants/<id>/design.json                   -> DesignColors
+// tenants/<id>/data/theme-licenses.json      -> ThemeLicense + ThemeLicenseRequest
+// tenants/<id>/data/field-rules.json         -> FieldRules
+// tenants/<id>/data/cargurus/*               -> CargurusSubmission + CargurusLog
+// tenants/<id>/uploads/*                     -> MediaFile (files stay on disk under backend/uploads/<tenant>/)
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────── enums ─────────────────────────
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum ReleaseChannel {
+  STABLE
+  BETA
+}
+
+enum DealerRole {
+  ADMIN
+  STAFF
+  INVENTORY
+  LEADS
+  MARKETING
+  CUSTOM
+}
+
+enum AccountSource {
+  SIGNUP
+  PLATFORM
+  DEALER
+  SETUP
+  MIGRATED
+}
+
+enum VehicleStatus {
+  PUBLISHED
+  DRAFT
+  SOLD
+}
+
+enum PostStatus {
+  PUBLISHED
+  DRAFT
+}
+
+enum LeadStatus {
+  UNREAD
+  READ
+  REPLIED
+  CLOSED
+}
+
+enum LeadSource {
+  CONTACT
+  VEHICLE
+}
+
+enum BillingCycle {
+  ONE_TIME
+  MONTHLY
+  YEARLY
+}
+
+enum LicenseRequestStatus {
+  PENDING
+  PAID
+  DECLINED
+}
+
+enum CargurusStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REPLACED
+}
+
+enum SmtpSecurity {
+  SSL
+  TLS
+  NONE
+}
+
+// ───────────────────────── platform ─────────────────────────
+
+model PlatformOwner {
+  id           String    @id @default(uuid())
+  login        String    @unique
+  name         String    @default("")
+  email        String    @default("")
+  passwordHash String
+  disabled     Boolean   @default(false)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+/// One row per settings group: smtp, keys, feeds, features, support, signup, payment
+model PlatformSetting {
+  group     String   @id
+  data      Json
+  updatedAt DateTime @updatedAt
+}
+
+/// Simple named counters (dealer codes AGS-1001, AGS-1002 …)
+model Counter {
+  name  String @id
+  value Int
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String?
+  actor     String   @default("")
+  action    String
+  detail    Json?
+  ip        String   @default("")
+  createdAt DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model LoginEvent {
+  id        String   @id @default(uuid())
+  tenantId  String?
+  userId    String?
+  ownerId   String?
+  login     String
+  success   Boolean
+  method    String   @default("password")
+  ip        String   @default("")
+  createdAt DateTime @default(now())
+
+  tenant Tenant?     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   DealerUser? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([userId, createdAt])
+}
+
+// ───────────────────────── themes ─────────────────────────
+
+model Theme {
+  id            String         @id
+  name          String
+  description   String         @default("")
+  style         String         @default("")
+  author        String         @default("")
+  previewUrl    String         @default("")
+  /// colour slots the dealer can change: [{ key, label, default, hint }]
+  colorSlots    Json
+  stableVersion String         @default("1.0.0")
+  betaVersion   String         @default("")
+  // pricing (old theme-pricing.json)
+  paid          Boolean        @default(false)
+  price         Decimal        @default(0) @db.Decimal(10, 2)
+  currency      String         @default("USD")
+  billing       BillingCycle   @default(ONE_TIME)
+  priceNote     String         @default("")
+  enabled       Boolean        @default(true)
+  sortOrder     Int            @default(0)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  versions        ThemeVersion[]
+  licenses        ThemeLicense[]
+  licenseRequests ThemeLicenseRequest[]
+  designColors    DesignColors[]
+}
+
+model ThemeVersion {
+  id         String   @id @default(uuid())
+  themeId    String
+  version    String
+  notes      String   @default("")
+  releasedAt DateTime @default(now())
+
+  theme Theme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@unique([themeId, version])
+}
+
+// ───────────────────────── tenants (dealerships) ─────────────────────────
+
+model Tenant {
+  id          String         @id // url-safe slug, e.g. "blue-motors"
+  name        String
+  dealerCode  String         @unique // AGS-1001 …
+  status      TenantStatus   @default(ACTIVE)
+  themeId     String         @default("classic")
+  channel     ReleaseChannel @default(STABLE)
+  themePin    String         @default("")
+  /// per-dealer feature overrides, e.g. { "facebook": true, "cargurus": false }
+  features    Json           @default("{}")
+  notes       String         @default("")
+  /// set-up checklist flags (old data/onboarding.json)
+  onboarding  Json           @default("{}")
+  /// optional custom lead form definition (old inventory.json → leadForm)
+  leadForm    Json?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  domains            TenantDomain[]
+  settings           TenantSettings?
+  users              DealerUser[]
+  vehicles           Vehicle[]
+  posts              BlogPost[]
+  leads              Lead[]
+  contentValues      ContentValue[]
+  contentVersions    ContentVersion[]
+  designColors       DesignColors[]
+  themeLicenses      ThemeLicense[]
+  licenseRequests    ThemeLicenseRequest[]
+  fieldRules         FieldRules?
+  media              MediaFile[]
+  cargurusSubmission CargurusSubmission[]
+  cargurusLogs       CargurusLog[]
+  auditLogs          AuditLog[]
+  loginEvents        LoginEvent[]
+
+  @@index([status])
+}
+
+model TenantDomain {
+  id        String   @id @default(uuid())
+  tenantId  String
+  domain    String   @unique // lower-case host, no port, e.g. "bluemotors.com"
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+/// Business details + advanced settings (old tenants/<id>/settings.json)
+model TenantSettings {
+  tenantId String @id
+
+  // business details
+  name          String @default("")
+  legalName     String @default("")
+  tagline       String @default("")
+  logo          String @default("")
+  phone         String @default("")
+  email         String @default("")
+  street        String @default("")
+  city          String @default("")
+  state         String @default("")
+  stateName     String @default("")
+  zip           String @default("")
+  country       String @default("")
+  lat           String @default("")
+  lng           String @default("")
+  /// { mon: { s: "open"|"closed", o: "09:00", c: "18:00" }, … }
+  hours         Json   @default("{}")
+  hoursWeek     String @default("")
+  hoursWeekend  String @default("")
+  hoursShort    String @default("")
+  facebook      String @default("")
+  instagram     String @default("")
+  google        String @default("")
+  googleReviews String @default("")
+  youtube       String @default("")
+  tiktok        String @default("")
+  messenger     String @default("")
+  siteUrl       String @default("")
+  themeColor    String @default("#062B49")
+
+  // inquiries & email
+  leadTo       String       @default("")
+  smtpHost     String       @default("")
+  smtpPort     Int          @default(465)
+  smtpSecure   SmtpSecurity @default(SSL)
+  smtpUser     String       @default("")
+  smtpPass     String       @default("") // write-only in the API
+  smtpFrom     String       @default("")
+  smtpFromName String       @default("")
+
+  // photos
+  maxUploadMb    Int     @default(12)
+  brandImages    Boolean @default(true)
+  brandBandColor String  @default("#EAF0F8")
+
+  // feeds & CarGurus
+  dealerCrmEmail     String  @default("")
+  dealerCrmFormat    String  @default("text") // text | adf
+  dealerRadius       String  @default("")
+  feedOperation      String  @default("")
+  feedCompleteBatch  String  @default("Y")
+  feedToken          String  @default("") // write-only
+  cargurusFtpHost    String  @default("")
+  cargurusFtpUser    String  @default("")
+  cargurusFtpPass    String  @default("") // write-only
+  cargurusFtpPort    Int     @default(21)
+  cargurusFtpSsl     Boolean @default(false)
+  cargurusRemoteDir  String  @default("")
+  cargurusRemoteName String  @default("inventory.csv")
+
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model DealerUser {
+  id           String        @id @default(uuid())
+  tenantId     String
+  login        String // lower-case, usually the e-mail
+  name         String        @default("")
+  email        String        @default("")
+  phone        String        @default("")
+  role         DealerRole    @default(STAFF)
+  /// only for role CUSTOM: hand-picked permissions (never "users")
+  perms        String[]      @default([])
+  passwordHash String
+  disabled     Boolean       @default(false)
+  source       AccountSource @default(DEALER)
+  signupIp     String        @default("")
+  lastLoginAt  DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  loginEvents LoginEvent[]
+
+  @@unique([tenantId, login])
+  @@index([login])
+}
+
+// ───────────────────────── inventory ─────────────────────────
+
+model Vehicle {
+  id              String        @id @default(uuid())
+  tenantId        String
+  legacyId        String? // id from the old inventory.json (v179…)
+  slug            String
+  title           String        @default("")
+  metaTitle       String        @default("")
+  metaDescription String        @default("")
+  year            Int?
+  make            String        @default("")
+  model           String        @default("")
+  trim            String        @default("")
+  vehicleType     String        @default("") // Car, Truck, SUV …
+  bodyStyle       String        @default("")
+  condition       String        @default("Used")
+  certified       Boolean       @default(false)
+  price           Decimal?      @db.Decimal(12, 2)
+  msrp            Decimal?      @db.Decimal(12, 2)
+  mileage         Int?
+  stockNumber     String        @default("")
+  vin             String        @default("")
+  exteriorColor   String        @default("")
+  interiorColor   String        @default("")
+  engine          String        @default("")
+  horsepower      String        @default("")
+  drivetrain      String        @default("")
+  transmission    String        @default("")
+  fuelType        String        @default("")
+  mpg             String        @default("")
+  fuelTank        String        @default("")
+  doors           String        @default("")
+  seats           String        @default("")
+  owners          String        @default("")
+  accidents       String        @default("")
+  dealLabel       String        @default("")
+  description     String        @default("")
+  features        String[]      @default([])
+  safetyFeatures  String[]      @default([])
+  /// ordered photo URLs: "/uploads/<tenant>/…" or absolute https links
+  images          String[]      @default([])
+  status          VehicleStatus @default(DRAFT)
+  featured        Boolean       @default(false)
+  soldAt          DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leads  Lead[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, status])
+  @@index([tenantId, vin])
+  @@index([tenantId, featured])
+}
+
+/// Which vehicle fields are required (Inventory > Field rules)
+model FieldRules {
+  tenantId  String   @id
+  /// { "vin": "required", "trim": "required", … }
+  rules     Json     @default("{}")
+  skipDraft Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model BlogPost {
+  id              String     @id @default(uuid())
+  tenantId        String
+  legacyId        String?
+  title           String
+  slug            String
+  excerpt         String     @default("")
+  body            String     @default("")
+  coverImage      String     @default("")
+  category        String     @default("")
+  tags            String[]   @default([])
+  author          String     @default("")
+  metaTitle       String     @default("")
+  metaDescription String     @default("")
+  status          PostStatus @default(DRAFT)
+  publishedAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, status, publishedAt])
+}
+
+// ───────────────────────── leads ─────────────────────────
+
+model Lead {
+  id        String     @id @default(uuid())
+  tenantId  String
+  name      String
+  email     String     @default("")
+  phone     String     @default("")
+  topic     String     @default("Website inquiry")
+  message   String
+  page      String     @default("")
+  vehicleId String?
+  source    LeadSource @default(CONTACT)
+  status    LeadStatus @default(UNREAD)
+  notes     String     @default("")
+  emailed   Boolean    @default(false)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  tenant  Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle Vehicle?    @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  replies LeadReply[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+}
+
+model LeadReply {
+  id        String   @id @default(uuid())
+  leadId    String
+  body      String
+  sentBy    String   @default("")
+  toEmail   String   @default("")
+  fromEmail String   @default("")
+  replyTo   String   @default("")
+  emailed   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+// ───────────────────────── website content & design ─────────────────────────
+
+/// One saved text per content key (see src/content/content.schema.ts)
+model ContentValue {
+  tenantId  String
+  key       String
+  value     String
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, key])
+}
+
+/// Snapshot taken before every save (last 40 kept), used by "earlier versions"
+model ContentVersion {
+  id        String   @id @default(uuid())
+  tenantId  String
+  values    Json
+  savedBy   String   @default("")
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+}
+
+/// Brand colours, kept per theme so switching back restores them
+model DesignColors {
+  tenantId  String
+  themeId   String
+  /// { primary: "#0057B8", dark: "#062B49", … }
+  colors    Json     @default("{}")
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  theme  Theme  @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, themeId])
+}
+
+model ThemeLicense {
+  id        String       @id @default(uuid())
+  tenantId  String
+  themeId   String
+  amount    Decimal      @default(0) @db.Decimal(10, 2)
+  currency  String       @default("USD")
+  billing   BillingCycle @default(ONE_TIME)
+  note      String       @default("")
+  grantedBy String       @default("")
+  requestId String?
+  createdAt DateTime     @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  theme  Theme  @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, themeId])
+}
+
+model ThemeLicenseRequest {
+  id              String               @id @default(uuid())
+  tenantId        String
+  themeId         String
+  status          LicenseRequestStatus @default(PENDING)
+  requestedBy     String               @default("")
+  requestedByName String               @default("")
+  note            String               @default("")
+  price           Decimal              @default(0) @db.Decimal(10, 2)
+  currency        String               @default("USD")
+  billing         BillingCycle         @default(ONE_TIME)
+  reviewedBy      String               @default("")
+  reviewNote      String               @default("")
+  reviewedAt      DateTime?
+  amountPaid      Decimal?             @db.Decimal(10, 2)
+  createdAt       DateTime             @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  theme  Theme  @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([tenantId])
+}
+
+// ───────────────────────── media ─────────────────────────
+
+model MediaFile {
+  id           String   @id @default(uuid())
+  tenantId     String
+  url          String // public URL path, e.g. /uploads/blue-motors/2026/11/abc.jpg
+  path         String // path on disk relative to backend/uploads
+  mime         String
+  size         Int
+  width        Int?
+  height       Int?
+  originalName String   @default("")
+  uploadedBy   String   @default("")
+  createdAt    DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+}
+
+// ───────────────────────── CarGurus pipeline ─────────────────────────
+
+model CargurusSubmission {
+  id             String         @id @default(uuid())
+  tenantId       String
+  status         CargurusStatus @default(PENDING)
+  source         String         @default("upload") // upload | inventory
+  fileName       String         @default("")
+  /// validated rows: [{ _row, vin, make, …, _raw, _issues, _warn }]
+  records        Json
+  /// audit summary at upload time
+  summary        Json
+  rawText        String         @default("")
+  createdBy      String         @default("")
+  reviewedBy     String         @default("")
+  reviewNote     String         @default("")
+  reviewedAt     DateTime?
+  /// last approved feed (CSV) that was sent / is served to CarGurus
+  feedCsv        String?
+  dispatchedAt   DateTime?
+  dispatchResult Json?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([status])
+}
+
+model CargurusLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  event     String
+  detail    Json?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+}

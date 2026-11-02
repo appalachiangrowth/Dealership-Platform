@@ -1,0 +1,10 @@
+# Public dealer websites (http://localhost:3002) — just to view the sites
+# URL of the backend API, as seen from this server
+API_URL=http://localhost:4000
+
+# Dealership Portal + Platform Admin addresses (comma-separated) — allowed to show this website inside their design preview
+ADMIN_URL=http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001
+
+# Optional: dealership shown when the site is opened on plain http://localhost:3002
+# (normally each dealer is opened on its own domain, or on http://<dealer-id>.localhost:3002)
+DEFAULT_TENANT=blue-motors

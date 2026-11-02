@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-heading: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+html,
+body {
+  background: #f4f6fb;
+  color: #0f172a;
+}
+
+.font-heading {
+  font-family: var(--font-heading);
+}
+
+/* thin scrollbars in side panels */
+aside ::-webkit-scrollbar {
+  width: 6px;
+}
+aside ::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 6px;
+}

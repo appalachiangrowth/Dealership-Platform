@@ -1,0 +1,43 @@
+{
+  "id": "vroomfox",
+  "name": "VroomFox",
+  "version": "1.0.0",
+  "description": "Bright, friendly single-page design with playful illustrations, quick filters and a modern feel.",
+  "author": "Appalachian Growth Solutions",
+  "released": "2026-10-26",
+  "pages": [
+    {
+      "id": "home",
+      "label": "Home (and Inventory, Vehicle, Used Cars, About, Blog, Contact)",
+      "template": "index.html",
+      "sitemap": true
+    }
+  ],
+  "design": {
+    "colors": [
+      {
+        "var": "--blue",
+        "label": "Main brand colour",
+        "default": "#1F7BFF",
+        "also": [],
+        "hint": "Buttons, links and highlights"
+      },
+      {
+        "var": "--blue-d",
+        "label": "Darker shade",
+        "default": "#0A5CF0",
+        "also": [],
+        "hint": "Button hover and dark accents"
+      }
+    ]
+  },
+  "content_map": {},
+  "hash_routes": {
+    "about": "#about-page",
+    "contact": "#contact-page",
+    "inventory": "#inventory-page",
+    "blog": "#blog-page"
+  },
+  "preview": "assets/preview.jpg",
+  "style": "Friendly & illustrated"
+}

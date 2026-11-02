@@ -1,0 +1,14 @@
+node_modules
+.next
+dist
+out
+.env
+.env*
+*.local
+*.tsbuildinfo
+build-log.txt
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/src/generated
+.DS_Store
+Thumbs.db

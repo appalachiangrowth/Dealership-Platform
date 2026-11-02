@@ -1,0 +1,8 @@
+# Platform Admin (http://localhost:3001) — the main admin for platform owners
+# URL of the backend API (NestJS)
+NEXT_PUBLIC_API_URL=http://localhost:4000
+# Dealership Portal address ("Open Dealership Portal" support mode, links for dealers)
+NEXT_PUBLIC_DEALER_PORTAL_URL=http://localhost:3000
+# How dealer websites are opened when a dealer has no domain yet.
+# On this computer: http://<dealer-id>.localhost:3002  (the website app)
+NEXT_PUBLIC_SITE_PATTERN=http://{id}.localhost:3002
