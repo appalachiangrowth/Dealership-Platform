@@ -7,7 +7,7 @@ import { useToast } from '@/components/toast';
 import { Badge, Card, Loading, PageHeader, Table, Td, Toggle } from '@/components/ui';
 
 const FEATURES = [
-  ['facebook', 'Facebook Group Poster', 'Lets dealers download the Facebook poster app.'],
+  ['facebook', 'FB Poster', 'FB Poster menu in the Dealership Portal: posting to Facebook groups / Pages and Marketplace vehicle listings.'],
   ['cargurus', 'CarGurus', 'CarGurus feed uploads and the daily FTP upload.'],
   ['blog', 'Blog & news', 'Blog menu in the Dealership Portal and the blog on the website.'],
 ];

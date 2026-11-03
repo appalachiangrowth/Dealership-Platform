@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  LayoutDashboard, Building2, Palette, Type, Car, Newspaper, Inbox, Users, Settings2, ExternalLink, LogOut, Menu, Plus, KeyRound, Rss, LifeBuoy, ShieldAlert, X,
+  LayoutDashboard, Building2, Palette, Type, Car, Newspaper, Inbox, Users, Settings2, ExternalLink, LogOut, Menu, Plus, KeyRound, Rss, LifeBuoy, ShieldAlert, X, Megaphone,
 } from 'lucide-react';
 import { api, auth, mediaUrl, siteUrl, PLATFORM_ADMIN_URL } from '@/lib/api';
 import { useSession } from '@/lib/session';
@@ -89,6 +89,7 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
       items: [
         { href: '/dealer/inventory', label: 'Inventory', icon: Car, perm: ['inventory'] },
         { href: '/dealer/cargurus', label: 'CarGurus feed', icon: Rss, perm: ['inventory'], feature: 'cargurus' },
+        { href: '/dealer/facebook', label: 'FB Poster', icon: Megaphone, perm: ['inventory'], feature: 'facebook' },
         { href: '/dealer/blog', label: 'Blog & news', icon: Newspaper, perm: ['blog'], feature: 'blog' },
       ],
     },

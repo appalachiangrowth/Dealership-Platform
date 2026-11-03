@@ -5,3 +5,5 @@ uploads/*
 !uploads/.gitkeep
 src/generated
 *.tsbuildinfo
+# FB Poster: Facebook logins (Chrome profiles), screenshots, temp media - keep private
+storage/

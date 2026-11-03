@@ -126,6 +126,22 @@ To add or update a design: put the new version folder in `frontend/themes/<id>/<
 theme.json) and its `assets/` in `frontend/public/themes/<id>/<version>/assets/`, then record the release in
 Platform Admin › Themes & releases.
 
-## 6. Not carried over yet
-* **Photo branding bands** (header/footer strips burned into photos with GD) — the settings are kept, the image processing is not ported.
-* The **Facebook Group Poster** stays the separate Node + Puppeteer app in the old `fb/app` folder.
+## 6. FB Poster (Facebook groups, Pages and Marketplace)
+The old `fb-poster` app (Group Poster + Marketplace add-on) is built in: Dealership Portal › **FB Poster**
+(switch it on per dealership with the `facebook` feature flag).
+
+* Nothing runs on the dealer's computer. The backend starts one Chrome per dealer user on the **server**
+  (Puppeteer, headless). The dealer sees that browser inside the portal ("Show browser"), logs in to Facebook there
+  and answers Facebook's security checks there.
+* The Facebook login (Chrome profile) is kept in `backend/storage/facebook/profiles/<dealership>/<user>/` — keep this
+  folder private and backed up; it is in `.gitignore`. Groups, Pages, collections, posting runs and Marketplace
+  listings are in the database (`FbAccount`, `FbCollection`, `FbPostRun`, `FbListing`).
+* Marketplace uses the vehicles from Inventory (no second inventory). Marketplace settings: `TenantSettings.fbSettings`.
+* Backend `.env` (all optional): `FB_MAX_BROWSERS=4` (Chromes at the same time), `FB_IDLE_MINUTES=15` (close an
+  unused browser; the login is kept), `FB_STORAGE_DIR`, `CHROME_PATH` (use this Chrome), `FB_HEADLESS=false` (show
+  the Chrome windows on the server, for debugging).
+* **On a Linux VPS:** run `npx puppeteer browsers install chrome` once in `backend/` (or install Google Chrome), plus
+  Chrome's libraries: `sudo apt-get install -y libnss3 libatk-bridge2.0-0 libgbm1 libxkbcommon0 libasound2 (libasound2t64 on Ubuntu 24) libxdamage1
+  libxrandr2 libpango-1.0-0 libcairo2 fonts-liberation`. About 300–500 MB RAM per open Facebook browser.
+* Facebook sees the server's internet address. If a login keeps getting security checks, set a proxy for it
+  (shield button on the FB Poster page).

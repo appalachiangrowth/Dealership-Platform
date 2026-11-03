@@ -18,7 +18,7 @@ async function bootstrap() {
     origin: (origin, cb) => cb(null, true),
     credentials: false,
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Id', 'X-Site-Host'],
-    exposedHeaders: ['Content-Disposition'],
+    exposedHeaders: ['Content-Disposition', 'X-Frame-Seq'],
   });
 
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));

@@ -246,6 +246,10 @@ model Tenant {
   cargurusLogs       CargurusLog[]
   auditLogs          AuditLog[]
   loginEvents        LoginEvent[]
+  fbAccounts         FbAccount[]
+  fbCollections      FbCollection[]
+  fbListings         FbListing[]
+  fbPostRuns         FbPostRun[]
 
   @@index([status])
 }
@@ -333,6 +337,9 @@ model TenantSettings {
   cargurusRemoteDir  String  @default("")
   cargurusRemoteName String  @default("inventory.csv")
 
+  /// FB Poster › Marketplace settings (templates, daily limit, auto publish, AI writer); aiKey is write-only
+  fbSettings Json @default("{}")
+
   updatedAt DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -415,6 +422,7 @@ model Vehicle {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   leads  Lead[]
+  fbListing FbListing?
 
   @@unique([tenantId, slug])
   @@index([tenantId, status])
@@ -644,4 +652,106 @@ model CargurusLog {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, createdAt])
+}
+
+// ───────────────────────── FB Poster (Facebook groups / Pages / Marketplace) ─────────────────────────
+// The Facebook login itself is NOT stored here: it lives in the server-side Chrome profile
+// backend/storage/facebook/profiles/<dealership>/<user>/ (one per dealer user).
+
+/// The Facebook account a dealer user connected, plus the Pages / groups found in it
+model FbAccount {
+  id           String    @id @default(uuid())
+  tenantId     String
+  /// dealer user id, or "owner-<id>" for a platform owner in support mode
+  userKey      String
+  fbUserId     String    @default("")
+  fbName       String    @default("")
+  connectedAt  DateTime?
+  lastActiveAt DateTime?
+  /// the Page this login currently posts as: { url, name } (empty = the personal profile)
+  actingAs     Json      @default("{}")
+  /// [{ name, url }]
+  pages        Json      @default("[]")
+  groups       Json      @default("[]")
+  /// optional proxy for this login, e.g. http://user:pass@host:port
+  proxy        String    @default("")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userKey])
+}
+
+/// Saved sets of groups (old collections.json), per Facebook login
+model FbCollection {
+  id          String   @id @default(uuid())
+  tenantId    String
+  userKey     String
+  name        String
+  /// { url, name } of the Page to post as first, or {}
+  page        Json     @default("{}")
+  includePage Boolean  @default(true)
+  /// [{ name, url }]
+  items       Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userKey])
+}
+
+/// One Marketplace listing per inventory vehicle (old marketplace.json → vehicle.listing + listing copy)
+model FbListing {
+  id          String    @id @default(uuid())
+  tenantId    String
+  vehicleId   String    @unique
+  /// none | queued | publishing | awaiting_publish | published | unconfirmed | failed | sold | removed
+  status      String    @default("none")
+  url         String    @default("")
+  fbId        String    @default("")
+  postedPrice Decimal?  @db.Decimal(12, 2)
+  error       String    @default("")
+  publishedAt DateTime?
+  checkedAt   DateTime?
+  /// userKey of the Facebook login that posted it (only that login can edit it on Facebook)
+  postedBy    String    @default("")
+  // listing text (title = first line of the Facebook description)
+  title       String    @default("")
+  description String    @default("")
+  hashtags    String    @default("")
+  copySource  String    @default("")
+  /// Facebook's condition list (Excellent / Very good / Good / Fair / Poor); empty = from the vehicle
+  fbCondition String    @default("")
+  cleanTitle  Boolean   @default(true)
+  /// [{ at, note }] newest first, last 30
+  history     Json      @default("[]")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+}
+
+/// One "Start posting" run to groups / Pages
+model FbPostRun {
+  id         String    @id @default(uuid())
+  tenantId   String
+  userKey    String
+  caption    String    @default("")
+  media      Int       @default(0)
+  /// [{ url, name, status, note, error }]
+  results    Json      @default("[]")
+  ok         Int       @default(0)
+  failed     Int       @default(0)
+  cancelled  Boolean   @default(false)
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userKey, startedAt])
 }
