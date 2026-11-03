@@ -5,6 +5,7 @@ import { ContentService } from '../content/content.service.js';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service.js';
 import { clean } from '../common/util.js';
 import type { Prisma, Tenant } from '../generated/prisma/client.js';
+import { publishedPagesFor } from '../site-pages/site-pages.service.js';
 
 /** Vehicle categories used by the category pages (/used-sedans …). */
 export const CATEGORIES: Record<string, { label: string; match: string[] }> = {
@@ -193,6 +194,8 @@ export class PublicService {
       settings,
       colors: (saved?.colors ?? {}) as Record<string, string>,
       features: await this.tenants.features(t),
+      /** custom pages from Platform Admin › Pages & SEO (menu links + sitemap) */
+      pages: await publishedPagesFor(this.prisma, t.id),
     };
   }
 

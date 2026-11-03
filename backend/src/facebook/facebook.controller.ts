@@ -145,6 +145,16 @@ export class FacebookController {
     return this.fb.deleteCollection(t, u, id);
   }
 
+  @Get('quick-config')
+  getQuickConfig(@TenantId() t: string, @CurrentUser() u: AuthUser) {
+    return this.fb.getQuickConfig(t, u);
+  }
+
+  @Put('quick-config')
+  saveQuickConfig(@TenantId() t: string, @CurrentUser() u: AuthUser, @Body() b: Record<string, unknown>) {
+    return this.fb.saveQuickConfig(t, u, b);
+  }
+
   /** multipart: media files + targets, names, caption, hashtags, order, delayMin, delayMax */
   @Post('post')
   @UseInterceptors(

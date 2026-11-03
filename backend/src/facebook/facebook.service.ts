@@ -407,6 +407,30 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
     return { ok: true };
   }
 
+  async getQuickConfig(tenantId: string, u: AuthUser) {
+    const { account } = await this.ctx(tenantId, u);
+    const ts = await this.prisma.tenantSettings.findUnique({ where: { tenantId } });
+    const s = (ts?.fbSettings && typeof ts.fbSettings === 'object' ? ts.fbSettings : {}) as Record<string, unknown>;
+    const quick = (s.quickPost && typeof s.quickPost === 'object' ? s.quickPost : {}) as Record<string, unknown>;
+    return {
+      quickPost: quick,
+      account: this.accountView(account),
+    };
+  }
+
+  async saveQuickConfig(tenantId: string, u: AuthUser, b: Record<string, unknown>) {
+    await this.ctx(tenantId, u);
+    const ts = await this.prisma.tenantSettings.findUnique({ where: { tenantId } });
+    const cur = (ts?.fbSettings && typeof ts.fbSettings === 'object' ? ts.fbSettings : {}) as Record<string, unknown>;
+    const next = { ...cur, quickPost: b };
+    await this.prisma.tenantSettings.upsert({
+      where: { tenantId },
+      create: { tenantId, fbSettings: next as Prisma.InputJsonValue },
+      update: { fbSettings: next as Prisma.InputJsonValue },
+    });
+    return { ok: true, quickPost: b };
+  }
+
   // ───────────────────────── posting to groups / Pages ─────────────────────────
 
   /** a vehicle photo URL → a file on disk (+ whether it is a temp copy) */

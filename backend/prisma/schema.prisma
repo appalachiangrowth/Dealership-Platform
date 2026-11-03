@@ -250,6 +250,7 @@ model Tenant {
   fbCollections      FbCollection[]
   fbListings         FbListing[]
   fbPostRuns         FbPostRun[]
+  sitePages          SitePage[]
 
   @@index([status])
 }
@@ -754,4 +755,43 @@ model FbPostRun {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, userKey, startedAt])
+}
+
+// ───────────────────────── custom website pages (Platform Admin › Pages & SEO) ─────────────────────────
+
+enum SitePageStatus {
+  DRAFT
+  PUBLISHED
+}
+
+/// A page built from sections. It has no design of its own: the website renders it inside the dealership's
+/// current theme (header, footer, fonts, brand colours), so it changes look when the theme changes.
+model SitePage {
+  id           String         @id @default(uuid())
+  /// null = shown on every dealership's website; a dealership's own page with the same address wins
+  tenantId     String?
+  title        String
+  /// address on the website: /<slug>
+  slug         String
+  status       SitePageStatus @default(DRAFT)
+  /// working copy the editor saves: [{ id, type, tone, …fields }]
+  sections     Json           @default("[]")
+  /// what the website shows (copied from sections on Publish)
+  published    Json?
+  /// { title, description, image, noindex } — working copy / published copy
+  seo          Json           @default("{}")
+  publishedSeo Json?
+  showInNav    Boolean        @default(true)
+  navLabel     String         @default("")
+  navOrder     Int            @default(0)
+  publishedAt  DateTime?
+  createdBy    String         @default("")
+  updatedBy    String         @default("")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([slug])
 }

@@ -8,7 +8,8 @@
  */
 import { backend, hostOf, originOf, securityHeaders, siteErrorPage, statePage } from '@/lib/backend';
 import { loadTheme, themesInstalled } from '@/lib/engine';
-import { renderPage } from '@/lib/page';
+import { renderPage, type ThemeContext } from '@/lib/page';
+import { injectNav, renderCustomPage, type CustomPage, type NavItem } from '@/lib/custom-pages';
 import { rel, siteTokens } from '@/lib/tokens';
 import { existsSync, statSync } from 'fs';
 import { readFile } from 'fs/promises';
@@ -44,6 +45,41 @@ async function context(host: string, previewTheme?: string) {
   const res = await backend('/public/theme-context', host, { query: previewTheme ? { theme: previewTheme } : {} });
   if (!res.ok) return { error: res };
   return { ctx: await res.json() };
+}
+
+/** menu links for the published custom pages (Platform Admin › Pages & SEO) that are "shown in the menu" */
+function navItems(ctx: ThemeContext): NavItem[] {
+  return (ctx.pages || []).filter((p) => p.showInNav).map((p) => ({ slug: p.slug, label: p.navLabel || p.title }));
+}
+
+/** a custom page: published copy, or the draft with ?pa_page_preview=<token> from Platform Admin */
+async function customPage(req: Request, url: URL, host: string, slug: string) {
+  const preview = url.searchParams.get('pa_page_preview') || '';
+  const res = await backend(`/public/pages/${encodeURIComponent(slug)}`, host, { query: preview ? { preview } : {} });
+  if (res.status === 404) {
+    const body = (await res.json().catch(() => ({}))) as { code?: string; message?: string };
+    if (body.code === 'unknown_site') return siteErrorPage(new Response(JSON.stringify(body), { status: 404 }));
+    return statePage(404, 'Page not found', preview && body.message ? body.message : 'The page you are looking for does not exist.');
+  }
+  if (!res.ok) return siteErrorPage(res);
+  const data = (await res.json()) as { page: CustomPage; preview: boolean };
+
+  const requested = url.searchParams.get('pa_theme_preview') || url.searchParams.get('theme') || '';
+  const themePreview = /^[a-z0-9][a-z0-9-]{1,39}$/.test(requested) && !!themesInstalled()[requested];
+  const { ctx, error } = await context(host, themePreview ? requested : undefined);
+  if (error) return siteErrorPage(error);
+  const theme = loadTheme(ctx.theme.id, ctx.theme.version);
+
+  // inventory sections show the dealer's live vehicles (same list the theme pages use)
+  let vehicles: Record<string, unknown>[] = [];
+  if ((data.page.sections || []).some((s) => s && s.type === 'inventory')) {
+    const inv = await backend('/public/inventory.json', host);
+    if (inv.ok) vehicles = ((await inv.json()) as { vehicles?: Record<string, unknown>[] }).vehicles || [];
+  }
+  const html = renderCustomPage(ctx, theme, data.page, originOf(req), { vehicles, navPages: navItems(ctx), themePreview, preview: data.preview });
+  return new Response(html, {
+    headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': data.preview || themePreview ? 'no-store' : 'no-cache' }),
+  });
 }
 
 export async function GET(req: Request, { params }: Ctx) {
@@ -89,8 +125,15 @@ export async function GET(req: Request, { params }: Ctx) {
       const u = t.site_url + '/' + (p.template === 'index.html' ? '' : p.template);
       xml += `  <url><loc>${u.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')}</loc></url>\n`;
     }
+    for (const p of (ctx as ThemeContext).pages || []) {
+      if (p.noindex) continue;
+      xml += `  <url><loc>${(t.site_url + '/' + p.slug).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</loc></url>\n`;
+    }
     return new Response(xml + '</urlset>\n', { headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
   }
+
+  /* ---------------- custom pages: /financing (or /financing.html when no theme page has that name) ---------------- */
+  if (/^[a-z0-9][a-z0-9-]*$/.test(r)) return customPage(req, url, host, r);
 
   /* ---------------- theme pages ---------------- */
   if (!/^[a-z0-9][a-z0-9\-]*\.html$/.test(r)) return statePage(404, 'Page not found', 'The page you are looking for does not exist.');
@@ -103,11 +146,12 @@ export async function GET(req: Request, { params }: Ctx) {
 
   const theme = loadTheme(ctx.theme.id, ctx.theme.version);
   const page = (theme.manifest.pages || []).find((p) => p.template === r);
-  if (!page) return statePage(404, 'Page not found', 'The page you are looking for does not exist.');
+  if (!page) return customPage(req, url, host, r.replace(/\.html$/, ''));
 
   // ?pa_live=1 — live preview inside the Dealership Portal editors (texts / colours update while typing)
   const live = url.searchParams.get('pa_live') === '1';
-  const html = renderPage(ctx, theme, r, originOf(req), themePreview, live);
+  // menu links of the custom pages (not in the editor preview: the dealer edits the theme's own texts there)
+  const html = injectNav(renderPage(ctx, theme, r, originOf(req), themePreview, live), theme, live ? [] : navItems(ctx));
   return new Response(html, {
     headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': themePreview || live ? 'no-store' : 'no-cache' }),
   });

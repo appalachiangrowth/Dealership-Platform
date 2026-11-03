@@ -42,3 +42,20 @@ Dealers switch designs themselves in Design & colours; their text, vehicles and 
 A ZIP must include exactly one `theme.json`, page templates under `templates/`, and optional `partials/` and
 `assets/`. The manifest's `id` and `version` decide the install folder `themes/<id>/<version>/`. Existing
 versions are never overwritten. See `INSTALL-THEME-ZIP-INSTALLER.md` for the full format and safety rules.
+
+## Custom pages (Platform Admin › Pages & SEO)
+Custom pages are drawn inside your theme: the website takes one of your page templates, keeps its `<head>`, header,
+footer and scripts, and puts the page's sections where the main content was. The built-in themes are described in
+`frontend/lib/custom-pages.ts` (THEME_KITS). A new theme works without changes (it uses `<main>` or the space between
+`</header>` and the last `<footer>`, and its `design.colors`), or it can describe itself in theme.json:
+
+```json
+"custom_page": {
+  "template": "about-us.html",
+  "start": "<main id=\"main\">", "end": "</main>",
+  "links": { "inventory": "inventory.html", "contact": "contact-us.html", "about": "about-us.html",
+             "category": "used-{x}.html", "vehicle": "vehicle.html?id={id}" },
+  "nav": [{ "open": "<nav class=\"main-nav\"", "item": "<a href=\"{href}\">{label}</a>" }],
+  "vars": { "--pa-primary": "var(--brand)", "--pa-bg": "#fff", "--pa-fh": "var(--font-heading)" }
+}
+```

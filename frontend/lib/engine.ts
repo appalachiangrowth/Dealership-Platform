@@ -79,13 +79,24 @@ export function loadTheme(id: string, version: string): Theme {
   return { id: tid, version: ver, dir, url: `themes/${tid}/${ver}`, manifest };
 }
 
-/** pa_tpl_source: template with {%include%} partials expanded */
-function tplSource(theme: Theme, file: string, depth = 0): string {
+/** A template file as written (partials not expanded). "partials/x.html" reads a partial. */
+export function rawTemplate(theme: Theme, file: string): string {
   if (!/^[a-z0-9][a-z0-9_\-\/]*\.html$/.test(file) || file.includes('..')) return '';
   const path = join(theme.dir, file.includes('/') ? file : join('templates', file));
-  const src = cached(`f:${path}`, () => (existsSync(path) ? readFileSync(path, 'utf8') : ''));
+  return cached(`f:${path}`, () => (existsSync(path) ? readFileSync(path, 'utf8') : ''));
+}
+
+/** {%include x.html%} → the partial (up to 4 levels deep) */
+function expandIncludes(theme: Theme, src: string, depth = 0): string {
   if (depth > 3) return src;
-  return src.replace(/\{%include\s+([a-z0-9_\-\/]+\.html)\s*%\}/g, (_m: string, f: string) => tplSource(theme, 'partials/' + f.split('/').pop(), depth + 1));
+  return src.replace(/\{%include\s+([a-z0-9_\-\/]+\.html)\s*%\}/g, (_m: string, f: string) =>
+    expandIncludes(theme, rawTemplate(theme, 'partials/' + f.split('/').pop()), depth + 1),
+  );
+}
+
+/** pa_tpl_source: template with {%include%} partials expanded */
+function tplSource(theme: Theme, file: string): string {
+  return expandIncludes(theme, rawTemplate(theme, file));
 }
 
 function markerAttrs(s: string): Record<string, string> {
@@ -203,7 +214,12 @@ const liveAttr = (s: string) => encodeURIComponent(s).replace(/-/g, '%2D');
 
 /** pa_render_template */
 export function renderTemplate(theme: Theme, file: string, ctx: RenderCtx): string {
-  let src = tplSource(theme, file);
+  return renderSource(theme, tplSource(theme, file), ctx);
+}
+
+/** Renders template text that is not a file (custom pages built from Platform Admin › Pages & SEO). */
+export function renderSource(theme: Theme, source: string, ctx: RenderCtx): string {
+  let src = expandIncludes(theme, source);
   const { values, tokens, raw, features } = ctx;
   const map = (theme.manifest.content_map || {}) as Record<string, string>;
   const real = (tokens._real && typeof tokens._real === 'object' ? tokens._real : {}) as Record<string, unknown>;

@@ -84,7 +84,11 @@ export function mediaUrl(u?: string | null) {
 
 /** Public website address of a dealership. */
 export function siteUrl(t: { id: string; domains?: string[]; siteUrl?: string }) {
-  const pattern = process.env.NEXT_PUBLIC_SITE_PATTERN || 'http://{id}.localhost:3002';
+  let pattern = process.env.NEXT_PUBLIC_SITE_PATTERN || 'http://{id}.localhost:3002';
+  // older settings pointed at port 3000, which is now the Dealership Portal (or 3001, this admin): the websites are on 3002
+  const port = (u: string) => (u.match(/:(\d+)(?:\/|$)/) || [])[1] || '';
+  const pp = port(pattern.replace('{id}', 'x'));
+  if (pp && (pp === port(DEALER_PORTAL_URL) || pp === port(PLATFORM_ADMIN_URL))) pattern = 'http://{id}.localhost:3002';
   // On this computer always open the local website app, never the live domain / old address saved in Business details
   if (isLocalAdmin()) return pattern.replace('{id}', t.id);
   if (t.siteUrl) return t.siteUrl;

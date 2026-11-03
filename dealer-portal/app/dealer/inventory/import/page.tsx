@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { CG_IMG_OK, photoExt } from '@/lib/cargurus';
 import { brandRun } from '@/lib/branding';
 import { useToast } from '@/components/toast';
+import { FacebookIcon } from '@/lib/facebook';
 import { Button, Input, LinkButton, cx } from '@/components/ui';
 import { money, vehicleName } from '@/lib/format';
 
@@ -798,9 +799,57 @@ export default function ImportPage() {
               {done.ready} CarGurus-ready vehicle{done.ready === 1 ? ' is' : 's are'} now queued for CarGurus (sent after the platform team verifies them).
             </div>
           )}
-          <LinkButton href="/dealer/inventory" className="mt-6">
-            View inventory
-          </LinkButton>
+
+          {/* Where do you want to post options */}
+          <div className="mx-auto mt-6 max-w-xl text-left">
+            <h4 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-slate-500">Where do you want to post?</h4>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition hover:border-slate-300">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-100 text-xs font-bold text-orange-700">CG</span>
+                    <b className="text-sm font-semibold text-slate-900">CarGurus Feed</b>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+                    Review vehicles eligible for the automated CarGurus syndication feed.
+                  </p>
+                </div>
+                <Link
+                  href="/dealer/cargurus"
+                  className="mt-3.5 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  View CarGurus feed
+                </Link>
+              </div>
+
+              <div className="flex flex-col justify-between rounded-xl border border-blue-200 bg-blue-50/40 p-4 transition hover:border-blue-300">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#1877F2] text-white">
+                      <FacebookIcon className="h-4 w-4" />
+                    </span>
+                    <b className="text-sm font-semibold text-slate-900">Facebook (FB Poster)</b>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+                    Set up your Facebook Page and Groups to post vehicles directly from inventory.
+                  </p>
+                </div>
+                <Link
+                  href="/dealer/facebook"
+                  className="mt-3.5 inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#1877F2] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#166fe5]"
+                >
+                  <FacebookIcon className="h-3.5 w-3.5" />
+                  Set up Facebook posting
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-center">
+            <LinkButton href="/dealer/inventory" variant="secondary">
+              View inventory
+            </LinkButton>
+          </div>
         </div>
       )}
     </div>

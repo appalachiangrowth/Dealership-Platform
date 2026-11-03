@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Gauge, Building2, Car, Inbox, Users, Palette, ToggleRight, Settings, ShieldCheck, ScrollText, Server, LogOut, Menu, Plus, Search, KeyRound, Rss, X,
+  Gauge, Building2, Car, Inbox, Users, Palette, ToggleRight, Settings, ShieldCheck, ScrollText, Server, LogOut, Menu, Plus, Search, KeyRound, Rss, X, FileText,
 } from 'lucide-react';
 import { api, auth, DEALER_PORTAL_URL } from '@/lib/api';
 import { useSession } from '@/lib/session';
@@ -26,6 +26,7 @@ const NAV: { title: string; items: { href: string; label: string; icon: React.El
     title: 'Control',
     items: [
       { href: '/platform/themes', label: 'Themes & releases', icon: Palette },
+      { href: '/platform/pages', label: 'Pages & SEO', icon: FileText },
       { href: '/platform/features', label: 'Feature flags', icon: ToggleRight },
       { href: '/platform/settings', label: 'Platform settings', icon: Settings },
     ],
@@ -166,7 +167,7 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
             </Link>
           </div>
         </header>
-        <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
+        <main className={cx('mx-auto w-full flex-1', /^\/platform\/pages\/[^/]+$/.test(pathname) ? 'max-w-none' : 'max-w-7xl px-4 py-6 sm:px-8 sm:py-8')}>{children}</main>
       </div>
     </div>
   );

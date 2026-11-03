@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Users, RefreshCw, Search, Plus, X, Star, ArrowLeft, ArrowRight, Play, Square, Upload, Film, CheckCircle2, XCircle, Clock, Loader2, Trash2, ExternalLink } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
-import { fb, useFb, type FbItem, type FbResult } from '@/lib/facebook';
+import { fb, useFb, type FbItem, type FbResult, getSavedFbPostingConfig, saveFbPostingConfig, type FbPostingConfig } from '@/lib/facebook';
 import { Badge, Button, Card, Field, Input, Modal, Select, Textarea, Toggle, cx } from '@/components/ui';
 import { useToast } from '@/components/toast';
 import { FbActivity } from '@/components/fb/FbChrome';
@@ -29,6 +30,7 @@ const RESULT: Record<string, { color: string; text: string }> = {
 };
 
 export default function FbGroupsPage() {
+  const router = useRouter();
   const { state, refresh } = useFb();
   const toast = useToast();
   const account = state?.account;
@@ -62,11 +64,37 @@ export default function FbGroupsPage() {
   const job = state?.job;
   const running = job?.status === 'running';
 
+  // restore saved posting configuration on initial load
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    const saved = getSavedFbPostingConfig();
+    if (saved && saved.configured) {
+      restored.current = true;
+      if (saved.groups?.length) {
+        setSelected(new Set(saved.groups.map((g) => g.url)));
+      }
+      if (saved.page?.url) {
+        setPageTarget(saved.page);
+        setIncludePage(saved.includePage !== false);
+      }
+      if (saved.collection?.id && cols.data?.collections) {
+        const found = cols.data.collections.find((c) => c.id === saved.collection?.id);
+        if (found) setActiveCol(found);
+      }
+      if (saved.hashtags && !hashtags) setHashtags(saved.hashtags);
+      if (saved.captionTemplate && !caption) setCaption(saved.captionTemplate);
+      if (saved.delayMin) setDelayMin(saved.delayMin);
+      if (saved.delayMax) setDelayMax(saved.delayMax);
+    }
+  }, [cols.data?.collections]);
+
   // the Page this login posts as is the default "post on the Page first" target
   const actingUrl = account?.actingAs?.url || '';
   const actingName = account?.actingAs?.name || '';
   const lastActing = useRef('');
   useEffect(() => {
+    if (restored.current && pageTarget?.url) return;
     if (actingUrl === lastActing.current) return;
     lastActing.current = actingUrl;
     setPageTarget(actingUrl ? { url: actingUrl, name: actingName || actingUrl } : null);
@@ -257,6 +285,40 @@ export default function FbGroupsPage() {
       },
       `Posting to ${targets.length} place${targets.length === 1 ? '' : 's'} started. You can close this page; it carries on.`,
     );
+
+  const saveAndStartPosting = async () => {
+    if (!targets.length) {
+      toast.error('Tick at least one group (or a Page) to post to.');
+      return;
+    }
+
+    const config: FbPostingConfig = {
+      configured: true,
+      page: includePage && pageTarget ? pageTarget : null,
+      includePage,
+      groups: groups.filter((g) => selected.has(g.url)),
+      collection: activeCol ? { id: activeCol.id, name: activeCol.name } : null,
+      captionTemplate: caption,
+      hashtags,
+      delayMin,
+      delayMax,
+      updatedAt: new Date().toISOString(),
+    };
+
+    saveFbPostingConfig(config);
+    void fb.put('quick-config', config).catch(() => {});
+
+    if (media.length || (vehicleId && caption.trim())) {
+      try {
+        await start();
+      } catch {
+        // start errors are toasted by run()
+      }
+    }
+
+    toast.ok('Facebook posting preferences saved! Each vehicle in your inventory now has an FB button.');
+    router.push('/dealer/inventory?fb_ready=1');
+  };
 
   const connected = !!(state?.loggedIn || account?.fbUserId);
 
@@ -494,7 +556,7 @@ export default function FbGroupsPage() {
               </div>
 
               <Field label="Description">
-                <Textarea ref={captionRef as never} value={caption} onChange={(e) => setCaption(e.target.value)} rows={8} placeholder="Write your post text…" />
+                <Textarea ref={captionRef} value={caption} onChange={(e) => setCaption(e.target.value)} rows={8} placeholder="Write your post text…" />
               </Field>
               <div className="-mt-2 flex flex-wrap gap-1">
                 {EMOJI.map((e) => (
@@ -522,7 +584,7 @@ export default function FbGroupsPage() {
                     <Square className="h-4 w-4" /> Stop after current
                   </Button>
                 ) : (
-                  <Button variant="success" loading={loading === 'post'} disabled={!targets.length || !!state?.busy} onClick={start}>
+                  <Button variant="success" loading={loading === 'post'} disabled={!targets.length || !!state?.busy} onClick={saveAndStartPosting}>
                     <Play className="h-4 w-4" /> Start posting
                   </Button>
                 )}

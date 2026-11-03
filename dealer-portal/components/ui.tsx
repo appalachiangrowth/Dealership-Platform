@@ -60,9 +60,11 @@ export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTML
   return <input ref={ref} {...p} className={cx(inputCls, className)} />;
 });
 
-export function Textarea({ className, ...p }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...p} className={cx(inputCls, 'min-h-[90px]', className)} />;
-}
+export const Textarea = forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
+  function Textarea({ className, ...p }, ref) {
+    return <textarea ref={ref} {...p} className={cx(inputCls, 'min-h-[90px]', className)} />;
+  },
+);
 
 export function Select({ className, children, ...p }: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (

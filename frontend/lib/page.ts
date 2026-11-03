@@ -2,7 +2,7 @@
  * Builds one theme page exactly like the old index.php did: tokens, window.SITE, structured data,
  * design colours, preview bar, canonical/OG tags, then the template engine.
  */
-import { colorVarMap, designCss, renderTemplate, type Theme } from './engine';
+import { colorVarMap, designCss, renderSource, renderTemplate, type Theme } from './engine';
 import { liveScript } from './live';
 import { h, jsonHex } from './php';
 import { absSiteUrl, rel, siteTokens, siteTokensDisplay } from './tokens';
@@ -14,6 +14,15 @@ export interface ThemeContext {
   settings: Record<string, any>;
   colors: Record<string, string>;
   features: Record<string, boolean>;
+  /** published custom pages (Platform Admin › Pages & SEO): menu links + sitemap */
+  pages?: { slug: string; title: string; navLabel: string; showInNav: boolean; navOrder: number; noindex: boolean }[];
+}
+
+/** Custom pages: render this template text instead of a theme file, at this address, with these extra values. */
+export interface RenderOverride {
+  source: string;
+  path: string;
+  raw?: Record<string, string>;
 }
 
 /** Dealership Portal + Platform Admin addresses that may drive the live preview (ADMIN_URL, comma-separated). */
@@ -31,7 +40,7 @@ export function adminOrigins(): string[] {
   return Array.from(new Set([...defaults, ...fromEnv]));
 }
 
-export function renderPage(ctx: ThemeContext, theme: Theme, r: string, origin: string, themePreview: boolean, live = false): string {
+export function renderPage(ctx: ThemeContext, theme: Theme, r: string, origin: string, themePreview: boolean, live = false, override?: RenderOverride): string {
   const values: Record<string, string> = ctx.values || {};
   const realTokens = siteTokens(ctx.settings, origin);
   const tokens = siteTokensDisplay(realTokens, ctx.settings);
@@ -70,11 +79,13 @@ export function renderPage(ctx: ThemeContext, theme: Theme, r: string, origin: s
     PREVIEW_BAR: themePreview && !live
       ? '<div style="position:fixed;left:12px;bottom:12px;z-index:99999;background:#7c2d12;color:#fff;font:600 12px/1 system-ui,sans-serif;padding:9px 12px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.25);pointer-events:none">Theme preview — not activated</div>'
       : '',
-    CANONICAL: h(tokens.site_url + '/' + (r === 'index.html' ? '' : r)),
+    CANONICAL: h(tokens.site_url + '/' + (override ? override.path : r === 'index.html' ? '' : r)),
     OG_IMAGE: h(absSiteUrl(values['seo.home.share_image'] ? rel(values['seo.home.share_image']) : tokens.logo, tokens.site_url)),
   };
+  if (override?.raw) Object.assign(raw, override.raw);
 
-  const html = renderTemplate(theme, r, { values, tokens, raw, features: ctx.features || {}, live });
+  const rctx = { values, tokens, raw, features: ctx.features || {}, live };
+  const html = override ? renderSource(theme, override.source, rctx) : renderTemplate(theme, r, rctx);
   if (!live) return html;
   // editor preview: the portal can change texts / colours live and point at the text being edited
   const script = liveScript({ colorMap: colorVarMap(theme), origins: adminOrigins() });

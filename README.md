@@ -145,3 +145,22 @@ The old `fb-poster` app (Group Poster + Marketplace add-on) is built in: Dealers
   libxrandr2 libpango-1.0-0 libcairo2 fonts-liberation`. About 300–500 MB RAM per open Facebook browser.
 * Facebook sees the server's internet address. If a login keeps getting security checks, set a proxy for it
   (shield button on the FB Poster page).
+
+## 7. Pages & SEO (custom website pages)
+Platform Admin › **Pages & SEO** builds extra pages for the dealer websites (financing, trade-in, landing pages…)
+from sections: page header, text, picture + text, feature cards, **vehicles from inventory**, call to action, numbers,
+reviews, questions, gallery, contact form, map, custom HTML and spacers.
+
+* A page has no design of its own. The website (`frontend/lib/custom-pages.ts`) takes the header, footer, fonts
+  and scripts of the dealership's current theme and styles the sections with that theme's own colour variables, so
+  the page follows the dealer's brand colours and changes with the theme.
+* A page is shown on **every** dealership's website or on **one** dealership's. Texts may use `{name}`, `{phone}`,
+  `{city_state}` … so one shared page shows each dealer's own details. A dealership's own page wins over a shared
+  page with the same address.
+* Address: `/<slug>` (also `/<slug>.html`). Publish copies the draft to the website; later edits stay a draft until
+  "Publish changes". "Show in the website menu" adds a link to the theme's desktop and mobile menus on every page.
+* Inventory sections show the dealer's live published vehicles (filter by body style, make, featured, price) and
+  link to the theme's own vehicle and inventory pages. Contact forms arrive in Leads & inquiries.
+* SEO per page: Google title / description, share picture, "hide from Google". Published pages are added to
+  sitemap.xml. Pictures are stored in `backend/uploads/_platform/pages/`.
+* Table: `SitePage` (`npx prisma db push`, done by start-all.cmd).
