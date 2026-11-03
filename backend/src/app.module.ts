@@ -12,6 +12,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { VehiclesModule } from './vehicles/vehicles.module.js';
+import { BrandingModule } from './branding/branding.module.js';
 import { PostsModule } from './posts/posts.module.js';
 import { LeadsModule } from './leads/leads.module.js';
 import { ThemesModule } from './themes/themes.module.js';
@@ -37,6 +38,7 @@ import { AuthGuard } from './common/auth.guard.js';
     DashboardModule,
     SettingsModule,
     VehiclesModule,
+    BrandingModule,
     PostsModule,
     LeadsModule,
     ThemesModule,

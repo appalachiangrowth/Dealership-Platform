@@ -217,6 +217,8 @@ model Tenant {
   themeId     String         @default("classic")
   channel     ReleaseChannel @default(STABLE)
   themePin    String         @default("")
+  /// earlier designs of this dealership (Platform Admin "Roll back last change"): [{ themeId, themePin, at, by }]
+  themeHistory Json          @default("[]")
   /// per-dealer feature overrides, e.g. { "facebook": true, "cargurus": false }
   features    Json           @default("{}")
   notes       String         @default("")
@@ -308,6 +310,13 @@ model TenantSettings {
   maxUploadMb    Int     @default(12)
   brandImages    Boolean @default(true)
   brandBandColor String  @default("#EAF0F8")
+  /// photo branding: the dealer's own band images ("" = automatic band drawn from Business details)
+  brandHeader    String  @default("")
+  brandFooter    String  @default("")
+  /// branded photo url → { orig: clean copy url, src: original link, ver: bands version, lay: [CW, CH, HH, FH] }
+  brandMap       Json    @default("{}")
+  /// photo url → { at, reason } for photos that could not be branded
+  brandFailed    Json    @default("{}")
 
   // feeds & CarGurus
   dealerCrmEmail     String  @default("")

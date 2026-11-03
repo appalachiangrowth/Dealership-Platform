@@ -10,6 +10,26 @@ import { backend, hostOf, originOf, securityHeaders, siteErrorPage, statePage } 
 import { loadTheme, themesInstalled } from '@/lib/engine';
 import { renderPage } from '@/lib/page';
 import { rel, siteTokens } from '@/lib/tokens';
+import { existsSync, statSync } from 'fs';
+import { readFile } from 'fs/promises';
+import { join, normalize } from 'path';
+
+const MIME: Record<string, string> = {
+  css: 'text/css; charset=utf-8', js: 'text/javascript; charset=utf-8', json: 'application/json; charset=utf-8', svg: 'image/svg+xml',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', avif: 'image/avif', ico: 'image/x-icon',
+  woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf', mp4: 'video/mp4', webm: 'video/webm',
+  glb: 'model/gltf-binary', gltf: 'model/gltf+json', bin: 'application/octet-stream',
+};
+
+async function themeAsset(r: string) {
+  const root = join(process.cwd(), 'public');
+  const file = normalize(join(root, r));
+  const ext = (r.split('.').pop() || '').toLowerCase();
+  if (!file.startsWith(join(root, 'themes')) || !/^themes\/[a-z0-9][a-z0-9-]*\/\d+\.\d+\.\d+\/assets\//.test(r) || !MIME[ext] || !existsSync(file) || !statSync(file).isFile()) {
+    return new Response('Not found', { status: 404 });
+  }
+  return new Response(new Uint8Array(await readFile(file)), { headers: { 'Content-Type': MIME[ext], 'Cache-Control': 'public, max-age=2592000', 'X-Content-Type-Options': 'nosniff' } });
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +51,10 @@ export async function GET(req: Request, { params }: Ctx) {
   const host = hostOf(req);
   let r = decodeURIComponent((await params).path?.join('/') || '').replace(/^\/+/, '');
   if (r === '' || r === 'index.php') r = 'index.html';
+
+  /* design files installed from Platform Admin after the website was built (next start only serves public/ files that
+     existed at build time): public/themes/<id>/<version>/assets/… */
+  if (r.startsWith('themes/')) return themeAsset(r);
 
   /* ---------------- per-dealership files ---------------- */
   if (r === 'inventory.json') {

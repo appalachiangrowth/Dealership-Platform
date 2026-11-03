@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, Download, FileText, Pencil, Upload } from 'lucide-react';
 import { api } from '@/lib/api';
 import { CG_IMG_OK, photoExt } from '@/lib/cargurus';
+import { brandRun } from '@/lib/branding';
 import { useToast } from '@/components/toast';
 import { Button, Input, LinkButton, cx } from '@/components/ui';
 import { money, vehicleName } from '@/lib/format';
@@ -369,6 +370,7 @@ export default function ImportPage() {
       setDone({ add: res.created, upd: res.updated, left: (R?.rows.length || 0) - rows.length, bad, ready: rows.length - bad, skipped: res.skipped || [] });
       setStep(3);
       toast.ok(`Imported: ${res.created} added, ${res.updated} updated`);
+      void brandRun(); // photo links from the file get the branding bands (when photo branding is on)
     } catch (e) {
       toast.error((e as Error).message);
     } finally {

@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { brandRun, onBrandingChange } from '@/lib/branding';
 import { useRouter } from 'next/navigation';
 import { Car, ImageIcon, Plus, Search, Star, Upload } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
@@ -54,6 +55,13 @@ export default function InventoryPage() {
   const { data, setData, loading, error, reload } = useApi(
     `/dealer/vehicles?status=${status}&cg=${cg}&q=${encodeURIComponent(q.trim())}&sort=${sort}&page=${page}&pageSize=50`,
   );
+
+  // photos that still need the branding bands are done in the background (progress pill at the bottom)
+  useEffect(() => {
+    void brandRun();
+    return onBrandingChange(() => reload());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const open = (id: string, field?: string) => router.push(`/dealer/inventory/${id}${field ? `?focus=${encodeURIComponent(field)}` : ''}`);
 

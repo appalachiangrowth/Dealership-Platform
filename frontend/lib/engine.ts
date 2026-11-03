@@ -49,9 +49,13 @@ const versionCmp = (a: string, b: string) => {
   return 0;
 };
 
-/** pa_themes_installed: { id: [versions ascending] } */
+/** pa_themes_installed: { id: [versions ascending] } — re-read every 15 s so designs installed from Platform Admin appear without a restart */
+let installedAt = 0;
+let installedList: Record<string, string[]> | null = null;
 export function themesInstalled(): Record<string, string[]> {
-  return cached('installed', () => {
+  if (installedList && Date.now() - installedAt < 15_000) return installedList;
+  installedAt = Date.now();
+  return (installedList = (() => {
     const out: Record<string, string[]> = {};
     if (!existsSync(THEMES_DIR)) return out;
     for (const id of readdirSync(THEMES_DIR)) {
@@ -60,7 +64,7 @@ export function themesInstalled(): Record<string, string[]> {
       if (vers.length) out[id] = vers.sort(versionCmp);
     }
     return out;
-  });
+  })());
 }
 
 /** Resolves the design (and version) to render; falls back like pa_theme_for_tenant. */

@@ -6,6 +6,7 @@ import { useApi } from '@/lib/useApi';
 import { useToast } from '@/components/toast';
 import { Badge, Button, Card, Drawer, Field, Input, Loading, PageHeader, Select, StatusBadge, Table, Tabs, Td, Textarea, Toggle } from '@/components/ui';
 import { dateTime } from '@/lib/format';
+import { ThemeInstall } from '@/components/ThemeInstall';
 
 export default function ThemesPage() {
   const { data, setData, loading } = useApi('/platform/themes');
@@ -39,6 +40,7 @@ export default function ThemesPage() {
         onChange={setTab}
         tabs={[
           { id: 'designs', label: 'Designs' },
+          { id: 'install', label: 'Install & switch' },
           { id: 'requests', label: `Unlock requests${pending ? ` (${pending})` : ''}` },
           { id: 'payment', label: 'Payment instructions' },
         ]}
@@ -47,13 +49,18 @@ export default function ThemesPage() {
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {data.themes.map((t: any) => (
             <Card key={t.id} pad={false}>
-              <img src={mediaUrl(t.previewUrl)} alt="" className="aspect-[16/9] w-full rounded-t-2xl object-cover" />
+              {t.previewUrl ? (
+                <img src={mediaUrl(t.previewUrl)} alt="" className="aspect-[16/9] w-full rounded-t-2xl object-cover" />
+              ) : (
+                <div className="flex aspect-[16/9] w-full items-center justify-center rounded-t-2xl bg-slate-100 text-sm text-slate-400">No preview picture</div>
+              )}
               <div className="p-5">
                 <div className="flex items-center justify-between">
                   <h3 className="font-heading font-bold">{t.name}</h3>
                   {t.enabled ? <Badge color="green">Enabled</Badge> : <Badge>Hidden</Badge>}
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
+                  {t.installed?.length > 0 && <>Installed {t.installed.join(', ')} · </>}
                   Stable <b>{t.stableVersion}</b>
                   {t.betaVersion && <> · Beta <b>{t.betaVersion}</b></>} · {t.dealers} dealers · {t.priceLabel} · {t.licenses} licences
                 </p>
@@ -64,6 +71,12 @@ export default function ThemesPage() {
             </Card>
           ))}
         </div>
+      )}
+      {tab === 'install' && (
+        <ThemeInstall
+          themes={data.themes}
+          onChanged={async () => setData(await api('/platform/themes'))}
+        />
       )}
       {tab === 'requests' && (
         <Card pad={false}>

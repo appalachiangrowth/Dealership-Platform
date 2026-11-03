@@ -6,6 +6,7 @@ import { PlatformSettingsService } from '../platform-settings/platform-settings.
 import { clean, cleanMl, isColor, num, rateLimit } from '../common/util.js';
 import type { BillingCycle, Theme } from '../generated/prisma/client.js';
 import type { AuthUser } from '../common/auth.types.js';
+import { installedVersions } from './theme-installer.service.js';
 
 export const CURRENCIES = ['USD', 'PKR', 'CAD', 'GBP', 'EUR', 'AED'];
 const BILLING: BillingCycle[] = ['ONE_TIME', 'MONTHLY', 'YEARLY'];
@@ -137,7 +138,7 @@ export class ThemesService {
     const licenses = await this.prisma.themeLicense.groupBy({ by: ['themeId'], _count: true });
     const lic = Object.fromEntries(licenses.map((u) => [u.themeId, u._count]));
     return {
-      themes: themes.map((t) => ({ ...t, price: Number(t.price), priceLabel: priceLabel(t), dealers: used[t.id] || 0, licenses: lic[t.id] || 0 })),
+      themes: themes.map((t) => ({ ...t, price: Number(t.price), priceLabel: priceLabel(t), dealers: used[t.id] || 0, licenses: lic[t.id] || 0, installed: installedVersions(t.id) })),
       currencies: CURRENCIES,
       paymentInstructions: String(await this.platform.get('payment', 'instructions', '')),
     };

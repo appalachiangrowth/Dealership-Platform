@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, Check, ChevronDown, Copy, Trash2, X } from 'lucide-react';
 import { api, mediaUrl, siteUrl } from '@/lib/api';
 import { cgIssues, CG_ITEMS } from '@/lib/cargurus';
+import { brandRun } from '@/lib/branding';
 import { useToast } from './toast';
 import { useTenant } from './DealerShell';
 import { ImageUploader } from './ImageUploader';
@@ -182,6 +183,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
       else await api(`/dealer/vehicles/${v.id}`, { method: 'PATCH', body });
       setDirty(false);
       toast.ok(msg);
+      void brandRun(); // the main photo gets the dealer's branding bands (when photo branding is on)
       router.push('/dealer/inventory');
     } catch (e) {
       toast.error((e as Error).message);

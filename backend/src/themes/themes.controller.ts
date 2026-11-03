@@ -1,4 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { ThemeInstallerService } from './theme-installer.service.js';
 import { ThemesService } from './themes.service.js';
 import { CurrentUser, PlatformOnly } from '../common/decorators.js';
 import type { AuthUser } from '../common/auth.types.js';
@@ -7,7 +10,30 @@ import type { AuthUser } from '../common/auth.types.js';
 @Controller('platform')
 @PlatformOnly()
 export class ThemesController {
-  constructor(private readonly themes: ThemesService) {}
+  constructor(
+    private readonly themes: ThemesService,
+    private readonly installer: ThemeInstallerService,
+  ) {}
+
+  /** Install a design package (multipart "file", .zip). Installed as a new version; nothing is activated. */
+  @Post('themes/install')
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 41 * 1024 * 1024 } }))
+  install(@UploadedFile() file: { buffer: Buffer; originalname: string } | undefined, @CurrentUser() u: AuthUser) {
+    if (!file) throw new BadRequestException('No ZIP received. Choose a theme ZIP file first.');
+    return this.installer.install(file.buffer, file.originalname, u);
+  }
+
+  /** Switch one dealership's design (pinned to a version). */
+  @Post('themes/activate-tenant')
+  activateTenant(@Body() b: { tenantId?: string; themeId?: string; version?: string }, @CurrentUser() u: AuthUser) {
+    return this.installer.activateForTenant(b, u);
+  }
+
+  /** Restore that dealership's previous design. */
+  @Post('themes/rollback-tenant')
+  rollbackTenant(@Body() b: { tenantId?: string }, @CurrentUser() u: AuthUser) {
+    return this.installer.rollbackTenant(b, u);
+  }
 
   @Get('themes')
   list() {
