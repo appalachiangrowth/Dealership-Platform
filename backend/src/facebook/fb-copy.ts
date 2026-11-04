@@ -30,6 +30,10 @@ export function validate(v) {
   if (!v.model) errs.push('model');
   if (!v.price) errs.push('price');
   if (v.mileage === null || v.mileage === undefined) errs.push('mileage');
+  // Marketplace's vehicle form asks for these too (same list as the portal's "Marketplace ready")
+  if (!String(v.bodyStyle || '').trim()) errs.push('body style');
+  if (!String(v.exteriorColor || '').trim()) errs.push('exterior color');
+  if (!String(v.interiorColor || '').trim()) errs.push('interior color');
   return errs;
 }
 

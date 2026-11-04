@@ -250,21 +250,21 @@ export function Drawer({ open, onClose, title, children, footer, wide }: { open:
   );
 }
 
-export function Modal({ open, onClose, title, children, footer }: { open: boolean; onClose: () => void; title: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode }) {
+export function Modal({ open, onClose, title, children, footer, size = 'md' }: { open: boolean; onClose: () => void; title: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode; size?: 'md' | 'lg' }) {
   useEscape(open, onClose);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-      <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl">
-        <header className="flex items-center justify-between px-5 pt-4">
+      <div className={cx('relative flex max-h-[calc(100dvh-2rem)] w-full flex-col rounded-2xl bg-white shadow-2xl', size === 'lg' ? 'max-w-lg' : 'max-w-md')}>
+        <header className="flex shrink-0 items-center justify-between px-5 pt-4">
           <h2 className="text-base font-bold text-slate-900">{title}</h2>
           <button onClick={onClose} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Close">
             <X className="h-5 w-5" />
           </button>
         </header>
-        <div className="px-5 py-4 text-sm text-slate-600">{children}</div>
-        {footer && <footer className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">{footer}</footer>}
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-sm text-slate-600">{children}</div>
+        {footer && <footer className="flex shrink-0 justify-end gap-2 border-t border-slate-100 px-5 py-3">{footer}</footer>}
       </div>
     </div>
   );

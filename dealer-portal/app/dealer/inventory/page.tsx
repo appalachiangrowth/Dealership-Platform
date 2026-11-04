@@ -10,7 +10,11 @@ import { useApi } from '@/lib/useApi';
 import { useToast } from '@/components/toast';
 import { Button, ErrorBox, Input, LinkButton, Loading, Modal, PageHeader, Pagination, Select, cx } from '@/components/ui';
 import { money, vehicleName } from '@/lib/format';
-import { FacebookIcon, fb, getSavedFbPostingConfig, saveFbPostingConfig, type FbPostingConfig } from '@/lib/facebook';
+import { FacebookIcon, fb, getSavedFbPostingConfig, saveFbPostingConfig, type FbItem, type FbPostingConfig } from '@/lib/facebook';
+import { mpMissing, MP_FIX } from '@/lib/marketplace';
+
+type FbCollection = { id: string; name: string; page: { url?: string; name?: string } | null; includePage: boolean; items: FbItem[] };
+type FbAccountView = { actingAs?: { url?: string; name?: string }; pages?: FbItem[]; groups?: FbItem[] };
 
 type Issue = { field: string; label: string; msg: string };
 
@@ -63,6 +67,17 @@ export default function InventoryPage() {
   const [fbHashtags, setFbHashtags] = useState('');
   const [fbPosting, setFbPosting] = useState(false);
   const [fbLoadingText, setFbLoadingText] = useState(false);
+  // what this post goes to: a saved collection, or groups ticked by hand (the groups of the Page you post as)
+  const [fbCols, setFbCols] = useState<FbCollection[]>([]);
+  const [fbAccount, setFbAccount] = useState<FbAccountView | null>(null);
+  const [fbColIds, setFbColIds] = useState<Set<string>>(new Set());
+  const [fbSel, setFbSel] = useState<Set<string>>(new Set());
+  const [fbIncludePage, setFbIncludePage] = useState(true);
+  const [fbPageTarget, setFbPageTarget] = useState<FbItem | null>(null);
+  const [fbFind, setFbFind] = useState('');
+  const [fbTargetsLoading, setFbTargetsLoading] = useState(false);
+  // Facebook Marketplace: vehicles with every Marketplace field are listed there too (ticked by default)
+  const [fbMp, setFbMp] = useState(true);
 
   useEffect(() => {
     const cfg = getSavedFbPostingConfig();
@@ -92,6 +107,24 @@ export default function InventoryPage() {
     setFbLoadingText(true);
     setFbCaption(`🚗 ${name}\n${priceStr ? `💰 Price: ${priceStr}\n` : ''}${milesStr ? `📍 Mileage: ${milesStr}\n` : ''}Stock #: ${v.stockNumber || '—'}\n\nCall or visit us today!`);
     setFbHashtags(cfg?.hashtags || '#carsforsale #usedcars');
+    setFbFind('');
+    setFbMp(mpMissing(v).length === 0);
+    setFbColIds(new Set(cfg?.collection?.id ? [cfg.collection.id] : []));
+    setFbSel(new Set((cfg?.groups || []).map((g) => g.url)));
+    setFbIncludePage(cfg ? cfg.includePage !== false : true);
+    setFbPageTarget(cfg?.page || null);
+    setFbTargetsLoading(true);
+    Promise.all([
+      fb.get<{ quickPost: FbPostingConfig; account: FbAccountView }>('quick-config').catch(() => null),
+      fb.get<{ collections: FbCollection[] }>('collections').catch(() => null),
+    ])
+      .then(([q, c]) => {
+        const acc = q?.account || null;
+        setFbAccount(acc);
+        setFbCols(c?.collections || []);
+        if (!cfg?.page && acc?.actingAs?.url) setFbPageTarget({ url: acc.actingAs.url, name: acc.actingAs.name || acc.actingAs.url });
+      })
+      .finally(() => setFbTargetsLoading(false));
 
     try {
       const r = await fb.post<{ copy: { hashtags: string }; text: string; photos: string[] }>(`mp/vehicles/${v.id}/generate`, { ai: false, save: false });
@@ -106,28 +139,109 @@ export default function InventoryPage() {
     }
   }
 
+  // every group we know: the ones loaded for the Page you post as, saved ones and the ones in collections
+  const fbAllGroups: FbItem[] = (() => {
+    const seen = new Map<string, FbItem>();
+    for (const g of [...(fbAccount?.groups || []), ...(fbConfig?.groups || []), ...fbCols.flatMap((c) => c.items || [])]) if (g?.url && !seen.has(g.url)) seen.set(g.url, g);
+    return [...seen.values()];
+  })();
+  // groups already shown inside a ticked collection are not repeated below
+  const inCollections = new Set(fbCols.filter((c) => fbColIds.has(c.id)).flatMap((c) => (c.items || []).map((g) => g.url)));
+  const fbOther = fbAllGroups.filter((g) => !inCollections.has(g.url));
+  const fbShown = fbFind.trim() ? fbOther.filter((g) => (g.name + ' ' + g.url).toLowerCase().includes(fbFind.trim().toLowerCase())) : fbOther;
+  /** tick a collection: all its groups get ticked (and its Page); untick: its groups are unticked again */
+  const toggleCollection = (id: string) => {
+    const c = fbCols.find((x) => x.id === id);
+    if (!c) return;
+    const on = !fbColIds.has(id);
+    const nextIds = new Set(fbColIds);
+    if (on) nextIds.add(id);
+    else nextIds.delete(id);
+    setFbColIds(nextIds);
+    const stillCovered = new Set(fbCols.filter((x) => nextIds.has(x.id)).flatMap((x) => (x.items || []).map((g) => g.url)));
+    setFbSel((s) => {
+      const n = new Set(s);
+      for (const g of c.items || []) {
+        if (on) n.add(g.url);
+        else if (!stillCovered.has(g.url)) n.delete(g.url);
+      }
+      return n;
+    });
+    if (on && c.page?.url) {
+      setFbPageTarget({ url: c.page.url, name: c.page.name || c.page.url });
+      setFbIncludePage(c.includePage !== false);
+    }
+  };
+  const toggleGroup = (url: string) => {
+    setFbSel((s) => {
+      const n = new Set(s);
+      if (n.has(url)) n.delete(url);
+      else n.add(url);
+      return n;
+    });
+  };
+  const fbMpMissing = mpMissing(fbVehicle);
+  const fbMpOn = !!fbVehicle && fbMp && !fbMpMissing.length;
+  const fbTargetCount = fbSel.size + (fbIncludePage && fbPageTarget ? 1 : 0) + (fbMpOn ? 1 : 0);
+
   async function postVehicleToFacebook() {
-    if (!fbVehicle || !fbConfig) return;
+    if (!fbVehicle) return;
     const targets: string[] = [];
     const names: Record<string, string> = {};
 
-    if (fbConfig.includePage && fbConfig.page?.url) {
-      targets.push(fbConfig.page.url);
-      names[fbConfig.page.url] = fbConfig.page.name || fbConfig.page.url;
+    if (fbIncludePage && fbPageTarget?.url) {
+      targets.push(fbPageTarget.url);
+      names[fbPageTarget.url] = fbPageTarget.name || fbPageTarget.url;
     }
-    for (const g of fbConfig.groups || []) {
+    const chosen = fbAllGroups.filter((g) => fbSel.has(g.url));
+    for (const g of chosen) {
       if (g.url && !targets.includes(g.url)) {
         targets.push(g.url);
         names[g.url] = g.name || g.url;
       }
     }
 
-    if (!targets.length) {
-      toast.error('No targets selected. Click "Change settings" to configure your Page and groups.');
+    if (!targets.length && !fbMpOn) {
+      toast.error('Choose a collection, tick a group or list it on Marketplace.');
       return;
     }
 
+    // remember the choice for the next vehicle (same settings as FB Poster)
+    const col = fbCols.find((c) => fbColIds.has(c.id)) || null;
+    const next: FbPostingConfig = {
+      ...(fbConfig || { configured: true, delayMin: 45, delayMax: 90 }),
+      configured: true,
+      page: fbIncludePage && fbPageTarget ? fbPageTarget : fbConfig?.page || null,
+      includePage: fbIncludePage,
+      groups: chosen,
+      collection: col ? { id: col.id, name: col.name } : null,
+      hashtags: fbHashtags,
+      updatedAt: new Date().toISOString(),
+    } as FbPostingConfig;
+    setFbConfig(next);
+    saveFbPostingConfig(next);
+    void fb.put('quick-config', next).catch(() => {});
+
     setFbPosting(true);
+    let mpDone = '';
+    if (fbMpOn) {
+      // Marketplace listing: queued on the server and published by the FB Poster browser automatically
+      try {
+        const r = await fb.post<{ queued: number; rejected: { id: string; error: string }[] }>('mp/publish', { ids: [fbVehicle.id] });
+        if (r.queued) mpDone = 'Marketplace listing queued';
+        else if (r.rejected?.[0]) toast.error(`Marketplace: ${r.rejected[0].error}`);
+      } catch (e) {
+        toast.error(`Marketplace: ${(e as Error).message}`);
+      }
+    }
+    if (!targets.length) {
+      setFbPosting(false);
+      if (mpDone) {
+        toast.ok(`${mpDone} for ${vehicleName(fbVehicle)} — it is posted automatically.`);
+        setFbVehicle(null);
+      }
+      return;
+    }
     try {
       const form = new FormData();
       const order = fbVehicle.images.map((u: string) => `v:${u}`);
@@ -136,11 +250,11 @@ export default function InventoryPage() {
       form.append('order', JSON.stringify(order));
       form.append('caption', fbCaption || vehicleName(fbVehicle));
       form.append('hashtags', fbHashtags || '');
-      form.append('delayMin', String(fbConfig.delayMin || 45));
-      form.append('delayMax', String(fbConfig.delayMax || 90));
+      form.append('delayMin', String(fbConfig?.delayMin || 45));
+      form.append('delayMax', String(fbConfig?.delayMax || 90));
 
       await api('/dealer/facebook/post', { method: 'POST', form });
-      toast.ok(`Posting to Facebook started for ${vehicleName(fbVehicle)}!`);
+      toast.ok(`Posting to Facebook started for ${vehicleName(fbVehicle)}${mpDone ? ` · ${mpDone}` : ''}!`);
       setFbVehicle(null);
     } catch (e) {
       toast.error((e as Error).message || 'Failed to start Facebook post.');
@@ -338,9 +452,10 @@ export default function InventoryPage() {
                           size="sm"
                           className="mr-1 inline-flex items-center gap-1 border-transparent bg-[#1877F2] text-xs font-bold text-white hover:bg-[#166fe5]"
                           onClick={() => openFbModal(v)}
-                          title="Post to Facebook"
+                          title={mpMissing(v).length === 0 ? 'Post to Facebook · Marketplace ready' : 'Post to Facebook'}
                         >
                           <FacebookIcon className="h-3.5 w-3.5" /> FB
+                          {mpMissing(v).length === 0 && <span className="ml-0.5 rounded bg-white/25 px-1 text-[10px] font-extrabold" title="Marketplace ready">MP</span>}
                         </Button>
                         {v.status === 'PUBLISHED' ? (
                           <Button size="sm" variant="secondary" onClick={() => quick(v, { status: 'SOLD' }, 'Marked as sold - hidden from your website')}>
@@ -378,6 +493,7 @@ export default function InventoryPage() {
 
       <Modal
         open={!!fbVehicle}
+        size="lg"
         onClose={() => !fbPosting && setFbVehicle(null)}
         title={
           <div className="flex items-center gap-2">
@@ -407,11 +523,11 @@ export default function InventoryPage() {
               <Button
                 className="border-transparent bg-[#1877F2] font-bold text-white hover:bg-[#166fe5]"
                 loading={fbPosting}
-                disabled={!fbConfig || (!fbConfig.page && !fbConfig.groups?.length)}
+                disabled={!fbTargetCount}
                 onClick={postVehicleToFacebook}
               >
                 <FacebookIcon className="mr-1.5 h-3.5 w-3.5" />
-                Post to Facebook
+                Post to {fbTargetCount || ''} {fbTargetCount === 1 ? 'place' : 'places'}
               </Button>
             </div>
           </div>
@@ -420,35 +536,58 @@ export default function InventoryPage() {
         {fbVehicle && (
           <div className="space-y-4">
             {/* Vehicle preview */}
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-              <div className="flex h-14 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
-                {fbVehicle.images?.[0] ? (
-                  <img src={mediaUrl(fbVehicle.images[0])} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <ImageIcon className="h-5 w-5 text-slate-400" />
-                )}
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+              <div className="flex h-12 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
+                {fbVehicle.images?.[0] ? <img src={mediaUrl(fbVehicle.images[0])} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="h-5 w-5 text-slate-400" />}
               </div>
               <div className="min-w-0 flex-1">
                 <b className="block truncate text-sm text-slate-900">{vehicleName(fbVehicle)}</b>
-                <div className="mt-0.5 text-xs text-slate-500">
-                  <span className="font-semibold text-slate-700">{money(fbVehicle.price)}</span> · {(Number(fbVehicle.mileage) || 0).toLocaleString()} mi · Stock: #{fbVehicle.stockNumber || '—'}
-                </div>
-                <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                  <span className="inline-flex items-center rounded bg-blue-100 px-1.5 py-0.5 font-medium text-blue-800">
-                    {fbVehicle.images?.length || 0} photo{fbVehicle.images?.length === 1 ? '' : 's'}
-                  </span>
-                  {fbVehicle.vin && <span className="font-mono text-[11px] text-slate-400">VIN: {fbVehicle.vin}</span>}
+                <div className="mt-0.5 truncate text-xs text-slate-500">
+                  <span className="font-semibold text-slate-700">{money(fbVehicle.price)}</span> · {(Number(fbVehicle.mileage) || 0).toLocaleString()} mi · #{fbVehicle.stockNumber || '—'} · {fbVehicle.images?.length || 0} photo{fbVehicle.images?.length === 1 ? '' : 's'}
                 </div>
               </div>
             </div>
 
-            {/* Configured settings */}
-            {!fbConfig || (!fbConfig.page && !fbConfig.groups?.length) ? (
+            {/* Facebook Marketplace */}
+            {fbMpMissing.length === 0 ? (
+              <label className={cx('flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2.5 text-xs transition', fbMp ? 'border-[#1877F2] bg-blue-50/60' : 'border-slate-200')}>
+                <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#1877F2]" checked={fbMp} onChange={(e) => setFbMp(e.target.checked)} />
+                <span className="min-w-0 flex-1">
+                  <b className="block text-sm text-slate-900">Post to Marketplace</b>
+                  <span className="text-slate-500">Marketplace ready: every field is filled in. It is listed automatically when you press Post.</span>
+                </span>
+                <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200">Ready</span>
+              </label>
+            ) : (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs">
+                <b className="block text-slate-800">Not ready for Marketplace</b>
+                <span className="text-slate-500">Missing: </span>
+                {fbMpMissing.map((m, i) => (
+                  <span key={m}>
+                    {i > 0 && ', '}
+                    <button
+                      type="button"
+                      className="font-semibold text-blue-700 hover:underline"
+                      onClick={() => {
+                        const id = fbVehicle.id;
+                        setFbVehicle(null);
+                        open(id, MP_FIX[m]);
+                      }}
+                    >
+                      {m}
+                    </button>
+                  </span>
+                ))}
+                <span className="text-slate-500">. You can still post it to your groups.</span>
+              </div>
+            )}
+
+            {fbTargetsLoading && !fbAllGroups.length ? (
+              <p className="py-6 text-center text-xs text-slate-400">Loading your collections and groups…</p>
+            ) : !fbAllGroups.length && !fbPageTarget ? (
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                <b>No Facebook posting targets configured yet</b>
-                <p className="mt-1 text-xs text-amber-800">
-                  You haven't selected a Facebook Page or Groups to post to yet. Go to FB Poster to select your Page and groups.
-                </p>
+                <b>No groups loaded yet</b>
+                <p className="mt-1 text-xs text-amber-800">Open FB Poster, choose the Page you post as and click “Load groups”. They will show up here.</p>
                 <Button
                   size="sm"
                   className="mt-3 border-transparent bg-[#1877F2] font-semibold text-white hover:bg-[#166fe5]"
@@ -458,66 +597,96 @@ export default function InventoryPage() {
                   }}
                 >
                   <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                  Configure in FB Poster
+                  Open FB Poster
                 </Button>
               </div>
             ) : (
-              <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3.5 text-sm">
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Configured Posting Options</div>
-
-                {/* Page */}
-                <div className="flex items-center justify-between border-b border-slate-100 py-1 text-xs">
-                  <span className="font-medium text-slate-500">Facebook Page:</span>
-                  {fbConfig.page ? (
-                    <span className="inline-flex items-center rounded-full border border-purple-200 bg-purple-50 px-2.5 py-0.5 font-semibold text-purple-700">
-                      {fbConfig.page.name || fbConfig.page.url}
-                    </span>
-                  ) : (
-                    <span className="italic text-slate-400">None (personal profile)</span>
-                  )}
-                </div>
-
-                {/* Collection */}
-                {fbConfig.collection && (
-                  <div className="flex items-center justify-between border-b border-slate-100 py-1 text-xs">
-                    <span className="font-medium text-slate-500">Selected Collection:</span>
-                    <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 font-semibold text-blue-700">
-                      {fbConfig.collection.name}
-                    </span>
+              <>
+                {/* Collections: tick one to post to all its groups */}
+                {fbCols.length > 0 && (
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-600">Collections</label>
+                    <div className="space-y-1.5">
+                      {fbCols.map((c) => {
+                        const on = fbColIds.has(c.id);
+                        const n = c.items?.length || 0;
+                        const picked = (c.items || []).filter((g) => fbSel.has(g.url)).length;
+                        return (
+                          <div key={c.id} className={cx('overflow-hidden rounded-lg border transition', on ? 'border-[#1877F2] bg-blue-50/40' : 'border-slate-200')}>
+                            <label className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-50">
+                              <input type="checkbox" className="h-4 w-4 accent-[#1877F2]" checked={on} onChange={() => toggleCollection(c.id)} />
+                              <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">{c.name}</span>
+                              <span className="shrink-0 text-[11px] text-slate-500">
+                                {on ? `${picked} of ${n}` : n} group{n === 1 ? '' : 's'}
+                                {c.includePage && c.page?.name ? ` + ${c.page.name}` : ''}
+                              </span>
+                            </label>
+                            {on && (
+                              <div className="max-h-36 overflow-y-auto border-t border-blue-100 bg-white py-1 pl-8 pr-3">
+                                {(c.items || []).map((g) => (
+                                  <label key={g.url} className="flex cursor-pointer items-center gap-2.5 py-1 text-xs" title={g.url}>
+                                    <input type="checkbox" className="h-3.5 w-3.5 accent-[#1877F2]" checked={fbSel.has(g.url)} onChange={() => toggleGroup(g.url)} />
+                                    <span className="min-w-0 flex-1 truncate text-slate-700">{g.name || g.url}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
+                {/* Page */}
+                {fbPageTarget && (
+                  <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-slate-200 px-3 py-2 text-xs">
+                    <input type="checkbox" className="h-4 w-4 accent-[#1877F2]" checked={fbIncludePage} onChange={(e) => setFbIncludePage(e.target.checked)} />
+                    <span className="min-w-0 flex-1 truncate">
+                      Also post on the Page <b className="text-slate-800">{fbPageTarget.name || fbPageTarget.url}</b>
+                    </span>
+                  </label>
+                )}
+
                 {/* Groups */}
-                <div className="space-y-1.5 py-1 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-slate-500">Selected Groups:</span>
-                    <span className="font-bold text-slate-700">{fbConfig.groups?.length || 0} group{fbConfig.groups?.length === 1 ? '' : 's'}</span>
+                <div>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="text-xs font-semibold text-slate-600">
+                      {fbColIds.size ? 'Other groups' : 'Groups'}{fbAccount?.actingAs?.name ? <span className="font-normal text-slate-400"> of {fbAccount.actingAs.name}</span> : null}
+                    </label>
+                    <span className="flex items-center gap-2 text-[11px]">
+                      <b className="text-slate-700">{fbSel.size} selected in total</b>
+                      <button type="button" className="font-semibold text-blue-700 hover:underline" onClick={() => setFbSel(new Set(fbShown.map((g) => g.url).concat([...fbSel])))}>All</button>
+                      <button type="button" className="font-semibold text-slate-500 hover:underline" onClick={() => { setFbColIds(new Set()); setFbSel(new Set()); }}>None</button>
+                    </span>
                   </div>
-                  {fbConfig.groups && fbConfig.groups.length > 0 ? (
-                    <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto pt-0.5">
-                      {fbConfig.groups.map((g) => (
-                        <span key={g.url} className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700" title={g.url}>
-                          {g.name || g.url}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="italic text-slate-400">No groups selected</span>
-                  )}
+                  {fbAllGroups.length > 6 && <Input value={fbFind} onChange={(e) => setFbFind(e.target.value)} placeholder={`Search ${fbAllGroups.length} groups…`} className="mb-1.5 h-8 text-xs" />}
+                  <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200">
+                    {fbShown.length ? (
+                      fbShown.map((g) => (
+                        <label key={g.url} className="flex cursor-pointer items-center gap-2.5 border-b border-slate-100 px-3 py-1.5 text-xs last:border-0 hover:bg-slate-50" title={g.url}>
+                          <input type="checkbox" className="h-3.5 w-3.5 accent-[#1877F2]" checked={fbSel.has(g.url)} onChange={() => toggleGroup(g.url)} />
+                          <span className="min-w-0 flex-1 truncate text-slate-700">{g.name || g.url}</span>
+                        </label>
+                      ))
+                    ) : (
+                      <p className="px-3 py-3 text-center text-xs text-slate-400">{fbFind.trim() ? `No group matches “${fbFind}”.` : 'All your groups are in the ticked collections.'}</p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Caption preview */}
-                <div className="space-y-1 border-t border-slate-100 pt-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-600">Post description & hashtags:</span>
-                    {fbLoadingText && <span className="text-slate-400">Loading preview…</span>}
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-600">Post text</span>
+                    {fbLoadingText && <span className="text-slate-400">Loading…</span>}
                   </div>
-                  <div className="max-h-28 overflow-y-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-2.5 font-mono text-xs text-slate-700">
+                  <div className="max-h-24 overflow-y-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-2.5 font-mono text-[11px] leading-relaxed text-slate-700">
                     {fbCaption}
                     {fbHashtags ? `\n\n${fbHashtags}` : ''}
                   </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
         )}
