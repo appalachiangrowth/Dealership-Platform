@@ -4,7 +4,8 @@ DATABASE_URL="postgresql://postgres:[password]@localhost:5432/dealer_platform?sc
 # DIRECT_URL="postgresql://postgres:[password]@localhost:5432/dealer_platform?schema=public"
 
 PORT=4000
-# Long random string — signs login tokens. CHANGE THIS in production.
+# Long random string — signs login tokens. On the live server the API refuses to start with this example value:
+# make your own with  openssl rand -hex 48
 JWT_SECRET="44366d089efc17bbd8c0b32acebd3deaa0a90c27ada0fb6c5a22fdb71037b98998cb6d92f0f583ba4950ada32d758ce4"
 JWT_EXPIRES_IN="7d"
 
@@ -19,3 +20,25 @@ CARGURUS_CRON_HOUR="3"
 
 # One-off: path of the OLD PHP project, used by `npm run migrate:legacy`
 LEGACY_PATH="C:/Users/DELL/Documents/ags-dealer-platform-3.0.0 1"
+
+# ---------- Production (VPS) ----------
+# Listen only on this server; Nginx sends the traffic in (see deploy/nginx-dealer-platform.conf)
+# HOST=127.0.0.1
+# Dealers without their own domain get <dealer-id>.<SITES_DOMAIN> (wildcard DNS record *.sites.yourcompany.com)
+# SITES_DOMAIN=sites.yourcompany.com
+
+# ---------- FB Poster (Facebook groups, Pages, Marketplace) — all optional ----------
+# Chrome used for Facebook (on Ubuntu after deploy/contabo-setup.sh: /usr/bin/google-chrome)
+# CHROME_PATH=/usr/bin/google-chrome
+# Facebook browsers at the same time. Empty = what the server's memory allows (8 GB → 12, 4 GB → 5)
+# FB_MAX_BROWSERS=
+# A Facebook browser nobody uses is closed after this many minutes (the login stays saved and it starts again by itself)
+# FB_IDLE_MINUTES=10
+# An idle Facebook browser is restarted after this many hours to keep the server fast
+# FB_RECYCLE_HOURS=6
+# No new Facebook browser when the server has less free memory than this (MB)
+# FB_MIN_FREE_MB=400
+# Where the saved Facebook logins (Chrome profiles) are kept — back this folder up
+# FB_STORAGE_DIR=/home/dealer/dealer-platform/backend/storage/facebook
+# false = normal Chrome on a virtual screen (needs xvfb, see ecosystem.config.cjs); default is headless
+# FB_HEADLESS=true

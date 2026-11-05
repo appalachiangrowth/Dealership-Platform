@@ -71,6 +71,8 @@ export class FeedsService {
     if (s?.siteUrl) return s.siteUrl.replace(/\/+$/, '');
     const primary = t.domains?.find((d) => d.isPrimary) ?? t.domains?.[0];
     if (primary && !primary.domain.endsWith('localhost')) return `https://${primary.domain}`;
+    // live server: the dealer's sub-domain <id>.<SITES_DOMAIN>
+    if (process.env.SITES_DOMAIN && !process.env.SITE_PATTERN) return `https://${t.id}.${process.env.SITES_DOMAIN.replace(/^\.+|\.+$/g, '')}`;
     // on this computer the dealer websites are the website app (port 3002); SITE_PATTERN can change it
     return (process.env.SITE_PATTERN || 'http://{id}.localhost:3002').replace('{id}', t.id).replace(/\/+$/, '');
   }

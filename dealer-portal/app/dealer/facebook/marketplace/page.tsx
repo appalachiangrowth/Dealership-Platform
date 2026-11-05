@@ -32,6 +32,7 @@ const STATUS: Record<string, { color: string; text: string }> = {
   awaiting_publish: { color: 'amber', text: 'Needs you' },
   published: { color: 'green', text: 'Published' },
   unconfirmed: { color: 'amber', text: 'Unconfirmed' },
+  needs_attention: { color: 'red', text: 'Needs attention on Facebook' },
   failed: { color: 'red', text: 'Failed' },
   sold: { color: 'violet', text: 'Sold' },
   removed: { color: 'slate', text: 'Removed' },
@@ -89,8 +90,8 @@ export default function MarketplacePage() {
       const st = v.listing.status;
       if (filter === 'instock') return v.status !== 'SOLD';
       if (filter === 'notlisted') return ['none', 'failed', 'removed'].includes(st) && v.status !== 'SOLD';
-      if (filter === 'listed') return ['published', 'unconfirmed', 'awaiting_publish', 'publishing', 'queued'].includes(st);
-      if (filter === 'problems') return ['failed', 'unconfirmed', 'awaiting_publish'].includes(st) || (st === 'published' && v.listing.postedPrice !== null && v.price !== null && v.listing.postedPrice !== v.price);
+      if (filter === 'listed') return ['published', 'unconfirmed', 'needs_attention', 'awaiting_publish', 'publishing', 'queued'].includes(st);
+      if (filter === 'problems') return ['failed', 'unconfirmed', 'needs_attention', 'awaiting_publish'].includes(st) || (st === 'published' && v.listing.postedPrice !== null && v.price !== null && v.listing.postedPrice !== v.price);
       if (filter === 'soldlisted') return v.status === 'SOLD' && st === 'published';
       return true;
     });

@@ -227,10 +227,14 @@ export function FbActivity({ className }: { className?: string }) {
   const [shot, setShot] = useState<{ name: string; url: string } | null>(null);
   const [loading, setLoading] = useState('');
   const end = useRef<HTMLDivElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const stick = useRef(true);
   const toast = useToast();
 
+  // new lines: scroll only INSIDE the activity box (never the page), and only while you are at its bottom
   useEffect(() => {
-    end.current?.scrollIntoView({ block: 'nearest' });
+    const b = boxRef.current;
+    if (b && stick.current) b.scrollTop = b.scrollHeight;
   }, [logs.length]);
 
   const open = async (name: string) => {
@@ -248,7 +252,14 @@ export function FbActivity({ className }: { className?: string }) {
 
   return (
     <Card title="Activity" className={className} pad={false}>
-      <div className="max-h-72 overflow-y-auto px-5 py-3 font-mono text-[12px] leading-5 text-slate-700">
+      <div
+        ref={boxRef}
+        onScroll={(e) => {
+          const b = e.currentTarget;
+          stick.current = b.scrollHeight - b.scrollTop - b.clientHeight < 40;
+        }}
+        className="max-h-72 overflow-y-auto px-5 py-3 font-mono text-[12px] leading-5 text-slate-700"
+      >
         {!logs.length && <div className="py-6 text-center font-sans text-sm text-slate-400">Nothing yet.</div>}
         {logs.map((l) => {
           const s = screenshotIn(l.msg);

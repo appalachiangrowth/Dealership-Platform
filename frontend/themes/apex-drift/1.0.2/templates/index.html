@@ -1,0 +1,1457 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><style id="apex-home-hero-height-v117">
+/* Home-only vertical sizing correction. Lowering only min-height was not enough because
+   the intro padding and the road's own minimum height could force the hero taller.
+   These sizing overrides target the actual rendered homepage height and leave its
+   design, copy, colors, grid, animations, SVG vehicle and all non-home templates alone. */
+#hero.hero .hero-in{padding-top:clamp(100px,12.75vh,127.5px)!important;}
+#hero.hero .road{min-height:clamp(210px,23vw,297px)!important;}
+@media(max-width:760px){
+  #hero.hero .hero-in{padding-top:clamp(100px,12.75vh,127.5px)!important;}
+  #hero.hero .road{min-height:180px!important;}
+}
+</style><link rel="stylesheet" href="{%asset css/apx-header-extras.css%}"></head><body>{%raw DESIGN%}{%raw ROBOTS%}{%raw SITE_JSON%}{%raw LD_JSON%}
+<title>{%text seo.home.title%}</title>
+<meta name="description" content="{%text seo.home.description%}">
+<link rel="canonical" href="{%raw CANONICAL%}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{%text seo.home.title%}">
+<meta property="og:description" content="{%text seo.home.description%}">
+<meta property="og:url" content="{%raw CANONICAL%}">
+<meta property="og:site_name" content="{%site name%}">
+<meta property="og:image" content="{%raw OG_IMAGE%}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:ital,wdth,wght@0,50..150,300..900;1,50..150,300..900&family=Hanken+Grotesk:wght@400;500;600;700&family=Michroma&display=swap">
+<style>
+/* Layout: an expressive night-time dealership. Full-bleed asphalt bands, one orchestrated moment per act:
+   highway cruise (hero), showroom handover (promo band), headlights-on (bottom CTA). */
+:root{
+  --asphalt:#080A16;      /* page ground */
+  --tarmac:#11142A;       /* raised surfaces */
+  --kerb:#232842;         /* hairlines, borders */
+  --fog:#8F97B5;          /* muted text, blue-biased grey */
+  --xenon:#EEF3FA;        /* primary text */
+  --sodium:#FFB547;       /* brand accent: sodium street-lamp amber (admin: Main colour) */
+  --sodium-ink:#1A1206;   /* text on sodium */
+  --brake:#FF4232;        /* taillight red, used only on lights */
+  --ion:#7DD8FF;          /* cool blue accent for motion and light effects */
+  --display:"Anybody","Arial Narrow",system-ui,sans-serif;
+  --body:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --gauge:"Michroma","Eurostile","Arial",sans-serif;
+  --s-1:.8125rem; --s0:1rem; --s1:1.1875rem; --s2:1.5rem; --s3:2.25rem; --s4:clamp(2.4rem,5.2vw,4.4rem); --s5:clamp(2.9rem,7.4vw,6.6rem);
+  --gut:max(16px,env(safe-area-inset-left,0px));
+  --gutR:max(16px,env(safe-area-inset-right,0px));
+  --wrap:1240px;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth;background:var(--asphalt)}
+body{margin:0;background:var(--asphalt);color:var(--xenon);font:400 var(--s0)/1.6 var(--body);overflow-x:hidden;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:60;background:var(--asphalt)}
+a{color:inherit}
+img{max-width:100%;display:block}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--sodium);outline-offset:3px;border-radius:6px}
+.wrap{max-width:var(--wrap);margin-inline:auto;padding-left:var(--gut);padding-right:var(--gutR)}
+.band{padding-block:clamp(72px,10vw,132px);position:relative}
+.label{font:400 .6875rem/1.2 var(--gauge);letter-spacing:.22em;text-transform:uppercase;color:var(--sodium);display:inline-flex;align-items:center;gap:12px;margin:0 0 18px}
+.label::before{content:"";width:28px;height:1px;background:currentColor;opacity:.7}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0}
+h2{font-size:var(--s4);font-weight:800;font-stretch:118%;line-height:.98;letter-spacing:-.01em}
+h2 em,h1 em{font-style:italic;color:var(--sodium);font-weight:900}
+.sub{color:var(--fog);max-width:58ch;font-size:var(--s1);margin:18px 0 0}
+.num{font-variant-numeric:tabular-nums}
+
+/* Buttons */
+.btn{--bg:var(--sodium);--fg:var(--sodium-ink);position:relative;display:inline-flex;align-items:center;gap:14px;padding:16px 26px;border-radius:999px;background:var(--bg);color:var(--fg);text-decoration:none;font-weight:700;letter-spacing:.01em;border:0;cursor:pointer;overflow:hidden;isolation:isolate;transition:transform .35s cubic-bezier(.2,.8,.2,1),box-shadow .35s}
+.btn:hover{transform:translateY(-2px);box-shadow:0 14px 40px -12px color-mix(in oklab,var(--sodium) 70%,transparent)}
+.btn .arr{display:inline-block;transition:transform .45s cubic-bezier(.7,0,.2,1)}
+.btn:hover .arr{transform:translateX(6px)}
+.btn::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.55) 50%,transparent 70%);transform:translateX(-120%)}
+.btn:hover::after{transform:translateX(120%);transition:transform .7s ease}
+.btn.ghost{--bg:transparent;--fg:var(--xenon);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--xenon) 28%,transparent)}
+.btn.ghost:hover{box-shadow:inset 0 0 0 1px var(--xenon)}
+.link{color:var(--xenon);text-decoration:none;font-weight:600;border-bottom:1px solid color-mix(in oklab,var(--sodium) 60%,transparent);padding-bottom:3px}
+.link:hover{color:var(--sodium)}
+
+/* Header */
+.hdr{position:fixed;top:0;left:0;right:0;z-index:50;padding-top:env(safe-area-inset-top,0px);transition:background .4s,backdrop-filter .4s}
+.hdr.solid{background:color-mix(in oklab,var(--asphalt) 82%,transparent);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3)}
+.hdr .wrap{display:flex;align-items:center;gap:28px;height:76px}
+.logo{display:flex;flex-direction:column;line-height:1;text-decoration:none}
+.logo b{font:900 1.35rem/1 var(--display);font-stretch:150%;letter-spacing:.02em}
+.logo small{font:400 .5625rem/1 var(--gauge);letter-spacing:.42em;color:var(--fog);margin-top:6px}
+.nav{display:flex;gap:26px;margin-left:auto;font-size:.9375rem}
+.nav a{text-decoration:none;color:color-mix(in oklab,var(--xenon) 82%,transparent);position:relative}
+.nav a::after{content:"";position:absolute;left:0;right:100%;bottom:-6px;height:2px;background:var(--sodium);transition:right .35s}
+.nav a:hover{color:var(--xenon)}.nav a:hover::after{right:0}
+.hdr .btn{padding:11px 18px;font-size:.875rem}
+.track{position:absolute;left:0;right:0;bottom:0;height:2px;background:color-mix(in oklab,var(--xenon) 7%,transparent)}
+.track i{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,transparent,var(--sodium));}
+.track svg{position:absolute;top:-7px;left:0;width:30px;height:16px;transform:translateX(-50%)}
+@media (max-width:900px){.nav{display:none}.hdr .wrap>.btn{margin-left:auto}}
+.nav{margin-right:6px}
+
+.nav-group{position:relative;display:flex;align-items:center}
+.nav-group>a{display:flex;align-items:center;gap:7px;white-space:nowrap}
+.nav-chevron{color:var(--sodium);font-size:1rem;line-height:1;transition:transform .2s ease}
+.nav-group:hover>.nav-chevron,.nav-group:focus-within .nav-chevron{transform:rotate(180deg)}
+.nav-dropdown{display:none;position:absolute;top:100%;left:-12px;z-index:80;min-width:190px;padding:10px 8px;background:rgba(13,16,35,.98);border:1px solid var(--kerb);border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,.55);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);flex-direction:column;gap:2px}
+.nav-group:hover .nav-dropdown,.nav-group:focus-within .nav-dropdown{display:flex}
+.nav-dropdown a{display:block;padding:9px 12px;border-radius:7px;white-space:nowrap;color:var(--xenon);text-decoration:none}
+.nav-dropdown a::after{display:none}
+.nav-dropdown a:hover,.nav-dropdown a:focus-visible{background:rgba(255,181,71,.12);color:var(--sodium)}
+@media (max-width:900px){.nav-dropdown{display:none!important}}
+
+/* Hero — dusk highway, car cruising nonstop */
+.hero{position:relative;overflow:hidden;background:#060918;isolation:isolate;display:flex;flex-direction:column;min-height:max(646px,min(85svh,782px))}
+.hero canvas{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:-1}
+.hero-in{padding-top:clamp(118px,15vh,150px)}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:clamp(28px,5vw,72px);align-items:start}
+.hero h1{font-size:clamp(2.6rem,5vw,4.6rem);font-weight:800;font-stretch:104%;line-height:.98;letter-spacing:-.025em}
+.hero h1 .ln{display:block;overflow:hidden;padding-bottom:.08em}
+.hero h1 .ln>span{display:inline-block}
+.hero h1 em{background:linear-gradient(92deg,#FFC765 0%,#FF9A5A 55%,#FF6F7D 100%);-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.08em}
+.hero .label{color:#FFC765}
+.hero-side{display:flex;flex-direction:column;gap:22px;padding-left:clamp(0px,2.4vw,32px);border-left:1px solid rgba(238,243,250,.12);padding-top:6px}
+.hero .lead{max-width:44ch;color:rgba(232,236,248,.78);font-size:var(--s1);margin:0}
+.cta-row{display:flex;flex-wrap:wrap;gap:12px}
+/* Home hero primary CTA: steady, readable glow pulse to attract attention without hiding its label. */
+.hero-inventory-cta{
+  animation:heroInventoryAttention 1.35s ease-in-out infinite;
+  box-shadow:0 8px 24px rgba(255,181,71,.24);
+  will-change:filter,box-shadow;
+}
+@keyframes heroInventoryAttention{
+  0%,100%{filter:brightness(1);box-shadow:0 8px 24px rgba(255,181,71,.22),0 0 0 0 rgba(255,181,71,.35)}
+  50%{filter:brightness(1.13);box-shadow:0 0 30px rgba(255,181,71,.65),0 0 0 6px rgba(255,181,71,0)}
+}
+.road{position:relative;flex:1;min-height:clamp(250px,30vw,400px)}
+.carwrap{position:absolute;left:0;bottom:19%;width:clamp(290px,40vw,600px);will-change:transform}
+.carwrap svg{display:block;width:100%;height:auto;overflow:visible}
+.hero-foot{position:relative;background:linear-gradient(180deg,rgba(6,8,20,.0),rgba(6,8,20,.85) 40%);}
+.hero-foot .wrap{display:flex;align-items:center;gap:clamp(18px,4vw,44px);padding-block:20px 22px;flex-wrap:wrap;border-top:1px solid rgba(238,243,250,.08)}
+.trust{display:flex;gap:12px;align-items:center;min-width:0}
+.trust svg{flex:none}
+.trust b{display:block;font-weight:600;font-size:.9375rem;line-height:1.25}
+.trust small{color:var(--fog);font-size:.8125rem}
+.reel{margin-left:auto;display:flex;gap:6px;align-items:center}
+.reel em{font:normal 400 .5625rem/1 var(--gauge);letter-spacing:.2em;color:var(--fog);margin-right:8px;text-transform:uppercase}
+.reel button{width:58px;height:40px;padding:0;border:0;border-radius:6px;overflow:hidden;cursor:pointer;opacity:.45;transition:opacity .4s,transform .4s;background:var(--tarmac)}
+.reel button img{width:100%;height:100%;object-fit:cover}
+.reel button.on{opacity:1;transform:translateY(-3px);box-shadow:0 0 0 2px #FFC765}
+.scrollhint{font:400 .5625rem/1 var(--gauge);letter-spacing:.28em;text-transform:uppercase;color:var(--fog);display:flex;align-items:center;gap:10px}
+.scrollhint::before{content:"";width:1px;height:22px;background:linear-gradient(#FFC765,transparent);animation:drip 2.2s infinite}
+@keyframes drip{0%{transform:scaleY(0);transform-origin:top}50%{transform:scaleY(1);transform-origin:top}51%{transform-origin:bottom}100%{transform:scaleY(0);transform-origin:bottom}}
+@media (max-width:900px){
+  .hero-grid{grid-template-columns:1fr;gap:22px}
+  .hero-side{border-left:0;padding-left:0}
+}
+@media (max-width:760px){
+  .hero{min-height:0}
+  .road{min-height:240px}
+  .carwrap{width:min(86vw,420px);bottom:20%}
+  .reel,.trust small{display:none}
+  .hero-foot .wrap{gap:12px 22px}
+}
+
+/* Search — compact command bar */
+.search{background:var(--asphalt);padding-block:clamp(36px,5vw,56px) clamp(8px,2vw,16px)}
+.srch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:clamp(20px,4vw,56px);align-items:center}
+.srch-h .label{margin-bottom:8px}
+.srch-h h2{font-size:clamp(1.5rem,2.4vw,2rem);font-stretch:112%;line-height:1.05;white-space:nowrap}
+.srch-h h2 .w{display:inline-block;overflow:hidden;vertical-align:bottom;padding-bottom:.06em}
+.srch-h h2 .w>span{display:inline-block}
+.srch-h h2 em{background:linear-gradient(92deg,#FFC765,#FF8F66);-webkit-background-clip:text;background-clip:text;color:transparent}
+.bar{position:relative;display:flex;align-items:center;gap:6px;height:64px;padding:7px 7px 7px 22px;border-radius:999px;background:linear-gradient(180deg,#151a33,#0E1226);box-shadow:inset 0 0 0 1px var(--kerb),0 24px 60px -30px rgba(0,0,0,.9);isolation:isolate;overflow:hidden}
+.bar:focus-within{box-shadow:inset 0 0 0 1px rgba(255,199,101,.55),0 0 0 5px rgba(255,199,101,.08),0 24px 60px -30px rgba(0,0,0,.9)}
+.bar::after{content:"";position:absolute;top:0;bottom:0;width:30%;left:-40%;z-index:-1;background:linear-gradient(100deg,transparent,rgba(255,199,101,.16),transparent);pointer-events:none}
+.bar>svg{flex:none;color:#FFC765}
+.bar input{flex:1;min-width:0;height:100%;border:0;background:none;padding:0 8px;font-size:1rem}
+.bar input:focus{outline:none}
+.bar input::placeholder{color:var(--fog)}
+.bar .sep{width:1px;height:28px;background:var(--kerb);flex:none}
+.bar select{flex:none;height:100%;border:0;background:transparent;padding:0 26px 0 12px;appearance:none;cursor:pointer;font-weight:600;font-size:.9375rem;background-image:linear-gradient(45deg,transparent 50%,var(--fog) 50%),linear-gradient(135deg,var(--fog) 50%,transparent 50%);background-position:calc(100% - 14px) 24px,calc(100% - 9px) 24px;background-size:5px 5px;background-repeat:no-repeat}
+.bar select:focus{outline:none;color:#FFC765}
+.bar select option{background:#11142A}
+.cnt{flex:none;font:400 .5625rem/1 var(--gauge);letter-spacing:.14em;color:var(--fog);padding:0 10px;white-space:nowrap}
+.cnt b{display:inline-block;font:800 .95rem/1 var(--display);color:var(--xenon);letter-spacing:0;margin-right:5px;font-variant-numeric:tabular-nums}
+.bar .btn{height:50px;padding:0 22px;flex:none}
+.pop{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px;padding-left:22px}
+.pop span{font:400 .5625rem/1 var(--gauge);letter-spacing:.2em;text-transform:uppercase;color:var(--fog);margin-right:4px}
+.pop button{border:0;background:none;padding:4px 2px;cursor:pointer;color:color-mix(in oklab,var(--xenon) 75%,transparent);font-size:.875rem;border-bottom:1px dashed rgba(255,199,101,.35)}
+.pop button:hover{color:#FFC765;border-bottom-color:#FFC765}
+.pop i{width:3px;height:3px;border-radius:50%;background:var(--kerb)}
+/* entrance: bar opens from a light streak, heading words rise, fields fade in */
+.search.pre .bar{clip-path:inset(0 49.5% 0 49.5% round 999px)}
+.search.pre .bar>*{opacity:0}
+.search.pre .srch-h .w>span{transform:translateY(110%)}
+.search.pre .srch-h .label,.search.pre .pop{opacity:0}
+.search.go .bar{animation:barOpen 1s cubic-bezier(.7,0,.2,1) both}
+.search.go .bar::after{animation:barSweep 1.4s cubic-bezier(.5,0,.2,1) .75s both}
+.search.go .bar>*{animation:fadeIn .5s ease both}
+.search.go .bar>*:nth-child(1){animation-delay:.7s}.search.go .bar>*:nth-child(2){animation-delay:.78s}.search.go .bar>*:nth-child(3){animation-delay:.86s}.search.go .bar>*:nth-child(4){animation-delay:.94s}.search.go .bar>*:nth-child(5){animation-delay:1.02s}.search.go .bar>*:nth-child(6){animation-delay:1.1s}
+.search.go .srch-h .label{animation:fadeIn .6s ease both}
+.search.go .srch-h .w>span{animation:up .8s cubic-bezier(.2,.8,.2,1) both}
+.search.go .srch-h .w:nth-child(2)>span{animation-delay:.07s}.search.go .srch-h .w:nth-child(3)>span{animation-delay:.14s}.search.go .srch-h .w:nth-child(4)>span{animation-delay:.21s}
+.search.go .pop{animation:fadeIn .6s ease 1.2s both}
+@keyframes barOpen{0%{clip-path:inset(0 49.5% 0 49.5% round 999px);box-shadow:inset 0 0 0 1px #FFC765,0 0 40px rgba(255,199,101,.5)}55%{box-shadow:inset 0 0 0 1px rgba(255,199,101,.6),0 0 30px rgba(255,199,101,.2)}100%{clip-path:inset(0 0 0 0 round 999px)}}
+@keyframes barSweep{from{left:-40%}to{left:120%}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (max-width:900px){.srch{grid-template-columns:1fr;gap:16px}}
+@media (max-width:600px){
+  .bar{height:auto;flex-wrap:wrap;border-radius:22px;padding:10px 10px 10px 16px;row-gap:8px}
+  .bar input{flex:1 1 60%;height:46px}
+  .bar .sep,.cnt{display:none}
+  .bar select{height:46px;border-radius:12px;background-color:#0A0D1C}
+  .bar .btn{flex:1 1 100%;justify-content:center;height:48px}
+  .search.pre .bar{clip-path:inset(0 49% 0 49% round 22px)}
+  .pop{padding-left:4px}
+  .srch-h h2{white-space:normal}
+}
+
+/* Why — intro left, point cards right */
+.band.why{padding-block:clamp(64px,8vw,110px);overflow:hidden}
+.why::before{content:"";position:absolute;right:4%;top:50%;transform:translateY(-50%);width:min(560px,60vw);aspect-ratio:1;background:radial-gradient(closest-side,rgba(120,70,170,.20),rgba(255,140,100,.05) 60%,transparent);pointer-events:none}
+.why .wrap{position:relative;display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:clamp(36px,6vw,96px);align-items:center}
+.why h2 em{background:linear-gradient(92deg,#FFC765,#FF8F66 60%,#FF6F7D);-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.06em}
+.why .sub{max-width:52ch}
+.feats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.feat-c{position:relative;padding:20px 20px 22px;border-radius:18px;background:linear-gradient(180deg,rgba(28,30,62,.55),rgba(14,16,36,.55));box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);overflow:hidden;transition:transform .45s cubic-bezier(.2,.8,.2,1),box-shadow .45s}
+.feat-c::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,199,101,.6),transparent);opacity:0;transition:opacity .45s}
+.feat-c:hover{transform:translateY(-3px);box-shadow:inset 0 0 0 1px rgba(255,199,101,.22),0 20px 40px -24px rgba(0,0,0,.9)}
+.feat-c:hover::after{opacity:1}
+.feat-c .ico{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(255,199,101,.16),rgba(255,111,125,.10));box-shadow:inset 0 0 0 1px rgba(255,199,101,.22);color:#FFC765;margin-bottom:14px}
+.feat-c h3{font-size:1.0625rem;font-weight:700;font-stretch:108%}
+.feat-c p{margin:6px 0 0;color:var(--fog);font-size:.9375rem;line-height:1.55}
+@media (max-width:980px){.why .wrap{grid-template-columns:1fr}}
+@media (max-width:560px){.feats{grid-template-columns:1fr}}
+
+
+/* Why — motion */
+@property --ang{syntax:"<angle>";inherits:false;initial-value:0deg}
+.why h2 .w{display:inline-block;overflow:hidden;vertical-align:bottom;padding-bottom:.08em}
+.why h2 .w>span{display:inline-block}
+.why h2 em{background-size:220% 100%;background-image:linear-gradient(92deg,#FFC765 0%,#FF8F66 30%,#FF6F7D 50%,#FF8F66 70%,#FFC765 100%);animation:shimmer 7s linear infinite}
+@keyframes shimmer{to{background-position:-220% 0}}
+.feats{position:relative;padding:6px;margin:-6px;overflow:hidden;border-radius:24px}
+.feats::after{content:"";position:absolute;top:-20%;bottom:-20%;width:26%;left:-40%;background:linear-gradient(100deg,transparent,rgba(255,214,160,.10),transparent);transform:skewX(-14deg);pointer-events:none;animation:beam 7s cubic-bezier(.6,0,.3,1) 2.4s infinite}
+@keyframes beam{0%{left:-40%}45%,100%{left:130%}}
+.feat-c::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:conic-gradient(from var(--ang),transparent 0deg,transparent 250deg,rgba(255,199,101,.95) 320deg,rgba(255,111,125,.9) 350deg,transparent 360deg);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;pointer-events:none}
+.feat-c:hover::before{opacity:1;animation:trace 2.2s linear infinite}
+@keyframes trace{from{--ang:0deg}to{--ang:360deg}}
+.feat-c .ico{transition:transform .5s cubic-bezier(.3,1.6,.5,1)}
+.feat-c:hover .ico{transform:rotate(-8deg) scale(1.08)}
+/* entrance (only when the section starts below the fold) */
+.why.pre .why-intro .label,.why.pre .sub{opacity:0}
+.why.pre h2 .w>span{transform:translateY(110%)}
+.why.pre .feat-c{opacity:0;transform:translateY(34px) scale(.96)}
+.why.pre .feat-c .ico{transform:scale(0)}
+.why.go .why-intro .label{animation:fadeIn .6s ease both}
+.why.go .why-intro .label::before{animation:lineIn .7s cubic-bezier(.2,.8,.2,1) both}
+@keyframes lineIn{from{width:0}to{width:28px}}
+.why.go h2 .w>span{animation:up .9s cubic-bezier(.2,.8,.2,1) .1s both}
+.why.go h2 .w:nth-child(2)>span{animation-delay:.24s}
+.why.go .sub{animation:fadeIn .8s ease .45s both}
+.why.go .feat-c{animation:cardIn .9s cubic-bezier(.2,.8,.2,1) both}
+.why.go .feat-c:nth-child(1){animation-delay:.35s}.why.go .feat-c:nth-child(2){animation-delay:.5s}.why.go .feat-c:nth-child(3){animation-delay:.65s}.why.go .feat-c:nth-child(4){animation-delay:.8s}
+.why.go .feat-c::before{animation:trace 1.5s linear both,traceFade 1.5s ease both}
+.why.go .feat-c:nth-child(1)::before{animation-delay:.6s}.why.go .feat-c:nth-child(2)::before{animation-delay:.75s}.why.go .feat-c:nth-child(3)::before{animation-delay:.9s}.why.go .feat-c:nth-child(4)::before{animation-delay:1.05s}
+.why.go .feat-c:hover::before{animation:trace 2.2s linear infinite;opacity:1}
+@keyframes traceFade{0%{opacity:0}15%{opacity:1}75%{opacity:1}100%{opacity:0}}
+.why.go .feat-c .ico{animation:icoPop .6s cubic-bezier(.3,1.6,.5,1) both}
+.why.go .feat-c:nth-child(1) .ico{animation-delay:.7s}.why.go .feat-c:nth-child(2) .ico{animation-delay:.85s}.why.go .feat-c:nth-child(3) .ico{animation-delay:1s}.why.go .feat-c:nth-child(4) .ico{animation-delay:1.15s}
+@keyframes cardIn{from{opacity:0;transform:translateY(34px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes icoPop{from{transform:scale(0) rotate(-30deg)}to{transform:none}}
+
+/* Vehicle cards (body-style grid) */
+.lane{--lp:var(--gut);scroll-padding-left:var(--lp);display:grid;grid-auto-flow:column;grid-auto-columns:minmax(290px,360px);gap:18px;overflow-x:auto;scroll-snap-type:x mandatory;padding:40px var(--gutR) 24px var(--lp);margin-top:8px;scrollbar-width:thin;scrollbar-color:var(--kerb) transparent}
+@media (min-width:1272px){.lane{--lp:calc((100vw - var(--wrap))/2 + 16px)}}
+.car{scroll-snap-align:start;border-radius:20px;background:var(--tarmac);box-shadow:inset 0 0 0 1px var(--kerb);overflow:hidden;display:flex;flex-direction:column;transition:transform .5s cubic-bezier(.2,.8,.2,1),box-shadow .5s;text-decoration:none}
+.car:hover{transform:translateY(-6px);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--sodium) 50%,transparent),0 30px 60px -30px rgba(0,0,0,.9)}
+.car figure{margin:0;position:relative;aspect-ratio:4/3;overflow:hidden}
+.car figure img{width:100%;height:100%;object-fit:cover;transition:transform 1s cubic-bezier(.2,.8,.2,1)}
+.car:hover figure img{transform:scale(1.05)}
+.tag{position:absolute;top:12px;left:12px;font:400 .5rem/1 var(--gauge);letter-spacing:.2em;text-transform:uppercase;padding:7px 10px;border-radius:999px;background:rgba(8,10,13,.72);backdrop-filter:blur(6px)}
+.tag.live{color:var(--sodium)}
+.car-b{padding:18px 20px 20px;display:flex;flex-direction:column;gap:14px}
+.car-t small{font:400 .625rem/1 var(--gauge);letter-spacing:.18em;color:var(--fog)}
+.car-t h3{font-size:1.35rem;font-weight:800;font-stretch:120%;margin-top:6px;line-height:1.1}
+.car-m{display:flex;justify-content:space-between;align-items:end;gap:10px;padding-top:14px;border-top:1px solid var(--kerb)}
+.price{font:800 1.75rem/1 var(--display);font-stretch:112%;font-variant-numeric:tabular-nums}
+.odo{display:flex;gap:2px;align-items:center}
+.odo span{font:400 .75rem/1 var(--gauge);background:#07090C;box-shadow:inset 0 0 0 1px #1d232b;padding:6px 3px;border-radius:3px;min-width:15px;text-align:center;font-variant-numeric:tabular-nums}
+.odo em{font:normal 400 .5rem/1 var(--gauge);letter-spacing:.14em;color:var(--fog);margin-left:6px}
+
+/* Featured — premium lane */
+@property --fang{syntax:"<angle>";inherits:false;initial-value:0deg}
+.feat{position:relative;overflow:hidden;background:
+  radial-gradient(60% 50% at 85% 0%,rgba(120,70,170,.20),transparent 70%),
+  radial-gradient(45% 45% at 0% 100%,rgba(255,140,100,.08),transparent 70%),var(--asphalt)}
+.feat{padding-bottom:clamp(28px,3.5vw,48px)}
+.feat-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:24px}
+.feat-head h2 .w{display:inline-block;overflow:hidden;vertical-align:bottom;padding-bottom:.08em}
+.feat-head h2 .w>span{display:inline-block}
+.feat-head h2 em{background-size:220% 100%;background-image:linear-gradient(92deg,#FFC765 0%,#FF8F66 30%,#FF6F7D 50%,#FF8F66 70%,#FFC765 100%);-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.06em;animation:shimmer 7s linear infinite}
+.lane-ctl{display:flex;flex-direction:column;align-items:flex-end;gap:18px}
+.lane-ctl .row{display:flex;align-items:center;gap:14px}
+.lane-ctl button{width:52px;height:52px;border-radius:50%;border:0;cursor:pointer;background:rgba(24,27,56,.7);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);color:var(--xenon);display:grid;place-items:center;transition:background .35s,color .35s,transform .35s}
+.lane-ctl button:hover{background:#FFC765;color:var(--sodium-ink);transform:scale(1.06)}
+.prog{width:160px;height:2px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden}
+.prog i{display:block;height:100%;width:30%;background:linear-gradient(90deg,#FFC765,#FF6F7D);transform-origin:left;transition:transform .2s}
+.flane{--lp:var(--gut);position:relative;display:grid;grid-auto-flow:column;grid-auto-columns:min(340px,82vw);gap:22px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding-left:var(--lp);padding:46px var(--gutR) 58px var(--lp);scrollbar-width:none;cursor:grab}
+.flane::-webkit-scrollbar{display:none}
+.flane.drag{cursor:grabbing;scroll-snap-type:none}
+@media (min-width:1272px){.flane{--lp:calc((100vw - var(--wrap))/2 + 16px)}}
+.froad{position:absolute;left:0;right:0;bottom:10px;height:2px;pointer-events:none;background:repeating-linear-gradient(90deg,rgba(240,236,225,.28) 0 46px,transparent 46px 110px);background-size:110px 2px;animation:lanes 1.1s linear infinite;mask:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)}
+.froad::before{content:"";position:absolute;left:0;right:0;top:-34px;height:60px;background:radial-gradient(50% 100% at 50% 100%,rgba(255,170,110,.12),transparent)}
+@keyframes lanes{to{background-position:-110px 0}}
+.fc{position:relative;scroll-snap-align:start;border-radius:24px;text-decoration:none;color:inherit;transform:perspective(1000px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateY(var(--ty,0px));transition:transform .5s cubic-bezier(.2,.8,.2,1),box-shadow .5s;box-shadow:0 30px 60px -36px rgba(0,0,0,.95);will-change:transform}
+.fc::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(160deg,rgba(255,199,101,.55),rgba(255,255,255,.06) 35%,rgba(255,255,255,.04) 65%,rgba(255,111,125,.45));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;z-index:3}
+.fc::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:1.5px;background:conic-gradient(from var(--fang),transparent 0 260deg,#FFC765 320deg,#FF6F7D 350deg,transparent 360deg);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .4s;pointer-events:none;z-index:4}
+.fc:hover{--ty:-8px;box-shadow:0 50px 80px -40px rgba(0,0,0,1),0 0 60px -20px rgba(255,150,100,.25)}
+.fc:hover::after{opacity:1;animation:ftrace 2.4s linear infinite}
+@keyframes ftrace{to{--fang:360deg}}
+.fc-in{position:relative;border-radius:inherit;overflow:hidden;background:linear-gradient(180deg,#161A36,#0E1027);height:100%;display:flex;flex-direction:column}
+.fc-ph{position:relative;margin:10px 10px 0;aspect-ratio:4/3;border-radius:16px;overflow:hidden;background:#0B0D1E;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+.fc-ph img{width:100%;height:100%;object-fit:cover;transform:scale(1.01);transition:transform 1.2s cubic-bezier(.2,.8,.2,1);filter:contrast(1.06) saturate(1.06) brightness(1.03)}
+.fc:hover .fc-ph img{transform:scale(1.05)}
+.fc-ph::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,.28),transparent 22%),radial-gradient(130% 100% at 50% 40%,transparent 70%,rgba(0,0,0,.22));box-shadow:inset 0 1px 0 rgba(255,255,255,.10)}
+.glare{position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(420px circle at var(--gx,50%) var(--gy,0%),rgba(255,230,200,.16),transparent 45%);opacity:0;transition:opacity .4s}
+.fc:hover .glare{opacity:1}
+.fc-tags{position:absolute;z-index:2;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;gap:8px}
+.fc-tags span{font:400 .5rem/1 var(--gauge);letter-spacing:.2em;text-transform:uppercase;padding:8px 11px;border-radius:999px;background:rgba(8,10,22,.62);backdrop-filter:blur(8px);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.fc-tags .live{color:#FFC765}
+.fc-tags .live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#5BE38E;box-shadow:0 0 8px #5BE38E;margin-right:7px;vertical-align:1px;animation:pulse 1.8s infinite}
+@keyframes pulse{50%{opacity:.35}}
+.fc-b{position:relative;padding:18px 22px 22px;display:flex;flex-direction:column;gap:16px}
+.fc-b small{font:400 .5625rem/1 var(--gauge);letter-spacing:.2em;color:#FFC765}
+.fc-b h3{font-size:1.4rem;font-weight:800;font-stretch:112%;line-height:1.08;margin-top:8px}
+.specs{display:flex;flex-wrap:wrap;gap:6px}
+.specs span{font-size:.8125rem;color:rgba(232,236,248,.82);padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.05);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);font-variant-numeric:tabular-nums}
+.fc-f{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:16px;border-top:1px solid rgba(255,255,255,.07)}
+.fc-f .pr small{display:block;font:400 .5rem/1 var(--gauge);letter-spacing:.2em;color:var(--fog);margin-bottom:6px}
+.fc-f .pr b{font:800 1.9rem/1 var(--display);font-stretch:108%;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.fc-f .go{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.07);transition:background .4s,color .4s,transform .5s cubic-bezier(.3,1.5,.5,1)}
+.fc:hover .fc-f .go{background:linear-gradient(135deg,#FFC765,#FF8F66);color:var(--sodium-ink);transform:rotate(-45deg)}
+/* entrance */
+.feat.pre .feat-head .label,.feat.pre .feat-head .sub,.feat.pre .lane-ctl{opacity:0}
+.feat.pre .feat-head h2 .w>span{transform:translateY(110%)}
+.feat.pre .fc{opacity:0}
+.feat.go .feat-head .label{animation:fadeIn .6s ease both}
+.feat.go .feat-head h2 .w>span{animation:up .9s cubic-bezier(.2,.8,.2,1) .1s both}
+.feat.go .feat-head h2 .w:nth-child(2)>span{animation-delay:.22s}
+.feat.go .feat-head .sub{animation:fadeIn .8s ease .4s both}
+.feat.go .lane-ctl{animation:fadeIn .8s ease .5s both}
+.feat.go .fc{animation:arrive 1.1s cubic-bezier(.16,.9,.24,1) both}
+@keyframes arrive{0%{opacity:0;transform:perspective(1000px) translateX(220px) skewX(-10deg);filter:blur(10px)}60%{opacity:1;filter:blur(0)}100%{opacity:1;transform:perspective(1000px);filter:none}}
+@media (max-width:760px){.feat-head{grid-template-columns:1fr}.lane-ctl{align-items:flex-start}.lane-ctl .row{order:2}}
+
+
+/* Traffic on the lane line: small cars with lights on */
+.traffic{position:absolute;left:0;right:0;bottom:10px;height:0;pointer-events:none;overflow:visible}
+.tcar{position:absolute;left:0;bottom:-3px;width:var(--w,92px);animation:drive var(--dur,34s) linear infinite;animation-delay:var(--dl,0s);will-change:transform}
+.tcar svg{display:block;width:100%;height:auto;overflow:visible;animation:bob .9s ease-in-out infinite alternate}
+.tcar .wh{transform-box:fill-box;transform-origin:center;animation:spin .5s linear infinite}
+@keyframes drive{from{transform:translateX(-300px)}to{transform:translateX(calc(100vw + 560px))}}
+@keyframes bob{to{transform:translateY(-.6px)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.tcar{animation:none!important;transform:translateX(var(--x))}.tcar svg,.tcar .wh{animation:none!important}}
+
+/* Brands — two-lane make tiles */
+.brands{position:relative;padding-block:clamp(72px,9vw,120px);padding-top:clamp(42px,5vw,64px);overflow:hidden;background:
+  radial-gradient(50% 60% at 15% 50%,rgba(120,70,170,.14),transparent 70%),
+  radial-gradient(40% 50% at 90% 60%,rgba(255,140,100,.07),transparent 70%),var(--asphalt)}
+.brands-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:24px}
+.brands-head h2 .w{display:inline-block;overflow:hidden;vertical-align:bottom;padding-bottom:.08em}
+.brands-head h2 .w>span{display:inline-block}
+.brands-head h2 em{background-size:220% 100%;background-image:linear-gradient(92deg,#FFC765 0%,#FF8F66 30%,#FF6F7D 50%,#FF8F66 70%,#FFC765 100%);-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.06em;animation:shimmer 7s linear infinite}
+.arrows{display:flex;gap:12px}
+.arrows button{width:52px;height:52px;border-radius:50%;border:0;cursor:pointer;background:rgba(24,27,56,.7);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);color:var(--xenon);display:grid;place-items:center;transition:background .35s,color .35s,transform .35s}
+.arrows button:hover{background:#FFC765;color:var(--sodium-ink);transform:scale(1.06)}
+.mrows{display:flex;flex-direction:column;gap:16px;margin-top:48px;-webkit-mask:linear-gradient(90deg,transparent,#000 9%,#000 91%,transparent);mask:linear-gradient(90deg,transparent,#000 9%,#000 91%,transparent)}
+.mline{overflow:visible}
+.mrow{display:flex;gap:16px;width:max-content;padding:6px 0;will-change:transform}
+.mk{position:relative;display:flex;align-items:center;gap:14px;padding:14px 26px;border-radius:999px;text-decoration:none;color:inherit;white-space:nowrap;background:linear-gradient(180deg,rgba(30,32,66,.75),rgba(14,16,36,.75));box-shadow:inset 0 0 0 1px rgba(255,255,255,.07),0 20px 40px -28px rgba(0,0,0,.9);transition:transform .45s cubic-bezier(.2,.8,.2,1),box-shadow .45s,background .45s}
+.mk:hover{transform:translateY(-4px);background:linear-gradient(180deg,rgba(44,40,80,.9),rgba(20,20,44,.9));box-shadow:inset 0 0 0 1px rgba(255,199,101,.5),0 26px 50px -24px rgba(255,140,100,.35)}
+.mk b{display:block;font:700 1.15rem/1.1 var(--display);font-stretch:106%}
+.mk small{display:block;margin-top:4px;font:400 .5625rem/1 var(--gauge);letter-spacing:.16em;text-transform:uppercase;color:var(--fog)}
+.mk small.has{color:#FFC765}
+.mk .ar{width:0;opacity:0;overflow:hidden;transition:width .4s,opacity .3s,margin .4s;color:#FFC765}
+.mk:hover .ar{width:18px;opacity:1;margin-left:4px}
+.brands.pre .brands-head .label,.brands.pre .brands-head p,.brands.pre .arrows,.brands.pre .mline{opacity:0}
+.brands.pre .brands-head h2 .w>span{transform:translateY(110%)}
+.brands.go .brands-head .label{animation:fadeIn .6s ease both}
+.brands.go .brands-head h2 .w>span{animation:up .9s cubic-bezier(.2,.8,.2,1) .1s both}
+.brands.go .brands-head h2 .w:nth-child(2)>span{animation-delay:.18s}.brands.go .brands-head h2 .w:nth-child(3)>span{animation-delay:.26s}
+.brands.go .brands-head p{animation:fadeIn .8s ease .4s both}
+.brands.go .arrows{animation:fadeIn .8s ease .5s both}
+.brands.go .mline:nth-child(1){animation:laneL 1.2s cubic-bezier(.16,.9,.24,1) .3s both}
+.brands.go .mline:nth-child(2){animation:laneR 1.2s cubic-bezier(.16,.9,.24,1) .45s both}
+@keyframes laneL{from{opacity:0;transform:translateX(-160px);filter:blur(8px)}to{opacity:1;transform:none;filter:none}}
+@keyframes laneR{from{opacity:0;transform:translateX(160px);filter:blur(8px)}to{opacity:1;transform:none;filter:none}}
+@media (max-width:760px){.brands-head{grid-template-columns:1fr}.mk{padding:12px 20px}}
+
+/* Body style — premium filter + card grid */
+.bstyle{position:relative;overflow:hidden;background:
+  radial-gradient(55% 50% at 90% 10%,rgba(120,70,170,.16),transparent 70%),
+  radial-gradient(40% 45% at 5% 90%,rgba(255,140,100,.07),transparent 70%),var(--asphalt)}
+.bs-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:24px}
+.bs-head h2 .w{display:inline-block;overflow:hidden;vertical-align:bottom;padding-bottom:.08em}
+.bs-head h2 .w>span{display:inline-block}
+.bs-head h2 em{background-size:220% 100%;background-image:linear-gradient(92deg,#FFC765 0%,#FF8F66 30%,#FF6F7D 50%,#FF8F66 70%,#FFC765 100%);-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.06em;animation:shimmer 7s linear infinite}
+.bs-count{text-align:right}
+.bs-count b{display:block;font:800 clamp(2.4rem,4vw,3.4rem)/1 var(--display);font-variant-numeric:tabular-nums;background:linear-gradient(92deg,#fff,#FFE2B8);-webkit-background-clip:text;background-clip:text;color:transparent}
+.bs-count small{font:400 .5625rem/1 var(--gauge);letter-spacing:.22em;text-transform:uppercase;color:var(--fog)}
+.gear{position:relative;display:flex;flex-wrap:wrap;gap:4px;padding:6px;border-radius:20px;background:linear-gradient(180deg,rgba(26,29,60,.75),rgba(14,16,36,.75));box-shadow:inset 0 0 0 1px rgba(255,255,255,.07),0 24px 50px -30px rgba(0,0,0,.9);margin-top:36px;width:fit-content;max-width:100%;backdrop-filter:blur(8px)}
+.gear .knob{position:absolute;top:0;left:0;height:0;width:0;border-radius:14px;background:linear-gradient(135deg,#FFC765,#FF8F66 60%,#FF6F7D);box-shadow:0 10px 30px -8px rgba(255,140,100,.55),inset 0 1px 0 rgba(255,255,255,.4);transition:left .5s cubic-bezier(.65,0,.25,1.15),width .5s cubic-bezier(.65,0,.25,1.15),top .5s cubic-bezier(.65,0,.25,1.15),height .3s;z-index:0}
+.gear button{position:relative;z-index:1;display:inline-flex;align-items:center;gap:8px;border:0;background:none;padding:11px 16px;border-radius:14px;cursor:pointer;font-weight:600;font-size:.9375rem;color:var(--fog);transition:color .35s}
+.gear button svg{flex:none;opacity:.8;transition:transform .5s cubic-bezier(.3,1.6,.5,1)}
+.gear button:hover{color:var(--xenon)}
+.gear button:hover svg{transform:translateX(2px)}
+.gear button.on{color:var(--sodium-ink)}
+.gear button.on svg{opacity:1;transform:scale(1.1)}
+.bs-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:22px;margin-top:34px}
+/* Compact the shared vehicle cards so four fit cleanly across laptop screens. */
+.bs-grid .fc-b{padding:15px 15px 17px;gap:12px}
+.bs-grid .fc-b h3{font-size:clamp(1rem,1.25vw,1.2rem);line-height:1.1}
+.bs-grid .specs span{font-size:.72rem;padding:5px 8px}
+.bs-grid .fc-f{gap:8px;padding-top:12px}
+.bs-grid .fc-f .pr b{font-size:clamp(1.2rem,1.7vw,1.6rem)}
+.bs-grid .fc-f .go{width:38px;height:38px;flex:none}
+.bs-grid .fc{scroll-snap-align:none}
+.bs-grid .fc.enter{animation:bsIn .9s cubic-bezier(.16,.9,.24,1) both}
+.bs-grid .fc.leave{animation:bsOut .32s cubic-bezier(.6,0,.8,.4) both}
+@keyframes bsIn{0%{opacity:0;transform:perspective(1000px) translateX(70px) skewX(-7deg);filter:blur(8px)}60%{opacity:1;filter:none}100%{opacity:1;transform:perspective(1000px);filter:none}}
+@keyframes bsOut{to{opacity:0;transform:perspective(1000px) translateX(-50px) scale(.96);filter:blur(6px)}}
+.note{display:flex;gap:16px;align-items:center;margin-top:34px;padding:22px 24px;border-radius:20px;color:rgba(232,236,248,.8);background:linear-gradient(180deg,rgba(28,30,62,.5),rgba(14,16,36,.5));box-shadow:inset 0 0 0 1px rgba(255,199,101,.25);animation:fadeIn .6s ease both}
+.note svg{flex:none;color:#FFC765}
+.note[hidden]{display:none}
+.bs-more{display:flex;justify-content:center;margin-top:40px}
+.bs-more .btn{padding:17px 30px}
+.bs-more[hidden]{display:none}
+.bstyle.pre .bs-more{opacity:0}
+.bstyle.go .bs-more{animation:fadeIn .8s ease 1s both}
+.bstyle.pre .bs-head .label,.bstyle.pre .bs-head .sub,.bstyle.pre .bs-count,.bstyle.pre .gear,.bstyle.pre .bs-grid{opacity:0}
+.bstyle.pre .bs-head h2 .w>span{transform:translateY(110%)}
+.bstyle.go .bs-head .label{animation:fadeIn .6s ease both}
+.bstyle.go .bs-head h2 .w>span{animation:up .9s cubic-bezier(.2,.8,.2,1) .1s both}
+.bstyle.go .bs-head h2 .w:nth-child(2)>span{animation-delay:.18s}.bstyle.go .bs-head h2 .w:nth-child(3)>span{animation-delay:.26s}
+.bstyle.go .bs-head .sub,.bstyle.go .bs-count{animation:fadeIn .8s ease .4s both}
+.bstyle.go .gear{animation:gearIn 1s cubic-bezier(.7,0,.2,1) .35s both}
+@keyframes gearIn{from{opacity:0;clip-path:inset(0 100% 0 0 round 20px)}to{opacity:1;clip-path:inset(0 0 0 0 round 20px)}}
+@media (max-width:900px){.bs-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}}
+@media (max-width:760px){.bs-head{grid-template-columns:1fr}.bs-count{text-align:left}.gear{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;width:100%}.gear::-webkit-scrollbar{display:none}.gear button{white-space:nowrap}.bs-grid .fc{border-radius:18px}.bs-grid .fc-ph{margin:7px 7px 0;border-radius:12px}.bs-grid .fc-tags{top:8px;left:8px;right:8px;gap:4px}.bs-grid .fc-tags span{font-size:.42rem;letter-spacing:.08em;padding:6px 7px}.bs-grid .fc-tags .live::before{width:5px;height:5px;margin-right:4px}.bs-grid .fc-b{padding:11px 10px 12px;gap:10px}.bs-grid .fc-b small{font-size:.48rem;letter-spacing:.13em}.bs-grid .fc-b h3{font-size:clamp(.88rem,3.5vw,1.05rem);overflow-wrap:anywhere}.bs-grid .specs{gap:4px}.bs-grid .specs span{font-size:.65rem;padding:4px 6px}.bs-grid .fc-f{gap:5px;padding-top:10px}.bs-grid .fc-f .pr small{font-size:.43rem;letter-spacing:.12em}.bs-grid .fc-f .pr b{font-size:clamp(.95rem,4vw,1.2rem);overflow-wrap:anywhere}.bs-grid .fc-f .go{width:30px;height:30px}.bs-grid .fc-f .go svg{width:14px;height:14px}}
+@media (max-width:360px){.bs-grid{gap:10px}.bs-grid .fc-b{padding:10px 8px}.bs-grid .fc-f .go{width:26px;height:26px}}
+
+/* Promo band — lift-off */
+.lift{position:relative;overflow:hidden;background:linear-gradient(180deg,var(--asphalt) 0%,#060918 45%,#050817 100%);padding-block:clamp(80px,10vw,130px) 0}
+.lift .bgimg{position:absolute;inset:0;background-size:cover;background-position:center;opacity:.05;filter:grayscale(1) contrast(1.2);-webkit-mask:linear-gradient(180deg,#000,transparent 60%);mask:linear-gradient(180deg,#000,transparent 60%)}
+.lift h2 em{background-size:220% 100%;background-image:linear-gradient(92deg,#FFC765 0%,#FF8F66 30%,#FF6F7D 50%,#FF8F66 70%,#FFC765 100%);-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.06em;animation:shimmer 7s linear infinite}
+.tw{position:relative}.tw .ghost{visibility:hidden}.tw .typed{position:absolute;inset:0}
+.caret{display:inline-block;width:.07em;height:.82em;margin-left:.05em;vertical-align:-.06em;background:linear-gradient(#FFC765,#FF6F7D);border-radius:2px;box-shadow:0 0 14px rgba(255,170,110,.7);animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.lift.wait .sub,.lift.wait .btn{opacity:0}.lift.wait .label{opacity:0}
+.lift.typing .label{animation:fadeIn .6s ease both}
+.lift.done .sub{animation:fadeIn .8s ease both}.lift.done .btn{animation:popIn .7s cubic-bezier(.3,1.6,.5,1) .25s both}
+@keyframes popIn{from{opacity:0;transform:scale(.85) translateY(10px)}to{opacity:1;transform:none}}
+.lift-top{position:relative;display:grid;grid-template-columns:minmax(0,760px);gap:clamp(30px,5vw,80px);align-items:end}
+.lift-top .btn{margin-top:30px}
+.pts{display:grid;gap:14px}
+.pt{display:grid;grid-template-columns:auto 1fr;gap:16px;padding:18px 20px;border-radius:16px;background:rgba(17,21,27,.65);box-shadow:inset 0 0 0 1px var(--kerb);backdrop-filter:blur(6px)}
+.pt i{width:10px;height:10px;margin-top:7px;border-radius:50%;background:var(--ion);box-shadow:0 0 14px var(--ion)}
+.pt b{font-weight:700}
+.pt p{margin:4px 0 0;color:var(--fog);font-size:.9375rem}
+.stage{position:relative;height:clamp(198px,27.6vw,384px);margin-top:20px}
+.stage svg{position:absolute;inset:0;width:100%;height:100%}
+/* Showroom handover story replaces the flying-car illustration. */
+.showroom-story{isolation:isolate;overflow:hidden;border-radius:18px 18px 0 0;mask-image:linear-gradient(180deg,#000 0%,#000 88%,transparent 100%);}
+.showroom-scene{display:block;width:100%;height:100%;overflow:visible}
+.showroom-lights rect{animation:showroomLightPulse 3.8s ease-in-out infinite alternate}
+.showroom-lights rect:nth-of-type(2){animation-delay:.8s}.showroom-lights rect:nth-of-type(3){animation-delay:1.6s}
+@keyframes showroomLightPulse{from{opacity:.45}to{opacity:1}}
+.story-customer-walk{transform-box:fill-box;transform-origin:left bottom;animation:customerWalk 18s linear infinite}
+.story-customer{transform-box:fill-box;transform-origin:center bottom}
+.customer-receive-arm{animation:customerReceive 18s ease-in-out infinite}
+.owner-offer-arm{animation:ownerOffer 18s ease-in-out infinite;transform-box:fill-box;transform-origin:0% 0%}
+.handover-key{opacity:0;transform-box:fill-box;transform-origin:center;animation:keyPass 18s ease-in-out infinite}
+.delivery-car{transform-box:fill-box;transform-origin:0% 0%;animation:carDriveAway 18s cubic-bezier(.6,0,.3,1) infinite}
+.delivery-door{transform-box:fill-box;transform-origin:0% 18%;animation:carDoor 18s ease-in-out infinite}
+.delivery-wheel{transform-box:fill-box;transform-origin:center;animation:deliveryWheelSpin 18s linear infinite}
+.showroom-driver{animation:driverReveal 18s ease-in-out infinite}
+.drive-streaks{animation:driveStreaks 18s ease-in-out infinite;transform-box:fill-box;transform-origin:left center}
+@keyframes ownerOffer{0%,7%,22%,100%{transform:rotate(0)}11%,17%{transform:rotate(-15deg)}}
+@keyframes customerReceive{0%,7%,22%,100%{transform:rotate(0)}11%,17%{transform:rotate(-15deg)}}
+@keyframes keyPass{0%,7%{opacity:0;transform:translate(0,0) scale(.7)}9%{opacity:1;transform:translate(0,0) scale(1)}17%{opacity:1;transform:translate(92px,-7px) scale(1)}21%{opacity:0;transform:translate(98px,5px) scale(.7)}100%{opacity:0;transform:translate(0,0) scale(.7)}}
+@keyframes customerWalk{0%,19%{transform:translateX(0)}29%{transform:translateX(100px)}35%{transform:translateX(235px)}40%{transform:translate(255px,24px) scale(.85);opacity:1}44%,96%{transform:translate(255px,36px) scale(.8);opacity:0}100%{transform:translateX(0);opacity:1}}
+@keyframes carDoor{0%,23%{transform:rotateY(0)}27%,35%{transform:perspective(200px) rotateY(-58deg)}39%,100%{transform:rotateY(0)}}
+@keyframes driverReveal{0%,35%{opacity:0}39%,77%{opacity:1}82%,100%{opacity:0}}
+@keyframes deliveryWheelSpin{0%,48%{transform:rotate(0)}82%,100%{transform:rotate(900deg)}}
+@keyframes carDriveAway{0%,46%{transform:translate(0,0);opacity:1}53%{transform:translate(90px,-2px);opacity:1}71%{transform:translate(650px,5px);opacity:1}78%{transform:translate(980px,6px);opacity:0}79%,95%{transform:translate(980px,6px);opacity:0}100%{transform:translate(0,0);opacity:1}}
+@keyframes driveStreaks{0%,48%{opacity:0;transform:translateX(0)}54%{opacity:.6;transform:translateX(-20px)}75%{opacity:.8;transform:translateX(-180px)}82%,100%{opacity:0;transform:translateX(-220px)}}
+@media(max-width:900px){.showroom-story{border-radius:12px 12px 0 0}.stage{margin-top:16px}}
+@media(prefers-reduced-motion:reduce){.showroom-story *{animation:none!important}.delivery-car{transform:translate(0,0)!important}.handover-key{opacity:1!important}.story-customer-walk{transform:none!important}.drive-streaks{opacity:0!important}}
+@media (max-width:900px){.lift-top{grid-template-columns:1fr}}
+
+/* v1.2.2 — more lifelike showroom delivery: polished glass, subtle camera drift, gestures, key handoff and perspective departure. */
+.showroom-story{background:radial-gradient(ellipse at 50% 0%,rgba(120,143,194,.13),transparent 58%),#080c1d}
+.showroom-scene{transform-origin:center 62%;animation:showroomCameraDrift 24s ease-in-out infinite}
+@keyframes showroomCameraDrift{0%,100%{transform:scale(1) translateY(0)}35%{transform:scale(1.006) translateY(-1px)}62%{transform:scale(1.012) translateY(-2px)}88%{transform:scale(1.004) translateY(0)}}
+.showroom-lights rect{animation:showroomLightPulseReal 4.8s ease-in-out infinite alternate}
+.showroom-lights rect:nth-of-type(2){animation-delay:1.1s}.showroom-lights rect:nth-of-type(3){animation-delay:2.2s}
+@keyframes showroomLightPulseReal{0%{opacity:.42}45%{opacity:.92}70%{opacity:.72}100%{opacity:1}}
+.showroom-glass-reflections .glass-sweep{transform-box:fill-box;transform-origin:center;animation:glassSweep 12s ease-in-out infinite}
+.showroom-glass-reflections .glass-sweep-b{animation-delay:5.7s;opacity:.38}
+@keyframes glassSweep{0%,7%{transform:translateX(-320px);opacity:0}24%{opacity:.6}53%{transform:translateX(840px);opacity:.34}68%,100%{transform:translateX(1050px);opacity:0}}
+.parked-cars use{transform-box:fill-box;transform-origin:center bottom;animation:parkedShowroomPulse 7s ease-in-out infinite}
+.parked-cars use:nth-child(2){animation-delay:.8s}.parked-cars use:nth-child(3){animation-delay:1.6s}.parked-cars use:nth-child(4){animation-delay:2.4s}.parked-cars use:nth-child(5){animation-delay:3.2s}.parked-cars use:nth-child(6){animation-delay:4s}
+@keyframes parkedShowroomPulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.055)}}
+.showroom-floor-glow{animation:floorGlowPulse 4.5s ease-in-out infinite alternate;transform-box:fill-box;transform-origin:center}
+.floor-reflection{animation:reflectionTravel 8s ease-in-out infinite alternate}
+@keyframes floorGlowPulse{from{opacity:.48;transform:scale(.98)}to{opacity:.95;transform:scale(1.04)}}
+@keyframes reflectionTravel{from{opacity:.26;transform:translateX(-24px)}to{opacity:.65;transform:translateX(22px)}}
+.exit-lane{animation:exitLaneFlow 1.3s linear infinite}
+@keyframes exitLaneFlow{to{stroke-dashoffset:-228}}
+.story-person{filter:drop-shadow(0 3px 2px rgba(0,0,0,.27))}
+.owner-head,.customer-head{transform-box:fill-box;transform-origin:center bottom;animation:personHeadLife 24s ease-in-out infinite}
+.owner-torso,.customer-torso{transform-box:fill-box;transform-origin:center bottom;animation:personBreath 3.2s ease-in-out infinite}
+.owner-rest-arm{transform-box:fill-box;transform-origin:top right;animation:ownerFreeArm 24s ease-in-out infinite}
+.owner-offer-arm{transform-box:fill-box;transform-origin:0% 0%;animation:ownerOfferReal 24s cubic-bezier(.4,0,.2,1) infinite}
+.customer-receive-arm{transform-box:fill-box;transform-origin:top left;animation:customerReceiveReal 24s cubic-bezier(.4,0,.2,1) infinite}
+.customer-free-arm{transform-box:fill-box;transform-origin:top right;animation:customerFreeArm 24s ease-in-out infinite}
+.customer-leg,.owner-leg{transform-box:fill-box;transform-origin:50% 5%;}
+.customer-leg-a{animation:customerStepA 24s ease-in-out infinite}.customer-leg-b{animation:customerStepB 24s ease-in-out infinite}
+.customer-shoe{transform-box:fill-box;transform-origin:10% 50%}.customer-shoe-a{animation:customerShoeA 24s ease-in-out infinite}.customer-shoe-b{animation:customerShoeB 24s ease-in-out infinite}
+.owner-leg-a{animation:ownerWeightA 5s ease-in-out infinite}.owner-leg-b{animation:ownerWeightB 5s ease-in-out infinite}
+@keyframes personBreath{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.8px)}}
+@keyframes personHeadLife{0%,8%,100%{transform:rotate(0deg)}12%,20%{transform:rotate(-5deg)}28%,42%{transform:rotate(4deg)}50%,58%{transform:rotate(-2deg)}65%,92%{transform:rotate(0)}}
+@keyframes ownerFreeArm{0%,100%{transform:rotate(0)}12%{transform:rotate(4deg)}17%{transform:rotate(-3deg)}23%{transform:rotate(0)}}
+@keyframes ownerWeightA{0%,100%{transform:translateY(0)}50%{transform:translateY(1px)}}
+@keyframes ownerWeightB{0%,100%{transform:translateY(1px)}50%{transform:translateY(0)}}
+@keyframes ownerOfferReal{0%,7%{transform:rotate(0)}10%{transform:rotate(-9deg)}14%{transform:rotate(-24deg)}18%{transform:rotate(-18deg)}22%{transform:rotate(-4deg)}26%,100%{transform:rotate(0)}}
+@keyframes customerReceiveReal{0%,8%{transform:rotate(0)}12%{transform:rotate(-12deg)}16%,21%{transform:rotate(-23deg)}24%{transform:rotate(-5deg)}29%,100%{transform:rotate(0)}}
+@keyframes customerFreeArm{0%,100%{transform:rotate(0)}29%{transform:rotate(-8deg)}32%{transform:rotate(13deg)}36%{transform:rotate(-12deg)}40%{transform:rotate(12deg)}44%{transform:rotate(-8deg)}48%,100%{transform:rotate(0)}}
+.story-customer-walk{transform-box:fill-box;transform-origin:left bottom;animation:customerWalkReal 24s cubic-bezier(.35,.02,.25,1) infinite}
+@keyframes customerWalkReal{0%,24%{transform:translate(0,0) scale(1);opacity:1}27%{transform:translate(12px,-2px) scale(1);opacity:1}31%{transform:translate(58px,0) scale(.99);opacity:1}35%{transform:translate(112px,-1px) scale(.98);opacity:1}39%{transform:translate(168px,1px) scale(.96);opacity:1}43%{transform:translate(218px,5px) scale(.91);opacity:1}47%{transform:translate(258px,13px) scale(.84);opacity:1}50%{transform:translate(263px,23px) scale(.76);opacity:.86}54%{transform:translate(267px,30px) scale(.66);opacity:0}95%{transform:translate(267px,30px) scale(.66);opacity:0}100%{transform:translate(0,0) scale(1);opacity:1}}
+@keyframes customerStepA{0%,25%,49%,100%{transform:rotate(0)}28%,36%,44%{transform:rotate(17deg)}32%,40%,47%{transform:rotate(-15deg)}}
+@keyframes customerStepB{0%,25%,49%,100%{transform:rotate(0)}28%,36%,44%{transform:rotate(-15deg)}32%,40%,47%{transform:rotate(17deg)}}
+@keyframes customerShoeA{0%,25%,49%,100%{transform:rotate(0)}28%,36%,44%{transform:rotate(-12deg)}32%,40%,47%{transform:rotate(8deg)}}
+@keyframes customerShoeB{0%,25%,49%,100%{transform:rotate(0)}28%,36%,44%{transform:rotate(8deg)}32%,40%,47%{transform:rotate(-12deg)}}
+.handover-key{transform-box:fill-box;transform-origin:center;animation:keyPassReal 24s cubic-bezier(.35,.05,.2,1) infinite}
+.key-spark{opacity:0;transform-box:fill-box;transform-origin:center;animation:keySparkle 24s ease-in-out infinite}
+.key-spark-b{animation-delay:.12s}
+@keyframes keyPassReal{0%,7%{opacity:0;transform:translate(0,0) scale(.5) rotate(-20deg)}10%{opacity:1;transform:translate(2px,-3px) scale(1.12) rotate(12deg)}14%{opacity:1;transform:translate(32px,-9px) scale(1) rotate(-5deg)}19%{opacity:1;transform:translate(82px,-7px) scale(.96) rotate(8deg)}22%{opacity:0;transform:translate(96px,2px) scale(.55) rotate(18deg)}100%{opacity:0;transform:translate(0,0) scale(.5)}}
+@keyframes keySparkle{0%,8%,22%,100%{opacity:0;transform:scale(.5)}12%,16%{opacity:1;transform:scale(1.15)}19%{opacity:.2;transform:scale(.8)}}
+.delivery-car{transform-box:fill-box;transform-origin:0% 0%;animation:carDriveAwayReal 24s cubic-bezier(.34,.06,.2,1) infinite}
+.delivery-car-shadow{transform-box:fill-box;transform-origin:center;animation:carShadowReal 24s ease-in-out infinite}
+.delivery-door{transform-box:fill-box;transform-origin:0% 18%;animation:carDoorReal 24s cubic-bezier(.25,.1,.2,1) infinite}
+.delivery-wheel{transform-box:fill-box;transform-origin:center;animation:deliveryWheelReal 24s linear infinite}
+.showroom-driver{animation:driverRevealReal 24s ease-in-out infinite}
+.delivery-headlight-beam{animation:headlightBeamReal 24s ease-in-out infinite;transform-box:fill-box;transform-origin:left center}
+.delivery-tail-glow{animation:tailLightReal 24s ease-in-out infinite}
+.drive-streaks{animation:driveStreaksReal 24s ease-in-out infinite;transform-box:fill-box;transform-origin:left center}
+@keyframes carDoorReal{0%,41%{transform:rotateY(0deg) translateX(0)}44%{transform:perspective(240px) rotateY(-48deg) translateX(8px)}47%,51%{transform:perspective(240px) rotateY(-66deg) translateX(15px)}54%{transform:perspective(240px) rotateY(-52deg) translateX(10px)}58%,100%{transform:rotateY(0deg) translateX(0)}}
+@keyframes driverRevealReal{0%,50%{opacity:0}53%,90%{opacity:1}95%,100%{opacity:0}}
+@keyframes deliveryWheelReal{0%,59%{transform:rotate(0deg)}64%{transform:rotate(45deg)}75%{transform:rotate(390deg)}90%{transform:rotate(940deg)}97%,100%{transform:rotate(1100deg)}}
+@keyframes carDriveAwayReal{0%,59%{transform:translate(0,0) scale(1);opacity:1}62%{transform:translate(5px,1px) scale(1);opacity:1}66%{transform:translate(24px,5px) scale(.97);opacity:1}70%{transform:translate(70px,10px) scale(.91);opacity:1}76%{transform:translate(220px,22px) scale(.76);opacity:1}83%{transform:translate(500px,39px) scale(.58);opacity:1}89%{transform:translate(780px,56px) scale(.42);opacity:.92}93%{transform:translate(1000px,68px) scale(.3);opacity:.62}96%{transform:translate(1190px,78px) scale(.2);opacity:.22}98%,99%{transform:translate(1280px,82px) scale(.16);opacity:0}100%{transform:translate(0,0) scale(1);opacity:1}}
+@keyframes carShadowReal{0%,60%{opacity:.72;transform:scaleX(1)}76%{opacity:.42;transform:scaleX(.72)}90%{opacity:.19;transform:scaleX(.38)}98%,100%{opacity:0;transform:scaleX(.2)}}
+@keyframes headlightBeamReal{0%,58%{opacity:0;transform:scaleX(.45)}62%{opacity:.65;transform:scaleX(1)}75%,91%{opacity:.78;transform:scaleX(1.15)}98%,100%{opacity:0;transform:scaleX(.5)}}
+@keyframes tailLightReal{0%,60%{opacity:0}62%{opacity:.8}66%{opacity:.38}72%{opacity:.22}95%,100%{opacity:0}}
+@keyframes driveStreaksReal{0%,60%{opacity:0;transform:translateX(0)}66%{opacity:.16;transform:translateX(-15px)}76%{opacity:.42;transform:translateX(-70px)}85%{opacity:.8;transform:translateX(-150px)}92%{opacity:.45;transform:translateX(-220px)}98%,100%{opacity:0;transform:translateX(-270px)}}
+@media(max-width:800px){.showroom-glass-reflections{opacity:.65}.showroom-scene{animation-duration:28s}.showroom-story{mask-image:none}}
+@media(prefers-reduced-motion:reduce){.showroom-story *{animation:none!important;transition:none!important}.delivery-car{transform:translate(0,0) scale(1)!important;opacity:1!important}.handover-key{opacity:1!important}.story-customer-walk{transform:none!important;opacity:1!important}.drive-streaks{opacity:0!important}.delivery-headlight-beam,.delivery-tail-glow{opacity:0!important}}
+
+/* Reviews — cards that fly together */
+@property --rang{syntax:"<angle>";inherits:false;initial-value:0deg}
+.revs{position:relative;overflow:hidden;background:
+  radial-gradient(50% 55% at 50% 60%,rgba(120,70,170,.16),transparent 70%),var(--asphalt)}
+.rev-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:24px}
+.rev-head h2 .w{display:inline-block;overflow:hidden;vertical-align:bottom;padding-bottom:.08em}
+.rev-head h2 .w>span{display:inline-block}
+.rev-head h2 em{background-size:220% 100%;background-image:linear-gradient(92deg,#FFC765 0%,#FF8F66 30%,#FF6F7D 50%,#FF8F66 70%,#FFC765 100%);-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.06em;animation:shimmer 7s linear infinite}
+.rev-side{display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+.rev-side .stars{gap:4px}
+.rev-side small{font:400 .5625rem/1 var(--gauge);letter-spacing:.22em;text-transform:uppercase;color:var(--fog)}
+.rev-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:48px;align-items:start}
+.rv-card{position:relative;margin:0;padding:30px 26px 24px;border-radius:24px;display:flex;flex-direction:column;gap:18px;background:linear-gradient(180deg,rgba(30,32,66,.75),rgba(14,16,36,.75));box-shadow:0 30px 60px -36px rgba(0,0,0,.95);transition:transform .5s cubic-bezier(.2,.8,.2,1),box-shadow .5s}
+.rv-card:nth-child(even){margin-top:36px}
+.rv-card::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(160deg,rgba(255,199,101,.5),rgba(255,255,255,.05) 40%,rgba(255,111,125,.4));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+.rv-card::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:1.5px;background:conic-gradient(from var(--rang),transparent 0 260deg,#FFC765 320deg,#FF6F7D 350deg,transparent 360deg);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .4s;pointer-events:none}
+.rv-card:hover{transform:translateY(-6px);box-shadow:0 40px 70px -36px rgba(0,0,0,1),0 0 50px -20px rgba(255,150,100,.3)}
+.rv-card:hover::after{opacity:1;animation:rtrace 2.4s linear infinite}
+@keyframes rtrace{to{--rang:360deg}}
+.qmark{position:absolute;top:14px;right:20px;font:900 5rem/1 var(--display);background:linear-gradient(180deg,rgba(255,199,101,.5),rgba(255,111,125,.05));-webkit-background-clip:text;background-clip:text;color:transparent;pointer-events:none}
+.stars{display:flex;gap:3px;color:#FFC765}
+.rv-card blockquote{margin:0;font-size:1.0625rem;line-height:1.6;color:rgba(238,243,250,.92)}
+.who{display:flex;align-items:center;gap:12px;padding-top:16px;border-top:1px solid rgba(255,255,255,.07)}
+.av{position:relative;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;flex:none;background:radial-gradient(circle at 35% 30%,#2A2D5C,#0E1027);font:700 .8rem/1 var(--display);color:#FFE2B8}
+.av::before{content:"";position:absolute;inset:0;border-radius:50%;padding:1.5px;background:conic-gradient(from 210deg,#FFC765,#FF6F7D,rgba(255,255,255,.08) 55%,#FFC765);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+.who b{display:block;font-weight:600}
+.who small{color:var(--fog);font-size:.8125rem}
+.rev-links{display:flex;gap:26px;flex-wrap:wrap;margin-top:64px;justify-content:center}
+/* entrance: scattered cards fly together and lock into place */
+.revs.pre .rev-head .label,.revs.pre .rev-head .sub,.revs.pre .rev-side,.revs.pre .rev-links{opacity:0}
+.revs.pre .rev-head h2 .w>span{transform:translateY(110%)}
+.revs.pre .rv-card{opacity:0}
+.revs.go .rev-head .label{animation:fadeIn .6s ease both}
+.revs.go .rev-head h2 .w>span{animation:up .9s cubic-bezier(.2,.8,.2,1) .1s both}
+.revs.go .rev-head h2 .w:nth-child(2)>span{animation-delay:.18s}.revs.go .rev-head h2 .w:nth-child(3)>span{animation-delay:.26s}
+.revs.go .rev-head .sub,.revs.go .rev-side{animation:fadeIn .8s ease .4s both}
+.revs.go .rv-card{animation:gather 1.3s cubic-bezier(.2,1.3,.35,1) both}
+.revs.go .rv-card:nth-child(1){--fx:-420px;--fy:-160px;--fr:-18deg;animation-delay:.25s}
+.revs.go .rv-card:nth-child(2){--fx:-120px;--fy:320px;--fr:14deg;animation-delay:.35s}
+.revs.go .rv-card:nth-child(3){--fx:160px;--fy:-300px;--fr:-12deg;animation-delay:.45s}
+.revs.go .rv-card:nth-child(4){--fx:440px;--fy:200px;--fr:20deg;animation-delay:.55s}
+@keyframes gather{0%{opacity:0;transform:translate(var(--fx),var(--fy)) rotate(var(--fr)) scale(.8);filter:blur(10px)}55%{opacity:1;filter:none}100%{opacity:1;transform:none;filter:none}}
+.revs.go .rv-card::before{animation:lockGlow 1.2s ease both}
+.revs.go .rv-card:nth-child(1)::before{animation-delay:1.1s}.revs.go .rv-card:nth-child(2)::before{animation-delay:1.2s}.revs.go .rv-card:nth-child(3)::before{animation-delay:1.3s}.revs.go .rv-card:nth-child(4)::before{animation-delay:1.4s}
+@keyframes lockGlow{0%{filter:none}30%{filter:brightness(2.2) drop-shadow(0 0 10px rgba(255,180,110,.8))}100%{filter:none}}
+.revs.go .rev-links{animation:fadeIn .8s ease 1.5s both}
+@media (max-width:1060px){.rev-grid{grid-template-columns:1fr 1fr}.rv-card:nth-child(even){margin-top:0}}
+@media (max-width:760px){.rev-head{grid-template-columns:1fr}.rev-side{align-items:flex-start}}
+@media (max-width:600px){.rev-grid{grid-template-columns:1fr}.revs.go .rv-card:nth-child(n){--fx:0px;--fy:120px}}
+
+/* Location */
+.loc h2 em{background-size:220% 100%;background-image:linear-gradient(92deg,#FFC765 0%,#FF8F66 30%,#FF6F7D 50%,#FF8F66 70%,#FFC765 100%);-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.06em;animation:shimmer 7s linear infinite}
+.loc.wait .loc-txt .sub,.loc.wait .addr,.loc.wait #dirBtn,.loc.wait .loc-txt .label{opacity:0}
+.loc.typing .loc-txt .label{animation:fadeIn .5s ease both}
+.loc.done .loc-txt .sub{animation:fadeIn .6s ease both}.loc.done .addr{animation:fadeIn .6s ease .1s both}
+.loc.done #dirBtn{animation:popIn .6s cubic-bezier(.3,1.6,.5,1) .2s both}
+#dirBtn.shine::after{animation:btnShine 1.1s cubic-bezier(.5,0,.2,1) .7s backwards}
+.loc.done #dirBtn.shine{animation:popIn .6s cubic-bezier(.3,1.6,.5,1) .2s both,btnGlow 1.4s ease .7s both}
+@keyframes btnShine{from{transform:translateX(-120%)}to{transform:translateX(120%)}}
+@keyframes btnGlow{0%{box-shadow:0 0 0 0 rgba(255,199,101,.7)}40%{box-shadow:0 0 0 10px rgba(255,199,101,0),0 18px 50px -10px rgba(255,170,110,.8)}100%{box-shadow:0 0 0 0 rgba(255,199,101,0)}}
+.loc .wrap{display:grid;grid-template-columns:1fr 1.15fr;gap:clamp(30px,6vw,80px);align-items:center}
+.addr{margin-top:30px;display:grid;gap:14px}
+.addr div{display:flex;gap:14px;align-items:flex-start}
+.addr small{display:block;font:400 .5625rem/1.4 var(--gauge);letter-spacing:.2em;text-transform:uppercase;color:var(--fog)}
+.addr b{font-weight:600;font-size:1.0625rem}
+.loc .btn{margin-top:30px}
+.mapbox{position:relative;border-radius:24px;overflow:hidden;background:#0D1028;box-shadow:inset 0 0 0 1px rgba(255,199,101,.22),0 40px 80px -40px rgba(0,0,0,.95);aspect-ratio:6/5;max-width:100%}
+.mapbox svg{width:100%;height:100%;display:block}
+.mapbox .ph{position:absolute;right:16px;bottom:16px;width:38%;border-radius:12px;overflow:hidden;box-shadow:0 0 0 4px #0C0F14,0 20px 40px -12px rgba(0,0,0,.8);transform:rotate(2deg)}
+.mapbox .ph img{aspect-ratio:4/3;object-fit:cover;width:100%}
+.mapnote{position:absolute;left:16px;bottom:14px;font:400 .5rem/1 var(--gauge);letter-spacing:.18em;text-transform:uppercase;color:var(--fog)}
+@media (max-width:900px){.loc .wrap{grid-template-columns:1fr}}
+
+/* Footer — quiet and organised */
+footer{position:relative;background:#06071A;border-top:1px solid rgba(255,255,255,.06)}
+.f-glow{height:1px;background:linear-gradient(90deg,transparent,rgba(255,199,101,.55) 30%,rgba(255,111,125,.45) 70%,transparent);margin-top:-1px}
+.f-top{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:clamp(28px,4vw,56px);padding-block:clamp(48px,6vw,72px)}
+.f-brand p{color:var(--fog);max-width:32ch;margin:16px 0 0;font-size:.9375rem;line-height:1.65}
+.f-col h4{font:400 .5625rem/1 var(--gauge);letter-spacing:.22em;text-transform:uppercase;color:var(--fog);margin:6px 0 18px}
+.f-col ul{list-style:none;padding:0;margin:0;display:grid;gap:11px}
+.f-col a,.f-col li{font-size:.9375rem;color:rgba(238,243,250,.8);text-decoration:none;transition:color .25s}
+.f-col a:hover{color:#FFC765}
+.f-col li.ct{display:flex;gap:10px;align-items:flex-start}
+.f-col li.ct svg{flex:none;margin-top:3px;color:#FFC765;opacity:.85}
+.legal{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding-block:20px calc(20px + env(safe-area-inset-bottom,0px));border-top:1px solid rgba(255,255,255,.06);color:var(--fog);font-size:.8125rem}
+.totop{display:inline-flex;align-items:center;gap:6px;border:0;background:none;color:var(--fog);padding:6px 0;cursor:pointer;font-size:.8125rem;transition:color .25s}
+.totop:hover{color:#FFC765}
+footer.pre .f-top,footer.pre .legal{opacity:0}
+footer.go .f-top{animation:fadeIn .8s ease both}footer.go .legal{animation:fadeIn .8s ease .2s both}
+@media (max-width:980px){.f-top{grid-template-columns:1fr 1fr}.f-brand{grid-column:1/-1}}
+@media (max-width:520px){.f-top{grid-template-columns:1fr}}
+
+/* Reveal */
+.rv.in{animation:rise .9s cubic-bezier(.2,.8,.2,1) both}
+.feats .rv.in:nth-child(2){animation-delay:.08s}.feats .rv.in:nth-child(3){animation-delay:.16s}.feats .rv.in:nth-child(4){animation-delay:.24s}
+@keyframes rise{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:none}}
+.hero.wait .hero-side,.hero.wait .label{opacity:0}
+.hero.typing .label{animation:fadeIn .5s ease both}
+.hero.done .hero-side .lead{animation:fadeIn .7s ease both}.hero.done .hero-side .cta-row{animation:popIn .6s cubic-bezier(.3,1.6,.5,1) .15s both}
+.hero.done .hero-side{opacity:1}
+@keyframes up{from{transform:translateY(105%)}to{transform:none}}
+
+/* Admin section map (preview only) */
+@media (max-width:420px){.hdr .btn span.num{display:none}}
+body.keys [data-key]{outline:1px dashed color-mix(in oklab,var(--sodium) 70%,transparent);outline-offset:-10px}
+body.keys [data-key]::before{content:attr(data-n) "  " attr(data-key) "  ·  " attr(data-label);position:absolute;top:14px;left:14px;z-index:40;font:400 .625rem/1 var(--gauge);letter-spacing:.08em;padding:8px 12px;border-radius:999px;background:var(--sodium);color:var(--sodium-ink);white-space:nowrap;max-width:calc(100% - 28px);overflow:hidden;text-overflow:ellipsis}
+[data-key]{position:relative}
+body.keys .hero::before{top:96px;left:var(--gut)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+  .hero-inventory-cta{animation:none!important;filter:none!important}
+  html{scroll-behavior:auto}
+}
+
+/* v1.3.9 — quicker customer handover and a smooth, full-size car departure. */
+.owner-head,.customer-head{animation:personHeadLife 18s ease-in-out infinite}
+.owner-torso,.customer-torso{animation:personBreath 2.6s ease-in-out infinite}
+.owner-rest-arm{animation:ownerFreeArm 18s ease-in-out infinite}
+.owner-offer-arm{animation:ownerOfferReal 18s cubic-bezier(.4,0,.2,1) infinite}
+.customer-receive-arm{animation:customerReceiveFast 18s ease-in-out infinite}
+.customer-free-arm{animation:customerFreeArmFast 18s ease-in-out infinite}
+.customer-leg-a{animation:customerStepAFast 18s linear infinite}
+.customer-leg-b{animation:customerStepBFast 18s linear infinite}
+.customer-shoe-a{animation:customerShoeAFast 18s linear infinite}
+.customer-shoe-b{animation:customerShoeBFast 18s linear infinite}
+.story-customer-walk{animation:customerWalkFast 18s linear infinite}
+.handover-key{animation:keyPassFast 18s linear infinite}
+.key-spark{animation:keySparkleFast 18s ease-in-out infinite}
+.key-spark-b{animation-delay:.12s}
+.delivery-car{animation:carDriveAwayContinuous 18s linear infinite;transform-box:fill-box;transform-origin:0% 0%}
+.delivery-car-shadow{animation:carShadowContinuous 18s linear infinite}
+.delivery-door{animation:carDoorFast 18s linear infinite;transform-box:fill-box;transform-origin:0% 18%}
+.delivery-wheel{animation:deliveryWheelContinuous 18s linear infinite;transform-box:fill-box;transform-origin:center}
+.showroom-driver{animation:driverRevealFast 18s linear infinite}
+.delivery-headlight-beam{animation:headlightBeamContinuous 18s linear infinite;transform-box:fill-box;transform-origin:left center}
+.delivery-tail-glow{animation:tailLightContinuous 18s linear infinite}
+.drive-streaks{animation:driveStreaksContinuous 18s linear infinite;transform-box:fill-box;transform-origin:left center}
+@keyframes ownerOfferReal{0%,4%{transform:rotate(0)}7%{transform:rotate(-9deg)}10%{transform:rotate(-24deg)}13%{transform:rotate(-18deg)}16%{transform:rotate(-4deg)}20%,100%{transform:rotate(0)}}
+@keyframes customerReceiveFast{0%,4%{transform:rotate(0)}7%{transform:rotate(-12deg)}10%{transform:rotate(-23deg)}13%{transform:rotate(-5deg)}17%,100%{transform:rotate(0)}}
+@keyframes customerFreeArmFast{0%,100%{transform:rotate(0)}14%{transform:rotate(-8deg)}18%{transform:rotate(13deg)}22%{transform:rotate(-12deg)}26%{transform:rotate(12deg)}30%{transform:rotate(-8deg)}36%,100%{transform:rotate(0)}}
+@keyframes customerStepAFast{0%,11%,39%,100%{transform:rotate(0)}14%,22%,30%{transform:rotate(17deg)}18%,26%,34%{transform:rotate(-15deg)}}
+@keyframes customerStepBFast{0%,11%,39%,100%{transform:rotate(0)}14%,22%,30%{transform:rotate(-15deg)}18%,26%,34%{transform:rotate(17deg)}}
+@keyframes customerShoeAFast{0%,11%,39%,100%{transform:rotate(0)}14%,22%,30%{transform:rotate(-12deg)}18%,26%,34%{transform:rotate(8deg)}}
+@keyframes customerShoeBFast{0%,11%,39%,100%{transform:rotate(0)}14%,22%,30%{transform:rotate(8deg)}18%,26%,34%{transform:rotate(-12deg)}}
+@keyframes customerWalkFast{
+  0%{transform:translate(0,0) scale(1);opacity:0}
+  2%,10%{transform:translate(0,0) scale(1);opacity:1}
+  13%{transform:translate(18px,-2px) scale(1);opacity:1}
+  18%{transform:translate(70px,0) scale(1);opacity:1}
+  23%{transform:translate(132px,-1px) scale(1);opacity:1}
+  28%{transform:translate(190px,3px) scale(1);opacity:1}
+  32%{transform:translate(235px,8px) scale(1);opacity:1}
+  36%{transform:translate(266px,17px) scale(1);opacity:1}
+  39%{transform:translate(270px,25px) scale(1);opacity:0}
+  40%,100%{transform:translate(270px,25px) scale(1);opacity:0}
+}
+@keyframes keyPassFast{
+  0%,3%{opacity:0;transform:translate(0,0) scale(.5) rotate(-20deg)}
+  6%{opacity:1;transform:translate(2px,-3px) scale(1.08) rotate(12deg)}
+  10%{opacity:1;transform:translate(32px,-9px) scale(1) rotate(-5deg)}
+  14%{opacity:1;transform:translate(82px,-7px) scale(.96) rotate(8deg)}
+  17%{opacity:0;transform:translate(96px,2px) scale(.55) rotate(18deg)}
+  100%{opacity:0;transform:translate(0,0) scale(.5)}
+}
+@keyframes keySparkleFast{0%,4%,18%,100%{opacity:0;transform:scale(.5)}8%,12%{opacity:1;transform:scale(1.15)}15%{opacity:.2;transform:scale(.8)}}
+@keyframes carDoorFast{
+  0%,27%{transform:rotateY(0deg) translateX(0)}
+  31%{transform:perspective(240px) rotateY(-42deg) translateX(6px)}
+  34%,35%{transform:perspective(240px) rotateY(-66deg) translateX(15px)}
+  38%{transform:perspective(240px) rotateY(-35deg) translateX(5px)}
+  40%,100%{transform:rotateY(0deg) translateX(0)}
+}
+@keyframes driverRevealFast{0%,34%{opacity:0}37%,91%{opacity:1}94%,100%{opacity:0}}
+@keyframes deliveryWheelContinuous{0%,40%{transform:rotate(0deg)}94%{transform:rotate(1440deg)}99%,100%{transform:rotate(1440deg)}}
+@keyframes carDriveAwayContinuous{
+  0%{transform:translate(0,0) scale(1);opacity:0}
+  2%,40%{transform:translate(0,0) scale(1);opacity:1}
+  48%{transform:translate(190px,12px) scale(1);opacity:1}
+  58%{transform:translate(430px,27px) scale(1);opacity:1}
+  68%{transform:translate(670px,41px) scale(1);opacity:1}
+  78%{transform:translate(910px,55px) scale(1);opacity:1}
+  88%{transform:translate(1150px,69px) scale(1);opacity:.55}
+  94%{transform:translate(1300px,79px) scale(1);opacity:0}
+  94%,100%{transform:translate(1300px,79px) scale(1);opacity:0}
+}
+@keyframes carShadowContinuous{0%,40%{opacity:.72;transform:scaleX(1)}68%{opacity:.52;transform:scaleX(.92)}88%{opacity:.25;transform:scaleX(.8)}94%,99%{opacity:0;transform:scaleX(.75)}100%{opacity:.72;transform:scaleX(1)}}
+@keyframes headlightBeamContinuous{0%,40%{opacity:0;transform:scaleX(.45)}43%{opacity:.65;transform:scaleX(1)}68%,88%{opacity:.76;transform:scaleX(1.15)}94%,100%{opacity:0;transform:scaleX(.5)}}
+@keyframes tailLightContinuous{0%,40%{opacity:0}43%{opacity:.8}50%{opacity:.5}60%{opacity:.36}88%,100%{opacity:0}}
+@keyframes driveStreaksContinuous{0%,40%{opacity:0;transform:translateX(0)}45%{opacity:.2;transform:translateX(-20px)}58%{opacity:.4;transform:translateX(-80px)}72%{opacity:.65;transform:translateX(-150px)}86%{opacity:.8;transform:translateX(-220px)}94%,100%{opacity:0;transform:translateX(-270px)}}
+
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <linearGradient id="tShine" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFC48A" stop-opacity=".6"/><stop offset=".22" stop-color="#FFB27A" stop-opacity=".12"/><stop offset=".6" stop-color="#fff" stop-opacity=".04"/><stop offset="1" stop-color="#000" stop-opacity=".4"/></linearGradient>
+  <linearGradient id="tBeam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FFF1D2" stop-opacity=".75"/><stop offset="1" stop-color="#FFF1D2" stop-opacity="0"/></linearGradient>
+  <radialGradient id="tTail" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#FF4A55" stop-opacity=".9"/><stop offset="1" stop-color="#FF4A55" stop-opacity="0"/></radialGradient>
+  <radialGradient id="tHead" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#FFF6E0"/><stop offset="1" stop-color="#FFF6E0" stop-opacity="0"/></radialGradient>
+  <linearGradient id="tGlass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5A5390"/><stop offset=".55" stop-color="#11132C"/><stop offset="1" stop-color="#FF9A5A" stop-opacity=".5"/></linearGradient>
+</defs></svg>
+<header class="hdr" id="hdr">
+  <div class="wrap">
+    <a class="logo" href="index.html" aria-label="{%site name%} home"><img src="{%site logo%}" alt="{%site name%}" style="display:block;max-width:230px;max-height:48px;width:auto;height:auto;object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><span style="display:none;flex-direction:column;line-height:1"><b>{%site name%}</b><small>{%site tagline%}</small></span></a>
+    <nav class="nav" aria-label="Main">
+      <a href="index.html">Home</a>
+      <a href="inventory.html">{%text global.nav.inventory label="Inventory navigation label" | Inventory%}</a>
+      <a href="about-us.html">{%text global.nav.about label="About navigation label" | About Us%}</a>
+      {%if feature.blog%}<a href="blog.html">{%text global.nav.blog label="Blog navigation label" | Blog%}</a>{%endif%}
+      <a href="contact-us.html">{%text global.nav.contact label="Contact navigation label" | Contact Us%}</a>
+    </nav>
+    <div class="apx-hdr-meta"><a class="apx-hdr-addr" href="{%siteurl maps_dir%}" target="_blank" rel="noopener" aria-label="Get directions"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s7-6.1 7-12a7 7 0 0 0-14 0c0 5.9 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg><span><b>{%site street%}</b><small>{%site city_state%} {%site zip%}</small></span></a><span class="apx-hdr-soc">{%if site.facebook%}<a class="apx-soc" href="{%siteurl facebook%}" target="_blank" rel="noopener" aria-label="Facebook"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M14 8h2.5V5H14c-2.2 0-4 1.8-4 4v2H7.5v3H10v7h3v-7h2.3l.7-3H13V9c0-.6.4-1 1-1z"/></svg></a>{%endif%}{%if site.google%}<a class="apx-soc" href="{%siteurl google%}" target="_blank" rel="noopener" aria-label="Google Business Profile"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.3z"/><path d="M12 22c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22z" opacity=".8"/><path d="M6.4 14c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2V7.4H3.1a10 10 0 0 0 0 9.2L6.4 14z" opacity=".6"/><path d="M12 5.9c1.5 0 2.8.5 3.8 1.5l2.9-2.9A10 10 0 0 0 3.1 7.4L6.4 10c.8-2.3 3-4.1 5.6-4.1z" opacity=".9"/></svg></a>{%endif%}</span></div>
+    <a class="btn" href="{%siteurl tel_link%}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg><span class="num">{%site phone%}</span></a>
+  </div>
+  <div class="track" aria-hidden="true"><i id="trk"></i><svg id="trkCar" viewBox="0 0 30 16"><rect x="2" y="3" width="26" height="10" rx="4" fill="#EEF3FA"/><rect x="11" y="4.5" width="9" height="7" rx="2" fill="#0A0C10"/><rect x="26" y="4" width="2" height="2.4" fill="#FFE7B8"/><rect x="26" y="9.6" width="2" height="2.4" fill="#FFE7B8"/><rect x="2" y="4" width="1.4" height="8" fill="#FF4232"/></svg></div>
+</header>
+
+<main id="top">
+
+<!-- 01 · home.hero -->
+<section class="hero" id="hero" data-key="home.hero" data-label="Top banner (slideshow)" data-n="01">
+  <canvas id="hwy" aria-hidden="true"></canvas>
+  <div class="hero-in wrap">
+    <p class="label">{%text home.hero.eyebrow label="Hero eyebrow" | Used vehicles in {city_state}%}</p>
+    <div class="hero-grid">
+      <div>
+        <h1 class="tw" id="heroH"><span class="ghost">{%head home.hero.title hl="em"%}</span><span class="typed" aria-hidden="true"></span></h1>
+      </div>
+      <div class="hero-side">
+        <p class="lead">{%para home.hero.text%}</p>
+        <div class="cta-row">
+          <a class="btn hero-inventory-cta" href="{%link home.hero.btn1_link label="Primary hero button link" | inventory.html%}">{%text home.hero.btn1_label label="Primary hero button text" | Explore our inventory%} <span class="arr">→</span></a>
+          <a class="btn ghost" href="{%link home.hero.btn2_link label="Secondary hero button link" | contact-us.html%}">{%text home.hero.btn2_label label="Secondary hero button text" | Talk to our team%}</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="road" id="road" aria-hidden="true">
+    <div class="carwrap" id="carwrap">
+      <svg viewBox="380 150 690 250">
+        <defs>
+          <linearGradient id="hpaint" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBF8FF"/><stop offset=".35" stop-color="#E3E3F2"/><stop offset=".6" stop-color="#A9A8C9"/><stop offset="1" stop-color="#5E5B86"/></linearGradient>
+          <linearGradient id="hglass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3A3566"/><stop offset=".45" stop-color="#0C0E22"/><stop offset=".8" stop-color="#1E1B3E"/><stop offset="1" stop-color="#FF9A5A" stop-opacity=".55"/></linearGradient>
+          <linearGradient id="hbeam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FFF3DA" stop-opacity=".7"/><stop offset="1" stop-color="#FFF3DA" stop-opacity="0"/></linearGradient>
+          <linearGradient id="htrail" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="#FF4A55" stop-opacity=".95"/><stop offset="1" stop-color="#FF4A55" stop-opacity="0"/></linearGradient>
+          <linearGradient id="hbed" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#141433"/><stop offset="1" stop-color="#2A2752"/></linearGradient>
+          <radialGradient id="hhub" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#2A2F48"/><stop offset=".7" stop-color="#151829"/><stop offset="1" stop-color="#0A0B14"/></radialGradient>
+          <filter id="hblur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+          <filter id="hblur2" x="-20%" y="-200%" width="140%" height="500%"><feGaussianBlur stdDeviation="2.4"/></filter>
+        </defs>
+        <ellipse cx="715" cy="388" rx="345" ry="11" fill="#000" opacity=".75" filter="url(#hblur)"/>
+        <path d="M1036 268 L1470 226 L1470 330 Z" fill="url(#hbeam)" opacity=".55"/>
+        <rect id="trail" x="160" y="262" width="232" height="9" rx="4.5" fill="url(#htrail)" filter="url(#hblur2)"/>
+        <g id="hbody">
+          <!-- original crew-cab pickup: bed + tailgate at the back, tall hood at the front -->
+          <path d="M392 330 L392 256 C392 253 394 251 397 251 L618 251 L622 198 C623 187 630 180 641 179 L790 177 C800 177 807 180 813 186 L876 246 L1014 254 C1026 255 1034 262 1035 274 L1037 322 C1037 332 1029 338 1019 338 L404 338 C397 338 392 335 392 330 Z" fill="url(#hpaint)"/>
+          <path d="M641 179 L790 177 C800 177 807 180 813 186 L876 246 L1014 254" fill="none" stroke="#FFC48A" stroke-opacity=".75" stroke-width="2"/>
+          <rect x="398" y="251" width="218" height="7" rx="2" fill="url(#hbed)"/>
+          <path d="M398 258 H616" stroke="#FFC48A" stroke-opacity=".5" stroke-width="1.2"/>
+          <path d="M636 246 L639 197 C640 191 644 188 650 188 L708 187 L708 246 Z" fill="url(#hglass)"/>
+          <path d="M716 187 L788 186 C795 186 799 188 803 192 L854 244 L716 246 Z" fill="url(#hglass)"/>
+          <path d="M712 186 V330 M620 256 V330" stroke="#3E3B66" stroke-opacity=".55" stroke-width="1.4"/>
+          <path d="M398 290 H1032" stroke="#fff" stroke-opacity=".6" stroke-width="1.2"/>
+          <path d="M672 266 h 24 M752 266 h 24" stroke="#3E3B66" stroke-width="3.5" stroke-linecap="round"/>
+          <path d="M806 206 l 16 2 v 16 l -14 -2 Z" fill="#2E2B55"/>
+          <rect x="600" y="328" width="300" height="10" rx="3" fill="#1B1838"/>
+          <path d="M440 338 C 440 290, 474 264, 510 264 C 546 264, 580 290, 580 338 L 566 338 C 566 302, 538 280, 510 280 C 482 280, 454 302, 454 338 Z" fill="#1B1838"/><path d="M800 338 C 800 290, 834 264, 870 264 C 906 264, 940 290, 940 338 L 926 338 C 926 302, 898 280, 870 280 C 842 280, 814 302, 814 338 Z" fill="#1B1838"/>
+          <path d="M454 338 C 454 302, 478 280, 510 280 C 542 280, 566 302, 566 338 Z" fill="#090A16"/>
+          <path d="M814 338 C 814 302, 838 280, 870 280 C 902 280, 926 302, 926 338 Z" fill="#090A16"/>
+          <rect x="996" y="300" width="42" height="38" rx="6" fill="#1B1838"/>
+          <rect x="1028" y="274" width="8" height="24" rx="2" fill="#141433"/>
+          <path d="M1014 260 C 1024 260, 1032 263, 1034 268 L 1034 272 L 1012 270 Z" fill="#FFF3DA"/>
+          <rect x="1010" y="259" width="28" height="14" rx="6" fill="#FFF3DA" filter="url(#hblur2)"/>
+          <rect x="392" y="258" width="7" height="22" rx="2" fill="#FF4A55"/>
+          <rect x="388" y="256" width="14" height="27" rx="5" fill="#FF4A55" filter="url(#hblur2)"/>
+        </g>
+        <g id="hwA"><circle cx="510" cy="334" r="52" fill="#07080F"/><circle cx="510" cy="334" r="47" fill="none" stroke="#1C1F33" stroke-width="7" stroke-dasharray="6 5"/><circle cx="510" cy="334" r="34" fill="url(#hhub)" stroke="#C9CCE0" stroke-width="2.5"/><g class="sp" stroke="#C9CCE0" stroke-width="7" stroke-linecap="round" opacity=".8"><line x1="510" y1="334" x2="538.0" y2="334.0"/><line x1="510" y1="334" x2="518.7" y2="360.6"/><line x1="510" y1="334" x2="487.3" y2="350.5"/><line x1="510" y1="334" x2="487.3" y2="317.5"/><line x1="510" y1="334" x2="518.6" y2="307.4"/></g><circle cx="510" cy="334" r="10" fill="#14172A" stroke="#C9CCE0" stroke-width="2"/><circle cx="510" cy="334" r="4" fill="#FFC765"/></g>
+        <g id="hwB"><circle cx="870" cy="334" r="52" fill="#07080F"/><circle cx="870" cy="334" r="47" fill="none" stroke="#1C1F33" stroke-width="7" stroke-dasharray="6 5"/><circle cx="870" cy="334" r="34" fill="url(#hhub)" stroke="#C9CCE0" stroke-width="2.5"/><g class="sp" stroke="#C9CCE0" stroke-width="7" stroke-linecap="round" opacity=".8"><line x1="870" y1="334" x2="898.0" y2="334.0"/><line x1="870" y1="334" x2="878.7" y2="360.6"/><line x1="870" y1="334" x2="847.3" y2="350.5"/><line x1="870" y1="334" x2="847.3" y2="317.5"/><line x1="870" y1="334" x2="878.6" y2="307.4"/></g><circle cx="870" cy="334" r="10" fill="#14172A" stroke="#C9CCE0" stroke-width="2"/><circle cx="870" cy="334" r="4" fill="#FFC765"/></g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- 02 · home.search -->
+<section class="search" id="search" data-key="home.search" data-label="Search box" data-n="02">
+  <div class="wrap srch">
+    <div class="srch-h">
+      <p class="label">{%text home.search.small label="Search label" | Start your search%}</p>
+      <h2>{%head home.search.title hl="em" label="Search heading" | Find Your *Next Vehicle*%}</h2>
+    </div>
+    <div>
+      <form class="bar" id="searchForm" autocomplete="off" role="search">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="sq" type="search" aria-label="Search vehicle" placeholder="{%text home.search.placeholder label="Search placeholder" | e.g. Search make or model%}">
+        <span class="sep" aria-hidden="true"></span>
+        <select id="stype" aria-label="Vehicle type"><option value="">All types</option><option>Car</option><option>Truck</option><option>SUV</option></select>
+        <span class="cnt" aria-live="polite"><b id="matchN">0</b>MATCHES</span>
+        <button class="btn" type="submit">{%text home.search.button label="Search button" | Search inventory%} <span class="arr">→</span></button>
+      </form>
+      <div class="pop" id="pop"><span>Popular</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 03 · home.featured -->
+<section class="band feat" id="featured" data-key="home.featured" data-label="Featured vehicles" data-n="03">
+  <div class="wrap feat-head">
+    <div>
+      <p class="label">{%text home.featured.label label="Featured inventory label" | Popular inventory%}</p>
+      <h2>{%head home.featured.title hl="em"%}</h2>
+      <p class="sub">{%para home.featured.text%}</p>
+    </div>
+    <div class="lane-ctl">
+      <a class="link" href="{%link home.featured.link label="View all inventory link" | inventory.html%}">{%text home.featured.all_label label="View all inventory text" | View all inventory%} →</a>
+      <div class="row">
+        <div class="prog" aria-hidden="true"><i id="fprog"></i></div>
+        <button type="button" id="fPrev" aria-label="Previous vehicles"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <button type="button" id="fNext" aria-label="Next vehicles"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg></button>
+      </div>
+    </div>
+  </div>
+  <div style="position:relative">
+    <div class="flane" id="lane"></div>
+    <div class="froad" aria-hidden="true"></div>
+    <div class="traffic" id="traffic" aria-hidden="true"></div>
+  </div>
+</section>
+
+<!-- 04 · home.why -->
+<section class="band why" id="why" data-key="home.why" data-label="Why choose us" data-n="04">
+  <div class="wrap">
+      <div class="why-intro">
+        <p class="label">{%text home.why.label label="Why section label" | Why choose {name}%}</p>
+        <h2>{%head home.why.title hl="em"%}</h2>
+        <p class="sub">{%para home.why.text%}</p>
+      </div>
+      <div class="feats">
+        <div class="feat-c"><span class="ico"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><h3>{%text home.why.f1_title%}</h3><p>{%para home.why.f1_text%}</p></div>
+        <div class="feat-c"><span class="ico"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 22s7-6.1 7-12a7 7 0 0 0-14 0c0 5.9 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg></span><h3>{%text home.why.f2_title%}</h3><p>{%para home.why.f2_text%}</p></div>
+        <div class="feat-c"><span class="ico"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span><h3>{%text home.why.f3_title%}</h3><p>{%para home.why.f3_text%}</p></div>
+        <div class="feat-c"><span class="ico"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21.2l8.8-8.8a5.5 5.5 0 0 0 0-7.8z"/></svg></span><h3>{%text home.why.f4_title%}</h3><p>{%para home.why.f4_text%}</p></div>
+      </div>
+  </div>
+</section>
+
+<!-- 05 · home.brands -->
+<section class="brands" id="brands" data-key="home.brands" data-label="Browse by make" data-n="05">
+  <div class="wrap brands-head">
+    <div><p class="label">{%text home.brands.label label="Browse by make label" | Shop by make%}</p><h2>{%head home.brands.title hl="em" label="Browse by make heading" | Browse by *Make*%}</h2><p class="sub">{%para home.brands.text label="Browse by make copy" | Pick a make to see matching vehicles in our current inventory.%}</p></div>
+    <div class="arrows"><button type="button" id="bPrev" aria-label="Scroll makes back"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button><button type="button" id="bNext" aria-label="Scroll makes forward"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg></button></div>
+  </div>
+  <div class="mrows">
+    <div class="mline"><div class="mrow" id="mrowA"></div></div>
+    <div class="mline"><div class="mrow" id="mrowB"></div></div>
+  </div>
+</section>
+
+<!-- 06 · home.bodystyle -->
+<section class="band bstyle" id="bodystyle" data-key="home.bodystyle" data-label="Browse by body style" data-n="06">
+  <div class="wrap">
+    <div class="bs-head">
+      <div><p class="label">{%text home.bodystyle.label label="Body style label" | Browse the lot%}</p><h2>{%head home.bodystyle.title hl="em" label="Body style heading" | Browse by *Body Style*%}</h2><p class="sub">{%para home.bodystyle.text label="Body style copy" | Filter by the body style that fits the way you live.%}</p></div>
+      <div class="bs-count" aria-live="polite"><b id="bsN">07</b><small>Available in this style</small></div>
+    </div>
+    <div class="gear" id="gear" role="tablist" aria-label="Body style"><span class="knob" id="knob"></span></div>
+    <p class="note" id="bsNote" hidden><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg><span>Nothing in this style right now. Inventory changes often, so call {%site phone%} to ask.</span></p>
+    <div class="bs-grid" id="bsGrid"></div>
+    <div class="bs-more"><a class="btn" id="bsAll" href="inventory.html">View all vehicles <span class="arr">→</span></a></div>
+  </div>
+</section>
+
+<!-- 07 · home.financing -->
+<section class="lift" id="lift" data-key="home.financing" data-label="Promo band" data-n="07">
+  <div class="wrap lift-top">
+    <div>
+      <p class="label" style="color:var(--ion)">{%text home.ready.eyebrow label="Promo label" | Find your next vehicle%}</p>
+      <h2 class="tw" id="liftH"><span class="ghost">{%head home.ready.title hl="em"%}</span><span class="typed" aria-hidden="true"></span></h2>
+      <p class="sub">{%para home.ready.text%}</p>
+      <a class="btn" href="{%link home.ready.btn1_link label="Promo button link" | inventory.html%}">{%text home.ready.btn1_label label="Promo button text" | Browse inventory%} <span class="arr">→</span></a>
+    </div>
+  </div>
+  <div class="stage showroom-story" aria-hidden="true">
+    <svg id="showroomScene" class="showroom-scene" viewBox="0 0 1800 420" preserveAspectRatio="xMidYMax slice" role="presentation">
+      <defs>
+        <linearGradient id="showroomSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#090d24"/><stop offset=".58" stop-color="#1d2044"/><stop offset="1" stop-color="#392643"/></linearGradient>
+        <linearGradient id="showroomGlass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#263052" stop-opacity=".86"/><stop offset=".55" stop-color="#10152d" stop-opacity=".9"/><stop offset="1" stop-color="#55405b" stop-opacity=".8"/></linearGradient>
+        <linearGradient id="showroomFloor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2b42"/><stop offset="1" stop-color="#090c1b"/></linearGradient>
+        <linearGradient id="deliveryPaint" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbf8ff"/><stop offset=".45" stop-color="#c9c9df"/><stop offset="1" stop-color="#656784"/></linearGradient>
+        <linearGradient id="carGlass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4b5477"/><stop offset=".45" stop-color="#11172b"/><stop offset="1" stop-color="#101226"/></linearGradient>
+        <linearGradient id="warmLight" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffb547" stop-opacity="0"/><stop offset=".5" stop-color="#ffcf88" stop-opacity=".72"/><stop offset="1" stop-color="#ffb547" stop-opacity="0"/></linearGradient>
+        <linearGradient id="deliveryBeam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff4d4" stop-opacity=".24"/><stop offset=".48" stop-color="#fff4d4" stop-opacity=".12"/><stop offset="1" stop-color="#fff4d4" stop-opacity="0"/></linearGradient>
+        <linearGradient id="glassReflection" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#d8e8ff" stop-opacity="0"/><stop offset=".46" stop-color="#d8e8ff" stop-opacity=".16"/><stop offset=".54" stop-color="#fff0d0" stop-opacity=".20"/><stop offset="1" stop-color="#d8e8ff" stop-opacity="0"/></linearGradient>
+        <linearGradient id="deliveryReflection" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#dbe2ff" stop-opacity=".19"/><stop offset="1" stop-color="#dbe2ff" stop-opacity="0"/></linearGradient>
+        <radialGradient id="floorGlow"><stop offset="0" stop-color="#ffb547" stop-opacity=".18"/><stop offset="1" stop-color="#ffb547" stop-opacity="0"/></radialGradient>
+        <filter id="showroomGlow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="7"/></filter>
+        <filter id="fineBlur" x="-60%" y="-100%" width="220%" height="300%"><feGaussianBlur stdDeviation="3.2"/></filter>
+        <clipPath id="showroomWindowClip"><rect x="238" y="82" width="1324" height="203"/></clipPath>
+        <symbol id="showroomSedan" viewBox="0 0 190 70">
+          <ellipse cx="95" cy="61" rx="86" ry="7" fill="#03050d" opacity=".6"/>
+          <path d="M9 48 L17 34 Q21 29 36 27 L58 12 Q66 7 87 8 L124 10 Q137 12 149 29 L170 34 Q181 37 182 47 L180 54 L13 54Z" fill="currentColor" stroke="#f0e5da" stroke-opacity=".4" stroke-width="1.5"/>
+          <path d="M63 14 Q68 10 86 11 L98 12 L99 28 L45 28Z" fill="#12172a"/><path d="M103 12 L123 13 Q133 15 145 29 L103 29Z" fill="#12172a"/>
+          <path d="M19 35 L166 35" stroke="#fff" stroke-opacity=".48"/>
+          <circle cx="45" cy="53" r="13" fill="#05070d"/><circle cx="45" cy="53" r="7.2" fill="#8892a9"/><circle cx="45" cy="53" r="3" fill="#20283a"/>
+          <circle cx="147" cy="53" r="13" fill="#05070d"/><circle cx="147" cy="53" r="7.2" fill="#8892a9"/><circle cx="147" cy="53" r="3" fill="#20283a"/>
+          <rect x="169" y="36" width="9" height="4" rx="2" fill="#fff3d9"/><rect x="11" y="37" width="7" height="4" rx="2" fill="#fa5962"/>
+        </symbol>
+      </defs>
+      <!-- Showroom architecture and glass frontage -->
+      <rect width="1800" height="420" fill="url(#showroomSky)"/>
+      <circle cx="1370" cy="110" r="330" fill="url(#floorGlow)"/>
+      <g class="showroom-lights" opacity=".9">
+        <path d="M270 36H1530" stroke="#aeb8d5" stroke-opacity=".22" stroke-width="2"/>
+        <rect x="335" y="35" width="260" height="4" rx="2" fill="url(#warmLight)"/>
+        <rect x="750" y="35" width="300" height="4" rx="2" fill="url(#warmLight)"/>
+        <rect x="1190" y="35" width="260" height="4" rx="2" fill="url(#warmLight)"/>
+      </g>
+      <path d="M205 68 L300 16 H1500 L1595 68 V286 H205Z" fill="#11172b" stroke="#8e98b7" stroke-opacity=".45" stroke-width="2"/>
+      <path d="M238 82 H1562 V285 H238Z" fill="url(#showroomGlass)" stroke="#8290b1" stroke-opacity=".42" stroke-width="2"/>
+      <path d="M238 83H1562M238 285H1562" stroke="#e5e6f5" stroke-opacity=".38" stroke-width="3"/>
+      <g stroke="#71809f" stroke-opacity=".5" stroke-width="5"><path d="M470 82V285M705 82V285M940 82V285M1175 82V285M1410 82V285"/></g>
+      <g fill="#edf0ff" opacity=".82" font-family="Michroma,Arial,sans-serif" letter-spacing="8" text-anchor="middle"><text x="900" y="65" font-size="17">AUTO SHOWROOM</text></g>
+      <g fill="#fff1d0" opacity=".4" filter="url(#showroomGlow)"><ellipse cx="355" cy="107" rx="60" ry="5"/><ellipse cx="625" cy="107" rx="70" ry="5"/><ellipse cx="880" cy="107" rx="78" ry="5"/><ellipse cx="1145" cy="107" rx="70" ry="5"/><ellipse cx="1430" cy="107" rx="62" ry="5"/></g>
+      <g class="showroom-wall-details" fill="none" stroke-linecap="round"><path d="M250 96H1550" stroke="#cbd7f4" stroke-opacity=".08"/><path d="M250 262H1550" stroke="#e6e7f8" stroke-opacity=".10"/><path d="M260 116V254M1538 116V254" stroke="#e8ecff" stroke-opacity=".07"/></g>
+      <g class="parked-cars">
+        <use href="#showroomSedan" x="280" y="174" width="190" height="70" style="color:#7f8ba8"/>
+        <use href="#showroomSedan" x="493" y="166" width="190" height="70" style="color:#c9c9d8"/>
+        <use href="#showroomSedan" x="720" y="175" width="190" height="70" style="color:#4f6e84"/>
+        <use href="#showroomSedan" x="965" y="166" width="190" height="70" style="color:#bd815d"/>
+        <use href="#showroomSedan" x="1205" y="175" width="190" height="70" style="color:#d9dce9"/>
+        <use href="#showroomSedan" x="1395" y="179" width="145" height="58" style="color:#71818b"/>
+      </g>
+      <g class="showroom-glass-reflections" clip-path="url(#showroomWindowClip)">
+        <path class="glass-sweep glass-sweep-a" d="M175 80H340L465 286H320Z" fill="url(#glassReflection)" opacity=".65"/>
+        <path class="glass-sweep glass-sweep-b" d="M770 80H880L1005 286H895Z" fill="url(#glassReflection)" opacity=".55"/>
+        <path d="M1225 84H1284L1390 284H1332Z" fill="#e8efff" opacity=".035"/>
+      </g>
+      <!-- Forecourt floor and exit road -->
+      <path d="M0 284H1800V420H0Z" fill="url(#showroomFloor)"/>
+      <path d="M0 284H1800" stroke="#ffcf88" stroke-opacity=".5" stroke-width="3"/>
+      <ellipse class="showroom-floor-glow" cx="1010" cy="354" rx="700" ry="85" fill="url(#floorGlow)"/>
+      <path class="floor-reflection" d="M320 293H1500L1630 348H170Z" fill="url(#deliveryReflection)" opacity=".55"/>
+      <path d="M0 314H1800M0 370H1800" stroke="#b8bbd3" stroke-opacity=".13" stroke-width="2"/>
+      <g class="floor-spotlights" fill="#ffcf88" opacity=".22" filter="url(#showroomGlow)"><ellipse cx="470" cy="321" rx="125" ry="12"/><ellipse cx="895" cy="325" rx="160" ry="14"/><ellipse cx="1315" cy="320" rx="135" ry="12"/></g>
+      <path class="exit-lane" d="M0 392H1800" stroke="#d4d7e6" stroke-opacity=".45" stroke-width="2" stroke-dasharray="72 42"/>
+      <path d="M1380 300 L1800 325 V414 L1350 414Z" fill="#090d1b" opacity=".45"/>
+      <g class="drive-streaks" stroke="#ffce83" stroke-linecap="round" opacity="0"><path d="M780 322H930M820 345H1050M900 365H1170M1030 386H1310" stroke-width="2"/><path d="M810 333H910M970 354H1110M1130 377H1280" stroke="#dfe7ff" stroke-width="1.5"/></g>
+      <!-- Main vehicle ready for its new owner -->
+      <g transform="translate(835 252)"><g id="deliveryCar" class="delivery-car">
+        <ellipse class="delivery-car-shadow" cx="216" cy="143" rx="236" ry="18" fill="#03050c" opacity=".7" filter="url(#fineBlur)"/>
+        <path class="delivery-headlight-beam" d="M416 78L690 26Q718 83 691 151L416 91Z" fill="url(#deliveryBeam)" opacity="0"/>
+        <ellipse class="delivery-tail-glow" cx="7" cy="83" rx="38" ry="16" fill="#ff3e52" opacity="0" filter="url(#showroomGlow)"/>
+        <path d="M10 105 L20 77 Q25 65 53 61 L113 24 Q132 10 173 10 L255 15 Q277 17 300 48 L349 64 L409 70 Q426 73 431 91 L432 113 Q430 123 418 125 L16 125 Q4 122 10 105Z" fill="url(#deliveryPaint)" stroke="#f7e8df" stroke-opacity=".8" stroke-width="2"/>
+        <path d="M126 25 Q143 17 172 18 L182 60 L73 61Z" fill="url(#carGlass)" stroke="#a9b9d6" stroke-opacity=".7" stroke-width="2"/>
+        <path d="M193 18 L253 21 Q271 24 292 49 L199 59Z" fill="url(#carGlass)" stroke="#a9b9d6" stroke-opacity=".7" stroke-width="2"/>
+        <path d="M191 19L197 60" stroke="#ebeaf6" stroke-width="4"/>
+        <path d="M23 78H418" stroke="#fff" stroke-opacity=".62" stroke-width="2"/>
+        <path d="M35 104H410" stroke="#4a4d69" stroke-opacity=".55" stroke-width="2"/>
+        <path d="M178 61L181 118M280 62L284 118" stroke="#505574" stroke-opacity=".72" stroke-width="1.4"/>
+        <path d="M199 88H224M291 88H316" stroke="#4a4d69" stroke-width="4" stroke-linecap="round"/>
+        <path d="M286 45L303 46L313 55L295 55Z" fill="#bfc5da" stroke="#f1f4ff" stroke-opacity=".65" stroke-width="1.5"/>
+        <path d="M126 23L170 17L247 20" stroke="#fff" stroke-opacity=".48" stroke-width="2" fill="none"/>
+        <path d="M411 92L423 92L423 108L411 108Z" fill="#202337" stroke="#d4d9eb" stroke-opacity=".5" stroke-width="1"/>
+        <path d="M412 96H421M412 100H421M412 104H421" stroke="#98a3be" stroke-opacity=".65" stroke-width="1"/>
+        <rect x="395" y="76" width="26" height="8" rx="4" fill="#fff1cf"/><rect x="392" y="75" width="30" height="17" rx="7" fill="#fff1cf" opacity=".2" filter="url(#showroomGlow)"/>
+        <rect x="10" y="78" width="16" height="9" rx="3" fill="#ff525c"/>
+        <path d="M66 122a38 38 0 0 1 76 0" fill="#090b13"/><path d="M292 122a38 38 0 0 1 76 0" fill="#090b13"/>
+        <g transform="translate(104 122)"><g class="delivery-wheel"><circle r="36" fill="#080b12"/><circle r="24" fill="#1e2634" stroke="#aeb8ca" stroke-width="3"/><g stroke="#c4cada" stroke-width="5" stroke-linecap="round"><path d="M0-20V20M-20 0H20M-14-14L14 14M14-14L-14 14"/></g><circle r="6" fill="#ffb547"/></g></g>
+        <g transform="translate(330 122)"><g class="delivery-wheel"><circle r="36" fill="#080b12"/><circle r="24" fill="#1e2634" stroke="#aeb8ca" stroke-width="3"/><g stroke="#c4cada" stroke-width="5" stroke-linecap="round"><path d="M0-20V20M-20 0H20M-14-14L14 14M14-14L-14 14"/></g><circle r="6" fill="#ffb547"/></g></g>
+        <!-- Door swings out briefly during the handover sequence -->
+        <g class="delivery-door"><path d="M185 62L264 62L268 116L185 116Z" fill="#aeb1ca" fill-opacity=".72" stroke="#eef0fa" stroke-width="2"/><path d="M239 72H255" stroke="#41465f" stroke-width="4" stroke-linecap="round"/></g>
+        <g class="showroom-driver" opacity="0"><circle cx="229" cy="39" r="13" fill="#c98e67"/><path d="M212 55Q229 43 245 55L250 61H208Z" fill="#202841"/></g>
+      </g></g>
+      <!-- Generic dealership owner: waiting beside the vehicle -->
+      <g id="showroomOwner" class="story-person owner" transform="translate(644 214)">
+        <ellipse cx="0" cy="149" rx="31" ry="7" fill="#03050d" opacity=".55"/>
+        <circle class="owner-head" cx="0" cy="22" r="16" fill="#c98f6c"/>
+        <path class="owner-hair" d="M-15 18Q-15 0 2 3Q17 5 16 20L11 13L-8 12Z" fill="#202238"/>
+        <path class="owner-torso" d="M-23 44Q0 32 22 44L29 91L20 112H-21L-29 91Z" fill="#294a42" stroke="#6d9b79" stroke-opacity=".65" stroke-width="2"/>
+        <path class="owner-rest-arm" d="M-16 45L-32 70L-13 82" fill="none" stroke="#c98f6c" stroke-width="11" stroke-linecap="round"/>
+        <path class="owner-offer-arm" d="M16 47L38 66L61 58" fill="none" stroke="#c98f6c" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+        <path class="owner-leg owner-leg-a" d="M-15 108L-20 145" stroke="#20283c" stroke-width="15" stroke-linecap="round"/>
+        <path class="owner-leg owner-leg-b" d="M14 108L22 145" stroke="#20283c" stroke-width="15" stroke-linecap="round"/>
+        <path class="owner-shoe owner-shoe-a" d="M-29 149H-10" stroke="#090c16" stroke-width="8" stroke-linecap="round"/><path class="owner-shoe owner-shoe-b" d="M13 149H34" stroke="#090c16" stroke-width="8" stroke-linecap="round"/>
+      </g>
+      <!-- Customer approaches, receives the key, and gets into the car -->
+      <g transform="translate(746 222)"><g class="story-customer-walk">
+        <g id="showroomCustomer" class="story-customer">
+          <ellipse cx="0" cy="139" rx="26" ry="6" fill="#03050d" opacity=".55"/>
+          <circle class="customer-head" cx="0" cy="19" r="15" fill="#a66e50"/>
+          <path class="customer-hair" d="M-15 18Q-13 0 3 4Q17 7 15 19L9 11L-8 12Z" fill="#171b2c"/>
+          <path class="customer-torso" d="M-20 42Q0 33 20 42L24 86L17 107H-17L-24 86Z" fill="#d5d6e2" stroke="#faf7ff" stroke-opacity=".55" stroke-width="2"/>
+          <path class="customer-free-arm" d="M-15 45L-34 68L-39 62" fill="none" stroke="#a66e50" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+          <path class="customer-receive-arm" d="M15 46L31 63L44 60" fill="none" stroke="#a66e50" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+          <path class="customer-leg customer-leg-a" d="M-13 104L-19 134" stroke="#28334a" stroke-width="13" stroke-linecap="round"/>
+          <path class="customer-leg customer-leg-b" d="M13 104L20 134" stroke="#28334a" stroke-width="13" stroke-linecap="round"/>
+          <path class="customer-shoe customer-shoe-a" d="M-26 139H-8" stroke="#090c16" stroke-width="8" stroke-linecap="round"/><path class="customer-shoe customer-shoe-b" d="M12 139H30" stroke="#090c16" stroke-width="8" stroke-linecap="round"/>
+        </g>
+      </g></g>
+      <g transform="translate(715 274)"><g class="handover-key" id="showroomKey">
+        <circle cx="0" cy="0" r="7" fill="none" stroke="#ffcf77" stroke-width="4"/><path d="M7 0H29L35 6M23 0V6" fill="none" stroke="#ffcf77" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="1" cy="-1" r="16" fill="#ffcf77" opacity=".14"/>
+      </g></g>
+      <!-- Looping moment of delivery: key, walk, door, driver, departure -->
+      <g class="drive-caption"><path d="M1400 308H1680" stroke="#ffb547" stroke-opacity=".2" stroke-width="2"/><circle cx="1680" cy="308" r="4" fill="#ffb547" opacity=".7"/></g>
+    </svg>
+  </div>
+</section>
+
+<!-- 08 · home.reviews -->
+<section class="band revs" id="reviews" data-key="home.reviews" data-label="Customer reviews" data-n="08">
+  <div class="wrap">
+    <div class="rev-head">
+      <div><p class="label">{%text home.reviews.label label="Reviews label" | Customer testimonials%}</p><h2>{%head home.reviews.title hl="em"%}</h2><p class="sub">{%para home.reviews.text%}</p></div>
+      <div class="rev-side"><div class="stars" id="revStars"></div><small>{%text home.reviews.source label="Review source label" | Customer review%}</small></div>
+    </div>
+    <div class="rev-grid" id="revGrid"></div>
+    <div class="rev-links">{%if site.google_reviews%}<a class="link" href="{%siteurl google_reviews%}" target="_blank" rel="noopener">{%text home.reviews.more label="More reviews link text" | See all reviews on Google%} →</a>{%endif%}</div>
+  </div>
+</section>
+
+<!-- 09 · home.location -->
+<section class="band loc" id="location" data-key="home.location" data-label="Location &amp; map" data-n="09" style="padding-top:clamp(40px,5vw,70px)">
+  <div class="wrap">
+    <div class="loc-txt">
+      <p class="label">{%text home.location.label label="Location label" | Come say hello%}</p>
+      <h2 class="tw" id="locH"><span class="ghost">{%head home.location.title hl="em"%}</span><span class="typed" aria-hidden="true"></span></h2>
+      <p class="sub">{%para home.location.text%}</p>
+      <div class="addr">
+        <div><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFB547" stroke-width="1.8" aria-hidden="true"><path d="M12 22s7-6.1 7-12a7 7 0 0 0-14 0c0 5.9 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg><span><small>Address</small><b>{%site address%}</b></span></div>
+        <div><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFB547" stroke-width="1.8" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg><span><small>Phone</small><b class="num">{%site phone%}</b></span></div>
+      </div>
+      <a class="btn" id="dirBtn" href="{%siteurl maps_dir%}" target="_blank" rel="noopener">Get directions <span class="arr">→</span></a>
+    </div>
+    <div class="mapbox rv">
+      <svg viewBox="0 0 600 500" id="map">
+        <rect width="600" height="500" fill="#0D1028"/>
+        <g stroke="#161A36" stroke-width="2">
+          <path d="M0 60H600M0 150H600M0 250H600M0 350H600M0 440H600M80 0V500M190 0V500M300 0V500M420 0V500M520 0V500"/>
+        </g>
+        <g stroke="#1F2350" stroke-width="16" fill="none" stroke-linecap="round">
+          <path d="M-10 410 C 120 400, 160 330, 220 300 S 300 250, 300 250"/>
+          <path d="M300 -10 V 510"/>
+          <path d="M-10 250 H 610"/>
+          <path d="M420 -10 C 430 120, 520 200, 610 210"/>
+        </g>
+        <g fill="#6A6E9C" font-family="Michroma, sans-serif" font-size="9" letter-spacing="2">
+          <text x="312" y="120" transform="rotate(90 312 120)">{%site city%}</text>
+          <text x="40" y="240">LOCAL ROAD</text>
+        </g>
+        <path id="route" d="M30 410 C 120 400, 160 330, 220 300 S 300 280, 300 250 L 300 205" fill="none" stroke="#FFB547" stroke-width="4" stroke-linecap="round" stroke-dasharray="1 0"/>
+        <circle id="mapCar" r="6" fill="#EEF3FA" stroke="#FFB547" stroke-width="2" cx="30" cy="410"/>
+        <g transform="translate(300 205)">
+          <circle r="34" fill="#FFB547" opacity=".12"><animate attributeName="r" values="14;40;14" dur="2.6s" repeatCount="indefinite"/><animate attributeName="opacity" values=".35;0;.35" dur="2.6s" repeatCount="indefinite"/></circle>
+          <circle r="11" fill="#FFB547"/><circle r="4" fill="#1A1206"/>
+          <rect x="18" y="-26" width="168" height="34" rx="17" fill="#EEF3FA"/>
+          <text x="34" y="-4" fill="#0A0C10" font-family="Hanken Grotesk, sans-serif" font-weight="700" font-size="13">{%site city%}</text>
+        </g>
+      </svg>
+      <div class="ph"><img src="{%img home.location.image label="Location photo" | themes/apex-drift/1.0.2/assets/images/location-placeholder.svg%}" alt="{%text home.location.image_alt label="Location image alt text" | Dealership location photo%}" loading="lazy" onerror="this.onerror=null;this.src='/themes/apex-drift/1.0.2/assets/images/location-placeholder.svg'"></div>
+      <span class="mapnote">Illustrative map</span>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- 10 · home.footer -->
+<footer data-key="home.footer" data-label="Home page footer" data-n="10" id="foot">
+  <div class="f-glow" aria-hidden="true"></div>
+  <div class="wrap">
+    <div class="f-top">
+      <div class="f-brand">
+        <a class="logo" href="index.html" aria-label="{%site name%} home"><img src="{%site logo%}" alt="{%site name%}" style="display:block;max-width:230px;max-height:48px;width:auto;height:auto;object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><span style="display:none;flex-direction:column;line-height:1"><b>{%site name%}</b><small>{%site tagline%}</small></span></a>
+        <p>{%para home.footer.text%}</p><div class="apx-foot-soc">{%if site.facebook%}<a class="apx-soc" href="{%siteurl facebook%}" target="_blank" rel="noopener" aria-label="Facebook"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M14 8h2.5V5H14c-2.2 0-4 1.8-4 4v2H7.5v3H10v7h3v-7h2.3l.7-3H13V9c0-.6.4-1 1-1z"/></svg></a>{%endif%}{%if site.google%}<a class="apx-soc" href="{%siteurl google%}" target="_blank" rel="noopener" aria-label="Google Business Profile"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.3z"/><path d="M12 22c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22z" opacity=".8"/><path d="M6.4 14c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2V7.4H3.1a10 10 0 0 0 0 9.2L6.4 14z" opacity=".6"/><path d="M12 5.9c1.5 0 2.8.5 3.8 1.5l2.9-2.9A10 10 0 0 0 3.1 7.4L6.4 10c.8-2.3 3-4.1 5.6-4.1z" opacity=".9"/></svg></a>{%endif%}</div>
+      </div>
+      <div class="f-col"><h4>{%text home.footer.links_title label="Footer quick links heading" | Quick links%}</h4><ul><li><a href="inventory.html">{%text global.nav.inventory label="Inventory navigation label" | Inventory%}</a></li><li><a href="used-cars.html">{%text global.nav.cars label="Used cars navigation label" | Used Cars%}</a></li><li><a href="used-trucks.html">{%text global.nav.trucks label="Used trucks footer label" | Used Trucks%}</a></li><li><a href="used-suvs.html">{%text global.nav.suvs label="Used SUVs footer label" | Used SUVs%}</a></li><li><a href="about-us.html">{%text global.nav.about label="About footer label" | About Us%}</a></li></ul></div>
+      <div class="f-col"><h4>{%text home.footer.customer_title label="Footer customer resources heading" | Customer resources%}</h4><ul><li><a href="inventory.html">Search inventory</a></li><li><a href="inventory.html">Body styles</a></li><li><a href="#reviews">Reviews</a></li><li><a href="contact-us.html">{%text global.nav.contact label="Contact footer label" | Contact Us%}</a></li></ul></div>
+      <div class="f-col"><h4>{%text home.footer.contact_title label="Footer contact heading" | Contact%}</h4><ul>
+        <li class="ct"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 22s7-6.1 7-12a7 7 0 0 0-14 0c0 5.9 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg><span>{%site street%}<br>{%site city_state%} {%site zip%}</span></li>
+        <li class="ct"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg><span class="num">{%site phone%}</span></li>
+      </ul></div>
+    </div>
+    <div class="legal"><span>© {%site year%} {%site name%}</span><button class="totop" type="button" id="toTop"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Back to top</button></div>
+  </div>
+</footer>
+
+
+<script>
+(function(){
+"use strict";
+var IM={};
+var RM=window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+var $=function(s,r){return (r||document).querySelector(s)};
+var clamp=function(v,a,b){return Math.max(a,Math.min(b,v))};
+var smooth=function(a,b,x){var t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t)};
+/* Tenant-dynamic data helpers. The original CSS and SVG layout are deliberately untouched. */
+function escHtml(s){return String(s==null?"":s).replace(/[&<>\"']/g,function(ch){return {"&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;","'":"&#39;"}[ch]})}
+function readHeadingModel(node){var out=[];function walk(n,em){if(n.nodeType===3){var t=n.nodeValue||"";for(var i=0;i<t.length;i++)out.push({ch:t.charAt(i),em:!!em});return}if(n.nodeType!==1)return;if(String(n.tagName).toUpperCase()==="BR"){out.push({ch:"\n",em:!!em});return}var next=em||String(n.tagName).toUpperCase()==="EM";for(var j=0;j<n.childNodes.length;j++)walk(n.childNodes[j],next)}if(node)for(var k=0;k<node.childNodes.length;k++)walk(node.childNodes[k],false);return out}
+function typedHeadingHTML(model,count,wrapLines,caret){var outer="",segment="",currentEm=false,emOpen=false,stop=Math.min(count,model.length);for(var i=0;i<stop;i++){var it=model[i];if(it.ch==="\n"){if(emOpen){segment+="</em>";emOpen=false}if(wrapLines){outer+='<span class="ln">'+segment+'</span>';segment="";currentEm=false}else{segment+="<br>";currentEm=false}continue}if(it.em!==currentEm){if(emOpen){segment+="</em>";emOpen=false}if(it.em){segment+="<em>";emOpen=true}currentEm=it.em}segment+=escHtml(it.ch)}if(emOpen)segment+="</em>";if(caret)segment+='<span class="caret"></span>';if(wrapLines)return outer+'<span class="ln">'+segment+'</span>';return outer+segment}
+function wrapTextNode(node,group){var txt=node.nodeValue||"",lead=(txt.match(/^\s*/) || [""])[0],trail=(txt.match(/\s*$/)||[""])[0],core=txt.slice(lead.length,txt.length-trail.length);if(!core)return;var frag=document.createDocumentFragment();if(lead)frag.appendChild(document.createTextNode(lead));function addWord(word){if(!word)return;var w=document.createElement("span"),inner=document.createElement("span");w.className="w";inner.textContent=word;w.appendChild(inner);frag.appendChild(w)}if(group==="phrase"){addWord(core)}else{core.split(/(\s+)/).forEach(function(part){if(!part)return;if(/^\s+$/.test(part))frag.appendChild(document.createTextNode(part));else addWord(part)})}if(trail)frag.appendChild(document.createTextNode(trail));node.parentNode.replaceChild(frag,node)}
+function wrapEmNode(em,splitWords){var parent=em.parentNode;if(!parent)return;var parts=splitWords?(em.textContent||"").split(/(\s+)/):[em.textContent||""];var frag=document.createDocumentFragment();parts.forEach(function(part){if(!part)return;if(/^\s+$/.test(part)){frag.appendChild(document.createTextNode(part));return}var w=document.createElement("span"),inner=document.createElement("span"),e=document.createElement("em");w.className="w";e.textContent=part;inner.appendChild(e);w.appendChild(inner);frag.appendChild(w)});parent.replaceChild(frag,em)}
+function animateHeadingWords(root,plainMode,emSplit){if(!root)return;Array.prototype.slice.call(root.childNodes).forEach(function(node){if(node.nodeType===3){wrapTextNode(node,plainMode)}else if(node.nodeType===1&&String(node.tagName).toUpperCase()==="EM"){wrapEmNode(node,emSplit)}})}
+/* Recreate Apex's original animated heading word-groups after content markers render. */
+animateHeadingWords(document.querySelector(".srch-h h2"),"words",true);
+animateHeadingWords(document.querySelector("#why h2"),"phrase",false);
+animateHeadingWords(document.querySelector("#featured h2"),"phrase",false);
+animateHeadingWords(document.querySelector("#brands h2"),"words",false);
+animateHeadingWords(document.querySelector("#bodystyle h2"),"words",false);
+animateHeadingWords(document.querySelector("#reviews h2"),"words",false);
+
+
+/* Preview inventory. The two "live" rows are the dealer's real listings; the rest are sample rows built from lot photos. */
+var VEHICLE_PLACEHOLDER="data:image/svg+xml;charset=UTF-8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"><defs><linearGradient id="b" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#171B3A"/><stop offset="1" stop-color="#080A16"/></linearGradient></defs><rect width="800" height="600" fill="url(#b)"/><g fill="none" stroke="#FFB547" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity=".78"><path d="M148 365l40-92q10-24 39-24h250q28 0 48 22l68 79 44 14q22 7 22 30v35H140v-31q0-23 8-33z"/><path d="M232 270h244l53 71H201z"/><circle cx="252" cy="426" r="45"/><circle cx="558" cy="426" r="45"/></g><text x="400" y="525" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" fill="#8F97B5" letter-spacing="4">VEHICLE PHOTO</text></svg>');
+var CARS=(function(){
+ var rows=[];
+ try{var xhr=new XMLHttpRequest();xhr.open("GET","inventory.json",false);xhr.send(null);if(xhr.status>=200&&xhr.status<300){var dat=JSON.parse(xhr.responseText||"{}");rows=Array.isArray(dat.vehicles)?dat.vehicles:[];}}catch(e){rows=[];}
+ function str(v){return v==null?"":String(v).trim()}
+ function numeric(v){if(v===null||v===undefined||String(v).trim()==="")return null;var n=Number(String(v).replace(/[^0-9.-]/g,""));return Number.isFinite(n)?n:null}
+ function truth(v){return v===true||v===1||/^(1|true|yes|on)$/i.test(String(v||""))}
+ return rows.filter(function(v){return v&&String(v.status||"published").toLowerCase()!=="draft";}).map(function(v,i){
+  var body=str(v.body||v.bodyStyle||v.type||"Vehicle"),rawType=str(v.type),bodyLow=body.toLowerCase();
+  var type=/truck|pickup|service body/i.test(body)?"Truck":(/suv|crossover|sport utility/i.test(body)?"SUV":(/^(truck|suv)$/i.test(rawType)?(rawType.toLowerCase()==="truck"?"Truck":"SUV"):"Car"));
+  var images=Array.isArray(v.images)?v.images:[],img=images.length?images[0]:"";
+  if(img&&typeof img==="object")img=img.url||img.src||img.path||"";
+  img=str(img);if(img)IM["tenantVehicle"+i]=img;else IM["tenantVehicle"+i]=VEHICLE_PLACEHOLDER;
+  var tags=[];
+  function pushTag(x){x=str(x);if(x&&tags.indexOf(x)===-1)tags.push(x)}
+  if(Array.isArray(v.features))v.features.forEach(pushTag);
+  if(Array.isArray(v.safety))v.safety.forEach(pushTag);
+  var drivetrain=str(v.drivetrain);if(/awd|4wd|4x4|all.?wheel/i.test(drivetrain))pushTag("AWD");
+  var fuel=str(v.fuel);if(/electric|hybrid|plug.?in/i.test(fuel))pushTag("Electric / Hybrid");
+  if(truth(v.featured))pushTag("Featured");
+  var status=str(v.status||"published").toLowerCase();
+  return {id:str(v.id),slug:str(v.slug),y:numeric(v.year)||"",mk:str(v.make),md:[str(v.model),str(v.trim)].filter(Boolean).join(" "),type:type,body:body,tags:tags.slice(0,5),p:numeric(v.price),mi:numeric(v.mileage!==undefined?v.mileage:v.miles),img:"tenantVehicle"+i,image:img,live:status!=="sold",featured:truth(v.featured),status:status,description:str(v.description),fuel:fuel,drivetrain:drivetrain,trans:str(v.trans||v.transmission),vin:str(v.vin),engine:str(v.engine),hp:str(v.hp),mpg:str(v.mpg)};
+ }).filter(function(c){return c.mk!==""||c.md!=="";});
+})();
+var money=function(n){return n===null||n===undefined||n===""?"Contact for price":"$"+Number(n).toLocaleString("en-US")};
+function odo(n){if(n===null||n===undefined||n==="")return "";n=Number(n);if(!Number.isFinite(n))return "";var s=String(Math.max(0,Math.round(n))).padStart(6,"0"),h="";for(var i=0;i<s.length;i++)h+="<span>"+s[i]+"</span>";return '<div class="odo" aria-label="'+n.toLocaleString()+' miles">'+h+"<em>MI</em></div>"}
+function card(c){var pic=IM[c.img]||VEHICLE_PLACEHOLDER;return '<a class="car" href="vehicle.html?id='+encodeURIComponent(c.id)+'"><figure><img src="'+escHtml(pic)+'" alt="'+escHtml([c.y,c.mk,c.md].filter(Boolean).join(" "))+'" loading="lazy" onerror="this.onerror=null;this.src=\''+VEHICLE_PLACEHOLDER+'\'"><span class="tag'+(c.live?" live":"")+'">'+(c.live?"In stock":"Sold")+'</span></figure><div class="car-b"><div class="car-t"><small>'+escHtml([c.y,c.body].filter(Boolean).join(" · ").toUpperCase())+'</small><h3>'+escHtml(c.mk+" "+c.md)+'</h3></div><div class="car-m"><span class="price">'+money(c.p)+'</span>'+odo(c.mi)+'</div></div></a>'}
+
+/* Search: live count, popular shortcuts, typing placeholder, entrance */
+function countMatch(){var q=$("#sq").value.trim().toLowerCase(),t=$("#stype").value;
+ var n=CARS.filter(function(c){return(!q||(c.y+" "+c.mk+" "+c.md).toLowerCase().indexOf(q)>-1)&&(!t||c.type===t)}).length;
+ var el=$("#matchN");el.textContent=n;el.animate&&el.animate([{transform:"translateY(-60%)",opacity:0},{transform:"none",opacity:1}],{duration:320,easing:"cubic-bezier(.2,.8,.2,1)"})}
+["sq","stype"].forEach(function(id){$("#"+id).addEventListener("input",countMatch)});
+(function(){var pop=$("#pop"),counts={};CARS.forEach(function(c){if(c.mk&&c.live)counts[c.mk]=(counts[c.mk]||0)+1});var makes=Object.keys(counts).sort(function(a,b){return counts[b]-counts[a]||a.localeCompare(b)}).slice(0,2);var types=["Truck","SUV","Car"].filter(function(t){return CARS.some(function(c){return c.type===t})}).slice(0,Math.max(0,4-makes.length));var items=[];makes.forEach(function(m){items.push({kind:"q",value:m,label:m})});types.forEach(function(t){items.push({kind:"t",value:t,label:t==="Car"?"Cars":(t==="Truck"?"Trucks":"SUVs")})});pop.innerHTML='<span>Popular</span>'+items.map(function(it,i){return (i?'<i></i>':'')+'<button type="button" data-'+it.kind+'="'+escHtml(it.value)+'">'+escHtml(it.label)+'</button>'}).join("");pop.hidden=!items.length;[].forEach.call(pop.querySelectorAll("button"),function(b){b.onclick=function(){$("#sq").value=b.dataset.q||"";$("#stype").value=b.dataset.t||"";countMatch();$("#sq").focus()}})})();
+$("#searchForm").addEventListener("submit",function(e){e.preventDefault();var p=new URLSearchParams(),q=$("#sq").value.trim(),t=$("#stype").value;if(q)p.set("q",q);if(t)p.set("type",t);location.href="inventory.html"+(p.toString()?"?"+p.toString():"")});
+(function(){var inp=$("#sq"),words=CARS.slice(0,5).map(function(c){return [c.y,c.mk,c.md].filter(Boolean).join(" ")}).filter(Boolean),wi=0,ci=0,del=false;if(!words.length)words=["Search make or model"];
+ if(RM)return;
+ function tick(){if(document.activeElement===inp||inp.value){setTimeout(tick,900);return}
+  var w=words[wi];ci+=del?-1:1;inp.placeholder="Try “"+w.slice(0,ci)+"”";
+  var wait=del?35:70;if(!del&&ci===w.length){del=true;wait=1600}else if(del&&ci===0){del=false;wi=(wi+1)%words.length;wait=300}
+  setTimeout(tick,wait)}
+ setTimeout(tick,1800)})();
+(function(){var sec=$("#search");if(RM||!("IntersectionObserver" in window))return;
+ if(sec.getBoundingClientRect().top<innerHeight*.9)return;
+ sec.classList.add("pre");
+ var o=new IntersectionObserver(function(es){if(es[0].isIntersecting){sec.classList.add("go");sec.classList.remove("pre");o.disconnect()}},{threshold:.35});o.observe(sec)})();
+
+/* Why: entrance */
+(function(){var sec=$("#why");if(RM||!("IntersectionObserver" in window))return;
+ if(sec.getBoundingClientRect().top<innerHeight*.85)return;
+ sec.classList.add("pre");
+ var o=new IntersectionObserver(function(es){if(es[0].isIntersecting){sec.classList.add("go");sec.classList.remove("pre");o.disconnect()}},{threshold:.3});o.observe(sec)})();
+/* Featured lane: premium cards, tilt + glare, drag, arrows, progress, entrance */
+function fcard(c,i){var tags=[c.body].concat(c.tags).filter(Boolean),pic=IM[c.img]||VEHICLE_PLACEHOLDER;
+ return '<a class="fc" href="vehicle.html?id='+encodeURIComponent(c.id)+'" style="animation-delay:'+(.25+i*.09).toFixed(2)+'s"><div class="fc-in"><div class="fc-ph"><img src="'+escHtml(pic)+'" alt="'+escHtml([c.y,c.mk,c.md].filter(Boolean).join(" "))+'" loading="lazy" draggable="false" onerror="this.onerror=null;this.src=\''+VEHICLE_PLACEHOLDER+'\'"><div class="glare"></div><div class="fc-tags"><span class="'+(c.live?"live":"")+'">'+(c.live?"In stock":"Sold")+'</span><span>'+escHtml(c.y)+'</span></div></div>'
+ +'<div class="fc-b"><div><small>'+escHtml(c.mk.toUpperCase())+'</small><h3>'+escHtml(c.md)+'</h3></div><div class="specs">'+(c.mi!==null&&c.mi!==undefined?'<span>'+c.mi.toLocaleString("en-US")+' mi</span>':'')+tags.map(function(t){return "<span>"+escHtml(t)+"</span>"}).join("")+'</div>'
+ +'<div class="fc-f"><div class="pr"><small>PRICE</small><b>'+money(c.p)+'</b></div><span class="go"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h14M13 5l7 7-7 7"/></svg></span></div></div></div></a>'}
+(function(){var lane=$("#lane"),featuredCars=CARS.filter(function(c){return c.featured&&c.live});if(!featuredCars.length)featuredCars=CARS.filter(function(c){return c.live});lane.innerHTML=featuredCars.map(fcard).join("");
+ var prog=$("#fprog");function upd(){var m=lane.scrollWidth-lane.clientWidth,f=lane.clientWidth/lane.scrollWidth;prog.style.width=(f*100)+"%";prog.style.transform="translateX("+(m>0?lane.scrollLeft/m*(1/f-1)*100:0)+"%)"}
+ lane.addEventListener("scroll",upd,{passive:true});addEventListener("resize",upd);upd();
+ function step(d){var c=lane.querySelector(".fc");if(!c)return;lane.scrollBy({left:d*(c.offsetWidth+22),behavior:RM?"auto":"smooth"})}
+ $("#fPrev").onclick=function(){step(-1)};$("#fNext").onclick=function(){step(1)};
+ /* drag to scroll (mouse) */
+ var down=false,sx=0,sl=0,moved=false;
+ lane.addEventListener("pointerdown",function(e){if(e.pointerType!=="mouse")return;down=true;moved=false;sx=e.clientX;sl=lane.scrollLeft});
+ addEventListener("pointermove",function(e){if(!down)return;var dx=e.clientX-sx;if(Math.abs(dx)>4){moved=true;lane.classList.add("drag")}lane.scrollLeft=sl-dx});
+ addEventListener("pointerup",function(){if(!down)return;down=false;lane.classList.remove("drag")});
+ lane.addEventListener("click",function(e){if(moved){e.preventDefault();moved=false}},true);
+ /* tilt + glare */
+ if(!RM&&matchMedia("(hover:hover)").matches)[].forEach.call(lane.querySelectorAll(".fc"),function(c){
+  c.addEventListener("pointermove",function(e){if(down)return;var r=c.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;c.style.setProperty("--ry",((x-.5)*10).toFixed(2)+"deg");c.style.setProperty("--rx",((.5-y)*8).toFixed(2)+"deg");c.style.setProperty("--gx",(x*100)+"%");c.style.setProperty("--gy",(y*100)+"%")});
+  c.addEventListener("pointerleave",function(){c.style.setProperty("--rx","0deg");c.style.setProperty("--ry","0deg")})});
+ /* entrance */
+ var sec=$("#featured");if(RM||!("IntersectionObserver" in window)||sec.getBoundingClientRect().top<innerHeight*.85)return;
+ sec.classList.add("pre");var o=new IntersectionObserver(function(es){if(es[0].isIntersecting){sec.classList.add("go");sec.classList.remove("pre");o.disconnect();
+  setTimeout(function(){[].forEach.call(lane.querySelectorAll(".fc"),function(c){c.style.animation="none"})},2400)}},{threshold:.25});o.observe(sec)})();
+/* Traffic: sedans, trucks, SUVs etc. driving the lane line with lights on */
+(function(){var T={
+ sedan:{b:"M6 34 L6 24 C6 22 7 21 10 21 L28 20 C36 12 46 9 58 9 C70 9 78 12 88 19 L110 23 C114 24 117 26 117 29 L117 34 C117 36 115 37 113 37 L9 37 C7 37 6 36 6 34 Z",g:"M33 20 C40 14 46 12 54 12 L56 20 Z M60 12 C68 12 75 14 83 19 L61 20 Z",h:[114,27],t:[6,23]},
+ coupe:{b:"M5 34 L5 26 C5 24 6 23 9 23 L24 22 C34 14 44 11 56 11 C68 11 78 14 88 21 L110 25 C114 26 117 28 117 31 L117 34 C117 36 115 37 113 37 L8 37 C6 37 5 36 5 34 Z",g:"M31 22 C38 16 45 14 53 14 L54 22 Z M58 14 C66 14 73 16 80 21 L59 22 Z",h:[114,29],t:[5,25]},
+ suv:{b:"M6 34 L6 12 C6 8 8 6 12 6 L78 6 C82 6 84 7 86 9 L96 17 L108 19 C113 20 116 23 116 27 L116 34 C116 36 114 37 112 37 L9 37 C7 37 6 36 6 34 Z",g:"M12 10 L30 10 L30 17 L12 17 Z M34 10 L56 10 L56 17 L34 17 Z M60 10 L80 10 C81 10 82 11 83 12 L88 17 L60 17 Z",h:[113,23],t:[6,13]},
+ truck:{b:"M6 18 L56 18 L58 8 C59 6 61 5 63 5 L84 5 C87 5 89 6 90 8 L96 17 L110 19 C114 20 116 23 116 27 L116 34 C116 36 114 37 112 37 L9 37 C7 37 6 36 6 34 Z",g:"M61 8 L76 8 L76 16 L59 16 Z M79 8 L86 8 C87 8 88 9 89 10 L93 16 L79 16 Z",h:[113,24],t:[6,21]},
+ van:{b:"M6 34 L6 10 C6 6 9 4 13 4 L84 4 C88 4 90 5 92 8 L104 18 C111 19 116 22 116 27 L116 34 C116 36 114 37 112 37 L9 37 C7 37 6 36 6 34 Z",g:"M14 8 L40 8 L40 17 L14 17 Z M44 8 L70 8 L70 17 L44 17 Z M74 8 L86 8 C87 8 88 9 89 10 L97 17 L74 17 Z",h:[113,25],t:[6,14]},
+ wagon:{b:"M6 33 L6 16 C6 13 8 11 12 11 L70 10 C76 10 80 12 84 15 L94 21 L108 23 C113 24 116 27 116 31 L116 34 C116 36 114 37 112 37 L9 37 C7 37 6 36 6 34 Z",g:"M11 14 L32 14 L32 21 L10 21 Z M36 14 L58 14 L58 21 L36 21 Z M62 13 L70 13 C74 13 77 15 80 17 L85 21 L62 21 Z",h:[113,27],t:[6,18]}};
+ var fleet=[["sedan","#D9DCEB",92],["truck","#2E2A52",104],["suv","#3B3F72",98],["coupe","#5A2D4E",90],["van","#24284D",100],["wagon","#4A4470",98],["suv","#2B2F57",98],["sedan","#6E5A8C",92]];
+ var DUR=52,h="";
+ fleet.forEach(function(f,i){var t=T[f[0]],hx=t.h[0],hy=t.h[1];
+  h+='<div class="tcar" style="--w:'+f[2]+'px;--dur:'+DUR+'s;--dl:'+(-i*DUR/fleet.length).toFixed(2)+'s;--x:'+(i*100/fleet.length+3).toFixed(1)+'vw"><svg viewBox="0 0 120 46">'
+  +'<ellipse cx="61" cy="41" rx="54" ry="2.6" fill="#000" opacity=".55"/>'
+  +'<path d="M'+hx+' '+(hy-1)+' L'+(hx+62)+' '+(hy-9)+' L'+(hx+62)+' '+(hy+12)+' L'+hx+' '+(hy+2)+' Z" fill="url(#tBeam)" opacity=".7"/>'
+  +'<ellipse cx="'+(hx+40)+'" cy="40.5" rx="26" ry="2" fill="#FFE7C0" opacity=".16"/>'
+  +'<path d="'+t.b+'" fill="'+f[1]+'"/><path d="'+t.b+'" fill="url(#tShine)"/>'
+  +'<path d="'+t.g+'" fill="url(#tGlass)"/>'
+  +'<path d="M14 29 L108 29" stroke="#fff" stroke-opacity=".35" stroke-width=".6"/>'
+  +'<circle cx="'+hx+'" cy="'+hy+'" r="7" fill="url(#tHead)"/><rect x="'+(hx-2.5)+'" y="'+(hy-1.4)+'" width="4.5" height="2.8" rx="1.4" fill="#FFF8E8"/>'
+  +'<ellipse cx="'+(t.t[0]+1)+'" cy="'+(t.t[1]+1.5)+'" rx="8" ry="5" fill="url(#tTail)"/><rect x="'+t.t[0]+'" y="'+t.t[1]+'" width="2.6" height="3.5" rx="1" fill="#FF4A55"/>'
+  +'<g class="wh"><circle cx="28" cy="37" r="7" fill="#07080F"/><circle cx="28" cy="37" r="4" fill="#2A2F48" stroke="#B5BAD0" stroke-width=".8"/><path d="M28 33.5 V40.5 M24.5 37 H31.5" stroke="#B5BAD0" stroke-width=".9"/></g>'
+  +'<g class="wh"><circle cx="94" cy="37" r="7" fill="#07080F"/><circle cx="94" cy="37" r="4" fill="#2A2F48" stroke="#B5BAD0" stroke-width=".8"/><path d="M94 33.5 V40.5 M90.5 37 H97.5" stroke="#B5BAD0" stroke-width=".9"/></g>'
+  +'</svg></div>'});
+ $("#traffic").innerHTML=h})();
+/* Footer: back to top + gentle fade-in */
+(function(){$("#toTop").onclick=function(){scrollTo({top:0,behavior:RM?"auto":"smooth"})};
+ var f=$("#foot");if(RM||!("IntersectionObserver" in window)||f.getBoundingClientRect().top<innerHeight*.85)return;
+ f.classList.add("pre");var o=new IntersectionObserver(function(es){if(es[0].isIntersecting){f.classList.add("go");f.classList.remove("pre");o.disconnect()}},{threshold:.15});o.observe(f)})();
+/* Safety net: reveal any section still waiting for its entrance once it is on screen */
+(function(){function chk(){[].forEach.call(document.querySelectorAll("section.pre,footer.pre"),function(sec){var r=sec.getBoundingClientRect();if(r.top<innerHeight*.9&&r.bottom>0){sec.classList.add("go");sec.classList.remove("pre");
+  }})}
+ addEventListener("scroll",chk,{passive:true});addEventListener("resize",chk);setInterval(chk,700)})();
+/* Brands: two lanes of make tiles drifting in opposite directions */
+var cnt={};CARS.forEach(function(c){if(c.mk&&c.live)cnt[c.mk]=(cnt[c.mk]||0)+1});var makes=Object.keys(cnt).sort(function(a,b){return cnt[b]-cnt[a]||a.localeCompare(b)});
+function mkTile(m){var n=cnt[m]||0;return '<a class="mk" href="inventory.html?make='+encodeURIComponent(m)+'"><span><b>'+escHtml(m)+'</b><small class="has">'+n+' in stock</small></span><span class="ar">→</span></a>'}
+function fill(el,list){var h=list.map(mkTile).join("");el.innerHTML=h+h+h}fill($("#mrowA"),makes);fill($("#mrowB"),makes.slice().reverse());if(!makes.length)$("#brands").hidden=true;
+var lanes=[{el:$("#mrowA"),x:0,v:-.35,hov:false},{el:$("#mrowB"),x:0,v:.35,hov:false}],mBoost=0,mLastY=scrollY;
+lanes[1].x=-lanes[1].el.scrollWidth/3;
+lanes.forEach(function(l){l.el.addEventListener("mouseenter",function(){l.hov=true});l.el.addEventListener("mouseleave",function(){l.hov=false})});
+$("#bPrev").onclick=function(){mBoost=-9};$("#bNext").onclick=function(){mBoost=9};
+function laneTick(){var dy=scrollY-mLastY;mLastY=scrollY;if(!RM)mBoost+=Math.abs(dy)*.02*(mBoost<0?-1:1);mBoost*=.93;
+ lanes.forEach(function(l){var third=l.el.scrollWidth/3;if(!third)return;var sp=RM?0:(l.hov?0:l.v)+Math.sign(l.v)*mBoost;l.x+=sp;
+  if(l.x<=-third*2)l.x+=third;if(l.x>-0)l.x-=third;l.el.style.transform="translate3d("+l.x.toFixed(2)+"px,0,0)"})}
+(function(){var sec=$("#brands");if(RM||!("IntersectionObserver" in window)||sec.getBoundingClientRect().top<innerHeight*.85)return;
+ sec.classList.add("pre");var o=new IntersectionObserver(function(es){if(es[0].isIntersecting){sec.classList.add("go");sec.classList.remove("pre");o.disconnect()}},{threshold:.25});o.observe(sec)})();
+
+/* Body style: icon filter with liquid knob, animated card swaps */
+var FILTER_CANDIDATES=["Sedan","SUV","Truck","Coupe","Luxury","Electric / Hybrid","Van","AWD"],FILTERS=["All"].concat(FILTER_CANDIDATES.filter(function(f){return CARS.some(function(c){if(f==="Luxury"||f==="Electric / Hybrid"||f==="AWD")return c.tags.indexOf(f)>-1;if(f==="Truck"||f==="SUV")return c.type===f||c.body===f;return String(c.body||"").toLowerCase()===f.toLowerCase()})})),gear=$("#gear"),knob=$("#knob"),bsGrid=$("#bsGrid"),bsCur=-1,bsBusy=null;
+var BSI={All:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+ Sedan:'<path d="M2 15v-2.5c0-1 .7-1.7 1.6-1.9L7 10l2.6-3.2c.4-.5 1-.8 1.6-.8h3.6c.7 0 1.3.3 1.7.9L19 10l2 .6c.6.2 1 .7 1 1.4V15a1 1 0 0 1-1 1h-1M5 16H3a1 1 0 0 1-1-1"/><circle cx="7" cy="16" r="2"/><circle cx="17" cy="16" r="2"/><path d="M9 16h6"/>',
+ SUV:'<path d="M2 16V8.5C2 7.7 2.7 7 3.5 7H15l3.5 3.5 2.3.6c.7.2 1.2.8 1.2 1.5V15a1 1 0 0 1-1 1h-1M5 16H3"/><circle cx="7" cy="16" r="2"/><circle cx="17" cy="16" r="2"/><path d="M9 16h6M7 7v4h11"/>',
+ Truck:'<path d="M2 16v-5h9V7h5l3 4 2 .6c.6.2 1 .7 1 1.3V15a1 1 0 0 1-1 1h-1M5 16H3a1 1 0 0 1-1-1"/><circle cx="7" cy="16" r="2"/><circle cx="17" cy="16" r="2"/><path d="M9 16h6"/>',
+ Coupe:'<path d="M2 15.5V14c0-.8.6-1.5 1.4-1.7L8 11l3-3h4c1 0 2 .5 2.6 1.3L19.5 12l1.6.5c.5.2.9.7.9 1.2v1.8a.5.5 0 0 1-.5.5H20M5 16H2.5"/><circle cx="7" cy="16" r="2"/><circle cx="17" cy="16" r="2"/><path d="M9 16h6"/>',
+ Luxury:'<path d="M6 3h12l4 6-10 12L2 9z"/><path d="M2 9h20M12 21 8 9l4-6 4 6z"/>',
+ "Electric / Hybrid":'<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+ Van:'<path d="M2 16V6.5C2 5.7 2.7 5 3.5 5H16c.6 0 1.1.3 1.4.8L21 11c.6.6 1 1.3 1 2.1V15a1 1 0 0 1-1 1h-1M5 16H3"/><circle cx="7" cy="16" r="2"/><circle cx="17" cy="16" r="2"/><path d="M9 16h6M2 10h18"/>',
+ AWD:'<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v7M18 8.5v7M8.5 12h7"/>'};
+FILTERS.forEach(function(f,i){var b=document.createElement("button");b.type="button";b.setAttribute("role","tab");b.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+BSI[f]+'</svg>'+f;b.onclick=function(){pick(i)};gear.appendChild(b)});
+function placeKnob(b,from){if(from&&!RM){var l=Math.min(from.offsetLeft,b.offsetLeft),r=Math.max(from.offsetLeft+from.offsetWidth,b.offsetLeft+b.offsetWidth);
+  if(from.offsetTop===b.offsetTop){knob.style.left=l+"px";knob.style.width=(r-l)+"px";setTimeout(function(){knob.style.left=b.offsetLeft+"px";knob.style.width=b.offsetWidth+"px"},170);knob.style.top=b.offsetTop+"px";knob.style.height=b.offsetHeight+"px";return}}
+ knob.style.cssText="left:"+b.offsetLeft+"px;top:"+b.offsetTop+"px;width:"+b.offsetWidth+"px;height:"+b.offsetHeight+"px"}
+function bsTilt(c){if(RM||!matchMedia("(hover:hover)").matches)return;c.addEventListener("pointermove",function(e){var r=c.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;c.style.setProperty("--ry",((x-.5)*10).toFixed(2)+"deg");c.style.setProperty("--rx",((.5-y)*8).toFixed(2)+"deg");c.style.setProperty("--gx",(x*100)+"%");c.style.setProperty("--gy",(y*100)+"%")});c.addEventListener("pointerleave",function(){c.style.setProperty("--rx","0deg");c.style.setProperty("--ry","0deg")})}
+var BSLINK={All:"inventory.html",Sedan:"inventory.html?body=sedan",SUV:"inventory.html?type=SUV",Truck:"inventory.html?type=Truck",Coupe:"inventory.html?body=coupe",Luxury:"inventory.html?feature=luxury","Electric / Hybrid":"inventory.html?fuel=electric-hybrid",Van:"inventory.html?body=van",AWD:"inventory.html?drivetrain=awd"};
+var BSNAME={All:"vehicles",Sedan:"sedans",SUV:"SUVs",Truck:"trucks",Coupe:"coupes",Luxury:"luxury vehicles","Electric / Hybrid":"electric & hybrids",Van:"vans",AWD:"AWD vehicles"};
+function render(list,animate){var f=FILTERS[bsCur],total=list.length;list=list.slice(0,8);bsGrid.innerHTML=list.map(fcard).join("");
+ var a=$("#bsAll");a.href=BSLINK[f];a.innerHTML="View all "+BSNAME[f]+(total?" ("+total+")":"")+' <span class="arr">→</span>';
+ [].forEach.call(bsGrid.children,function(el,k){el.style.animationDelay="";if(animate&&!RM){el.classList.add("enter");el.style.animationDelay=(k*.07)+"s";setTimeout(function(){el.classList.remove("enter");el.style.animationDelay=""},1000+k*70)}bsTilt(el)});
+ $("#bsNote").hidden=total>0;var n=$("#bsN");n.textContent=String(total).padStart(2,"0");if(animate&&!RM&&n.animate)n.animate([{transform:"translateY(-30%)",opacity:0},{transform:"none",opacity:1}],{duration:350,easing:"cubic-bezier(.2,.8,.2,1)"})}
+function pick(i){var bs=gear.querySelectorAll("button"),prev=bsCur>=0?bs[bsCur]:null;if(i===bsCur)return;
+ [].forEach.call(bs,function(b,j){b.classList.toggle("on",j===i);b.setAttribute("aria-selected",j===i)});placeKnob(bs[i],prev);if(gear.scrollWidth>gear.clientWidth)gear.scrollTo({left:bs[i].offsetLeft-gear.clientWidth/2+bs[i].offsetWidth/2,behavior:RM?"auto":"smooth"});
+ var f=FILTERS[i],list=CARS.filter(function(c){return f==="All"||c.type===f||c.body===f||c.tags.indexOf(f)>-1}),first=bsCur<0;bsCur=i;
+ if(first){render(list,false);return}
+ clearTimeout(bsBusy);var old=[].slice.call(bsGrid.children);
+ if(RM||!old.length){render(list,true);return}
+ old.forEach(function(el,k){el.style.animation="";el.classList.remove("enter");el.style.animationDelay=(k*.03)+"s";el.classList.add("leave")});
+ bsBusy=setTimeout(function(){render(list,true)},320+Math.min(old.length,6)*30)}
+pick(0);addEventListener("resize",function(){var b=gear.querySelector(".on");if(b)placeKnob(b)});
+(function(){var sec=$("#bodystyle");if(RM||!("IntersectionObserver" in window)||sec.getBoundingClientRect().top<innerHeight*.85)return;
+ sec.classList.add("pre");var o=new IntersectionObserver(function(es){if(es[0].isIntersecting){sec.classList.add("go");sec.classList.remove("pre");o.disconnect();
+  var b=gear.querySelector(".on");if(b)placeKnob(b);
+  [].forEach.call(bsGrid.children,function(el,k){el.classList.add("enter");el.style.animationDelay=(.55+k*.08)+"s";setTimeout(function(){el.classList.remove("enter");el.style.animationDelay=""},1600+k*80)})}},{threshold:.2});o.observe(sec)})();
+
+/* Hero heading: type the rendered shared heading without changing its saved text. */
+(function(){var sec=$("#hero"),h=$("#heroH"),out=h.querySelector(".typed"),ghost=h.querySelector(".ghost"),model=readHeadingModel(ghost),full=model.length;function show(n,caret){out.innerHTML=typedHeadingHTML(model,n,true,caret)}if(RM){ghost.style.visibility="visible";out.remove();return}sec.classList.add("wait");show(0,true);setTimeout(function(){sec.classList.add("typing");var n=0;(function step(){n++;show(n,true);if(n<full){var ch=model[n-1]?model[n-1].ch:"";setTimeout(step,ch==="\n"?260:(ch===" "?80:45+Math.random()*35))}else{sec.classList.remove("wait");sec.classList.add("done");setTimeout(function(){show(n,false)},2200)}})()},450)})();
+/* Location heading: animate the current dealership heading. */
+(function(){var sec=$("#location"),h=$("#locH"),out=h.querySelector(".typed"),btn=$("#dirBtn"),ghost=h.querySelector(".ghost"),model=readHeadingModel(ghost),full=model.length;function show(n,caret){out.innerHTML=typedHeadingHTML(model,n,false,caret)}if(RM||!("IntersectionObserver" in window)){ghost.style.visibility="visible";out.remove();return}var started=false;sec.classList.add("wait");show(0,true);function run(){if(started)return;started=true;sec.classList.add("typing");var n=0;(function step(){n++;show(n,true);if(n<full){setTimeout(step,model[n-1]&&model[n-1].ch===" "?40:22+Math.random()*16)}else{sec.classList.remove("wait");sec.classList.add("done");if(btn)btn.classList.add("shine");setTimeout(function(){show(n,false)},1600)}})()}var o=new IntersectionObserver(function(es){if(es[0].isIntersecting){run();o.disconnect()}},{threshold:.4});o.observe(h);addEventListener("scroll",function(){if(!started){var r=h.getBoundingClientRect();if(r.top<innerHeight*.75&&r.bottom>0)run()}},{passive:true})})();
+/* Promo heading: animate the current saved home.ready.title value. */
+(function(){var sec=$("#lift"),h=$("#liftH"),out=h.querySelector(".typed"),ghost=h.querySelector(".ghost"),model=readHeadingModel(ghost),full=model.length;function show(n,caret){out.innerHTML=typedHeadingHTML(model,n,false,caret)}if(RM||!("IntersectionObserver" in window)){ghost.style.visibility="visible";out.remove();return}var started=false;sec.classList.add("wait");show(0,true);function run(){if(started)return;started=true;sec.classList.add("typing");var n=0;(function step(){n++;show(n,true);if(n<full){var ch=model[n-1]?model[n-1].ch:"";setTimeout(step,ch==="\n"?70:(ch===" "?70:38+Math.random()*30))}else{sec.classList.remove("wait");sec.classList.add("done")}})()}var o=new IntersectionObserver(function(es){if(es[0].isIntersecting){run();o.disconnect()}},{threshold:.35});o.observe(h);addEventListener("scroll",function(){if(!started){var r=h.getBoundingClientRect();if(r.top<innerHeight*.8&&r.bottom>0)run()}},{passive:true})})();
+/* Reviews */
+var R=[
+ [{%js home.reviews.r1_text%},{%js home.reviews.r1_initials label="Review 1 initials" | %},{%js home.reviews.r1_name%}],
+ [{%js home.reviews.r2_text%},{%js home.reviews.r2_initials label="Review 2 initials" | %},{%js home.reviews.r2_name%}],
+ [{%js home.reviews.r3_text%},{%js home.reviews.r3_initials label="Review 3 initials" | %},{%js home.reviews.r3_name%}],
+ [{%js home.reviews.r4_text label="Review 4 text" | %},{%js home.reviews.r4_initials label="Review 4 initials" | %},{%js home.reviews.r4_name label="Review 4 name" | %}]
+].filter(function(r){return r[0]&&String(r[0]).trim()&&r[2]&&String(r[2]).trim()});
+var star='<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>';
+$("#revGrid").innerHTML=R.map(function(r){return '<figure class="rv-card"><span class="qmark" aria-hidden="true">&ldquo;</span><div class="stars" aria-label="Customer review">'+star+star+star+star+star+'</div><blockquote>'+escHtml(r[0])+'</blockquote><figcaption class="who"><span class="av">'+escHtml(r[1])+'</span><span><b>'+escHtml(r[2])+'</b><small>Customer review</small></span></figcaption></figure>'}).join(""); $("#revStars").innerHTML=R.length?star+star+star+star+star:"";
+(function(){var sec=$("#reviews");if(RM||!("IntersectionObserver" in window)||sec.getBoundingClientRect().top<innerHeight*.85)return;
+ sec.classList.add("pre");var o=new IntersectionObserver(function(es){if(es[0].isIntersecting){sec.classList.add("go");sec.classList.remove("pre");o.disconnect()}},{threshold:.2});o.observe(sec)})();
+
+/* Admin section map */
+/* Reveal on entry (elements are visible at rest; the class only plays the entrance) */
+if(!RM&&"IntersectionObserver" in window){var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add("in");io.unobserve(e.target)}})},{rootMargin:"0px 0px -6% 0px"});
+ [].forEach.call(document.querySelectorAll(".rv"),function(el){var r=el.getBoundingClientRect();if(r.top>innerHeight)io.observe(el)})}
+
+
+/* Map route drawing */
+var route=$("#route"),RL=route.getTotalLength(),mapCar=$("#mapCar"),mapT0=null;route.style.strokeDasharray=RL;route.style.strokeDashoffset=RL;
+new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting&&mapT0===null)mapT0=performance.now()})},{threshold:.4}).observe($("#map"));
+
+/* Header + scroll-linked bits */
+var hdr=$("#hdr"),trk=$("#trk"),trkCar=$("#trkCar");
+function frame(now){
+ var sy=scrollY,max=document.documentElement.scrollHeight-innerHeight,p=max>0?sy/max:0;
+ hdr.classList.toggle("solid",sy>40);trk.style.width=(p*100)+"%";trkCar.style.left=(p*100)+"%";
+ /* marquee */
+ laneTick();
+ /* map route */
+ if(mapT0!==null){var mt=RM?1:clamp((now-mapT0)/2200,0,1),e=1-Math.pow(1-mt,3);route.style.strokeDashoffset=RL*(1-e);var pt=route.getPointAtLength(RL*e);mapCar.setAttribute("cx",pt.x);mapCar.setAttribute("cy",pt.y)}
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- Hero: dusk highway with a car cruising nonstop (canvas scenery + SVG car) ---------- */
+var hero=$("#hero"),cv=$("#hwy"),road=$("#road"),cw=$("#carwrap"),ctx=cv.getContext("2d"),sky=document.createElement("canvas");
+var W,H,DPR,GY,RB,RT,RH,mob,mtnA=[],mtnB=[],city=[],streaks=[],T=0,last=0,vis=true,boost=0,wA=$("#hwA .sp"),wB=$("#hwB .sp"),trail=$("#trail"),wheelA=0;
+function wave(W,amps,seed){var ph=[],k;for(k=0;k<amps.length;k++)ph.push((Math.sin(seed*(k+1)*12.9898)*43758.5453)%(Math.PI*2));return function(x){var y=0;for(k=0;k<amps.length;k++)y+=amps[k]*Math.sin(2*Math.PI*(k+1)*x/W+ph[k]);return y}}
+function hsize(){DPR=Math.min(devicePixelRatio||1,2);W=hero.clientWidth;H=hero.clientHeight;cv.width=W*DPR;cv.height=H*DPR;sky.width=W*DPR;sky.height=H*DPR;
+ mob=W<760;RT=road.offsetTop;RH=road.offsetHeight;GY=RT+RH*.46;RB=RT+RH*.93;
+ var g=sky.getContext("2d");g.setTransform(DPR,0,0,DPR,0,0);
+ var sg=g.createLinearGradient(0,0,0,GY);sg.addColorStop(0,"#050817");sg.addColorStop(.45,"#0C1236");sg.addColorStop(.72,"#251E52");sg.addColorStop(.9,"#5E2E5E");sg.addColorStop(1,"#B45A4E");g.fillStyle=sg;g.fillRect(0,0,W,GY+2);
+ /* stars */
+ var s=7;function r(){s=(s*9301+49297)%233280;return s/233280}
+ for(var i=0;i<W*GY/2600;i++){var y=r()*GY*.62;g.fillStyle="rgba(235,238,255,"+(.15+r()*.55)*(1-y/(GY*.62))+")";g.fillRect(r()*W,y,r()<.08?1.6:1,r()<.08?1.6:1)}
+ /* sun */
+ var sx=mob?W*.74:W*.70,sr=RH*.42,sun=g.createRadialGradient(sx,GY-RH*.2,0,sx,GY-RH*.2,sr*3.2);sun.addColorStop(0,"rgba(255,190,110,.95)");sun.addColorStop(.18,"rgba(255,150,95,.55)");sun.addColorStop(.45,"rgba(255,110,120,.16)");sun.addColorStop(1,"rgba(255,110,120,0)");g.fillStyle=sun;g.fillRect(0,0,W,GY);
+ g.fillStyle="rgba(255,214,150,.9)";g.beginPath();g.arc(sx,GY-RH*.2,sr*.38,0,7);g.fill();
+ /* ground below the horizon */
+ var gg=g.createLinearGradient(0,GY,0,H);gg.addColorStop(0,"#151233");gg.addColorStop(1,"#05060F");g.fillStyle=gg;g.fillRect(0,GY,W,H-GY);
+ mtnA=wave(W,[RH*.10,RH*.05,RH*.03,RH*.015],3);mtnB=wave(W,[RH*.06,RH*.04,RH*.02],9);
+ city=[];var x=0;s=11;while(x<W){var bw=24+r()*58,bh=RH*(.08+r()*.26);city.push([x,bw,bh,[]]);for(var k=0;k<6;k++)if(r()>.5)city[city.length-1][3].push([r()*(bw-8)+3,r()*(bh-8)+4,.3+r()*.6]);x+=bw+2}
+ streaks=[];for(var j=0;j<(mob?14:26);j++)streaks.push({x:Math.random()*W,y:GY+Math.random()*(RB-GY)*1.05-RH*.12,l:60+Math.random()*220,v:1.2+Math.random()*1.4,a:.05+Math.random()*.14});
+ hdraw(0)}
+function layer(fn,off,base,fill,amp){ctx.fillStyle=fill;ctx.beginPath();ctx.moveTo(0,H);for(var x=0;x<=W+8;x+=8){ctx.lineTo(x,base-amp-fn(((x+off)%W+W)%W))}ctx.lineTo(W,H);ctx.closePath();ctx.fill()}
+function hdraw(dt){
+ var spd=(mob?W*1.6:W*1.05)*(1+boost*.6);if(RM)spd=0;T+=dt*spd/1000;
+ ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(sky,0,0);ctx.setTransform(DPR,0,0,DPR,0,0);
+ /* far range, near hills (parallax) */
+ layer(mtnA,T*.02,GY,"#2A2257",RH*.16);
+ layer(mtnB,T*.06,GY,"#191539",RH*.06);
+ /* city skyline */
+ var off=(T*.12)%W;ctx.save();
+ for(var rep=0;rep<2;rep++){city.forEach(function(b){var x=b[0]-off+rep*W;if(x>W||x+b[1]<0)return;ctx.fillStyle="#100E28";ctx.fillRect(x,GY-b[2],b[1],b[2]);b[3].forEach(function(w){ctx.fillStyle="rgba(255,190,110,"+w[2]+")";ctx.fillRect(x+w[0],GY-b[2]+w[1],2.4,2.4)})})}
+ ctx.restore();
+ /* road surface */
+ var rg=ctx.createLinearGradient(0,GY,0,RB);rg.addColorStop(0,"#1E1A3E");rg.addColorStop(.25,"#100F24");rg.addColorStop(1,"#0A0A18");ctx.fillStyle=rg;ctx.fillRect(0,GY,W,RB-GY);
+ /* sun reflection smeared on the asphalt */
+ var sx=mob?W*.74:W*.70,rf=ctx.createRadialGradient(sx,GY+(RB-GY)*.25,0,sx,GY+(RB-GY)*.25,RH*.9);rf.addColorStop(0,"rgba(255,150,100,.16)");rf.addColorStop(1,"rgba(255,150,100,0)");ctx.fillStyle=rf;ctx.fillRect(0,GY,W,RB-GY);
+ ctx.fillStyle="rgba(255,200,150,.35)";ctx.fillRect(0,GY,W,1.2);
+ /* street lamps on the far kerb */
+ var gap=mob?260:420,lo=(T*.7)%gap,ph=RH*.36;
+ for(var lx=-lo;lx<W+gap;lx+=gap){ctx.fillStyle="#0B0A1C";ctx.fillRect(lx,GY-ph,3,ph+2);ctx.fillRect(lx,GY-ph,26,3);
+  var lg=ctx.createRadialGradient(lx+24,GY-ph+4,0,lx+24,GY-ph+4,34);lg.addColorStop(0,"rgba(255,214,150,.95)");lg.addColorStop(1,"rgba(255,214,150,0)");ctx.fillStyle=lg;ctx.beginPath();ctx.arc(lx+24,GY-ph+4,34,0,7);ctx.fill();
+  var pool=ctx.createRadialGradient(lx+24,GY+(RB-GY)*.3,0,lx+24,GY+(RB-GY)*.3,RH*.45);pool.addColorStop(0,"rgba(255,200,140,.10)");pool.addColorStop(1,"rgba(255,200,140,0)");ctx.fillStyle=pool;ctx.fillRect(lx-RH*.5,GY,RH,RB-GY)}
+ /* lane dashes */
+ var ly=GY+(RB-GY)*.44,dg=mob?110:170,dl=dg*.5,doff=T%dg;ctx.fillStyle="rgba(240,236,225,.55)";
+ for(var dx=-doff;dx<W;dx+=dg){ctx.fillRect(dx,ly,dl,2.2)}
+ /* near guard rail + posts, fastest layer */
+ var ry=RB-RH*.05;ctx.fillStyle="#24204A";ctx.fillRect(0,ry-RH*.06,W,RH*.035);ctx.fillStyle="rgba(255,190,140,.25)";ctx.fillRect(0,ry-RH*.06,W,1);
+ var pg=mob?70:110,po=(T*1.35)%pg;ctx.fillStyle="#130F2C";for(var px=-po;px<W+pg;px+=pg){ctx.fillRect(px,ry-RH*.07,6+boost*8,RH*.12)}
+ ctx.fillStyle="#06060E";ctx.fillRect(0,ry+RH*.05,W,H-ry);
+ /* speed streaks */
+ ctx.save();ctx.globalCompositeOperation="lighter";streaks.forEach(function(s){s.x-=s.v*spd*dt/1000;if(s.x+s.l<0){s.x=W+Math.random()*200;s.y=GY+Math.random()*(RB-GY)*1.05-RH*.12}
+  var sg=ctx.createLinearGradient(s.x,0,s.x+s.l,0),a=s.a*(1+boost*1.5);sg.addColorStop(0,"rgba(255,220,190,0)");sg.addColorStop(1,"rgba(255,220,190,"+a.toFixed(3)+")");ctx.strokeStyle=sg;ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.lineTo(s.x+s.l*(1+boost),s.y);ctx.stroke()});ctx.restore();
+ /* car: idle sway, road buzz, periodic surge */
+ var tt=performance.now()/1000;
+ var cwW=cw.offsetWidth,cx=carPos(tt)*W,sway=RM?0:Math.sin(tt*.7)*(mob?3:6),buzz=RM?0:(Math.sin(tt*31)*.6+Math.sin(tt*17)*.5);
+ cw.style.transform="translate("+(cx-cwW/2+sway).toFixed(1)+"px,"+buzz.toFixed(2)+"px)";
+ wheelA=(wheelA+(RM?0:dt*1.25*(1+boost*.5)))%360;
+ wA.setAttribute("transform","rotate("+wheelA.toFixed(1)+" 510 334)");wB.setAttribute("transform","rotate("+wheelA.toFixed(1)+" 870 334)");
+ trail.setAttribute("width",(170+boost*160+Math.sin(tt*9)*12).toFixed(0));trail.setAttribute("x",(398-(170+boost*160)).toFixed(0));
+}
+/* Hero car route: waits on the left, surges a little ahead, then to the centre, then drops back; repeats */
+function carPos(t){var mobl=W<760,L=mobl?.47:.27,A=mobl?.5:.41,C=mobl?.55:.56;if(RM)return mobl?.5:.4;
+ var K=[[0,L],[2.4,L],[3.5,A],[4.9,A],[6.2,C],[8.6,C],[11.2,L],[12,L]],c=t%12;
+ for(var i=1;i<K.length;i++){if(c<=K[i][0]){var a=K[i-1],b=K[i],u=(c-a[0])/(b[0]-a[0]);u=u<.5?4*u*u*u:1-Math.pow(-2*u+2,3)/2;return a[1]+(b[1]-a[1])*u}}return L}
+function hloop(now){var dt=last?Math.min(50,now-last):16;last=now;
+ var t1=now/1000,vel=(carPos(t1+.05)-carPos(t1-.05))*10;boost=RM?0:Math.max(0,Math.min(1,vel*(mob?3.2:4.5)));
+ hdraw(dt);if(vis&&!RM)requestAnimationFrame(hloop);else last=0}
+hsize();if(!RM)requestAnimationFrame(hloop);
+var hrz;addEventListener("resize",function(){clearTimeout(hrz);hrz=setTimeout(hsize,120)});
+new IntersectionObserver(function(es){var was=vis;vis=es[0].isIntersecting;if(vis&&!was&&!RM)requestAnimationFrame(hloop)}).observe(hero);
+})();
+</script>
+
+<script>
+(function(){
+  function reroute(el, fallback, legacy){ if(!el) return; var h=el.getAttribute('href')||''; if(legacy.indexOf(h)>-1) el.setAttribute('href',fallback); }
+  var links=document.querySelectorAll('.hero .cta-row a.btn');
+  reroute(links[0],'inventory.html',['#featured','#bodystyle','#search']);
+  reroute(links[1],'contact-us.html',['#location']);
+  reroute(document.querySelector('#featured .feat-head .link'),'inventory.html',['#featured','#bodystyle']);
+  reroute(document.querySelector('#lift .lift-top .btn'),'inventory.html',['#featured','#bodystyle']);
+})();
+</script>
+{%raw PREVIEW_BAR%}
+</body></html>

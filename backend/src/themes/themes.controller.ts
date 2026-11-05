@@ -35,6 +35,12 @@ export class ThemesController {
     return this.installer.rollbackTenant(b, u);
   }
 
+  /** Delete a design (refused while a dealership uses it). */
+  @Delete('themes/:id')
+  remove(@Param('id') id: string, @CurrentUser() u: AuthUser) {
+    return this.installer.removeTheme(id, u);
+  }
+
   @Get('themes')
   list() {
     return this.themes.platformList();

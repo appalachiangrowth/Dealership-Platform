@@ -1,0 +1,123 @@
+/* ==========================================================================
+   CENTRAL THEME FILE
+   --------------------------------------------------------------------------
+   Edit ONLY this file to change colours, fonts, sizes, weights, buttons and
+   footer for the whole website (home, inventory, blog, contact, used-*.html).
+   This file is loaded FIRST on every page; all other CSS reads these values.
+
+   SECTIONS
+     1. Fonts (Google Fonts import - add/remove fonts here)
+     2. Theme presets (copy a preset's values into section 3)
+     3. Colour palette
+     4. Typography (families, sizes, weights)
+     5. Buttons
+     6. Footer
+   ========================================================================== */
+
+/* ---------- 1. FONTS ----------
+   If you change a font family below, add that font to this import. */
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&family=Manrope:wght@300;400;500;600;700;800&display=swap");
+
+/* ---------- 2. THEME PRESETS (ready-made combinations) ----------
+   To switch theme: copy the 5 values of a preset into the matching
+   --color-primary / --color-primary-dark / --color-primary-bright /
+   --color-navy / --color-navy-deep lines in section 3.
+
+   Default (current)  primary #0057B8  dark #004A9E  bright #2E86E0  navy #062B49  navy-deep #051F36
+   Crimson            primary #C8102E  dark #A30D25  bright #E5384F  navy #2B0A10  navy-deep #1C060A
+   Forest             primary #15803D  dark #116B33  bright #34B26A  navy #0B2E1B  navy-deep #071F12
+   Midnight Purple    primary #6D28D9  dark #5B21B6  bright #8B5CF6  navy #1E1038  navy-deep #130A26
+   Charcoal & Orange  primary #EA580C  dark #C2410C  bright #FB923C  navy #1F2328  navy-deep #14171A
+*/
+
+:root {
+  /* ---------- 3. COLOUR PALETTE ---------- */
+
+  /* 3a. Main palette (header, inventory, blog, contact, vehicle pages, footer) */
+  --color-primary:        #0057B8;   /* brand colour: links, buttons, accents */
+  --color-primary-dark:   #004A9E;   /* button hover */
+  --color-primary-bright: #2E86E0;   /* highlights */
+  --color-navy:           #062B49;   /* header / dark sections */
+  --color-navy-deep:      #051F36;   /* footer background */
+  --color-light:          #EAF4FF;   /* light tinted background */
+  --color-gray:           #F5F7FA;   /* page grey background */
+  --color-white:          #FFFFFF;
+  --color-text:           #111827;   /* body text */
+  --color-muted:          #5B6B7B;   /* secondary text */
+  --color-line:           #E3EAF2;   /* borders / dividers */
+  --color-gold:           #F6B51E;   /* stars / badges */
+  --color-green:          #16A34A;   /* success */
+  --color-danger:         #DC2626;   /* errors */
+
+  /* 3b. Home page palette (default = its own blue/cyan look).
+         To make Home match section 3a, set each value to the var() shown in the comment. */
+  --home-primary: #2B6BFF;   /* var(--color-primary) */
+  --home-accent:  #22D3EE;   /* var(--color-primary-bright) */
+  --home-dark:    #06142B;   /* var(--color-navy) */
+  --home-ink:     #0F1B33;   /* var(--color-text) */
+  --home-soft:    #EAF4FF;   /* var(--color-light) */
+  --home-muted:   #64748B;   /* var(--color-muted) */
+
+  /* 3c. Used Cars / Sedans / Trucks / SUVs / Wagons pages palette
+         (set to the var() in the comment to match section 3a) */
+  --hub-navy:   #071a33;   /* var(--color-navy) */
+  --hub-blue:   #1273ea;   /* var(--color-primary) */
+  --hub-blue-2: #0b5ed7;   /* var(--color-primary-dark) */
+  --hub-ink:    #0b1f3a;   /* var(--color-text) */
+  --hub-muted:  #51627a;   /* var(--color-muted) */
+  --hub-soft:   #f2f6fc;   /* var(--color-light) */
+  --hub-line:   #dde6f2;   /* var(--color-line) */
+  --hub-hero-from: #06152b;  /* hero background gradient start */
+  --hub-hero-to:   #0a2244;  /* hero background gradient end   */
+  --hub-accent:    #1a86ff;  /* highlighted words in hero      */
+  --hub-eyebrow:   #3b9bff;  /* small label above hero title   */
+
+  /* ---------- 4. TYPOGRAPHY ---------- */
+
+  /* Font families */
+  --font-body:         'Inter', system-ui, sans-serif;     /* paragraphs, menus, forms */
+  --font-heading:      'Manrope', system-ui, sans-serif;   /* ALL headings */
+  --font-heading-home: 'Manrope', Inter, sans-serif;       /* headings on Home page */
+  --font-heading-hub:  var(--font-heading);                /* headings on used-*.html pages */
+  --font-button:       var(--font-body);                   /* button text */
+  --font-footer:       var(--font-body);                   /* footer text */
+  --font-footer-heading: var(--font-heading);              /* footer column titles */
+
+  /* Sizes: base size + multipliers (1 = current design, 1.1 = 10% bigger) */
+  --fs-body:            16px;   /* base body text size */
+  --scale-heading:      1;      /* multiplies ALL heading sizes */
+  --scale-button:       1;      /* multiplies button text size */
+  --scale-footer:       1;      /* multiplies footer text size */
+  --fs-footer-heading:  15.5px; /* footer column titles (main pages) */
+
+  /* Weights / spacing / style */
+  --fw-body:       400;
+  --fw-heading:    700;     /* general headings */
+  --fw-display:    800;     /* big hero + section titles (Home and used-*.html pages) */
+  --ls-heading:    -.01em;  /* heading letter spacing */
+  --lh-body:       1.65;    /* body line height */
+  --lh-heading:    1.22;    /* heading line height */
+  --heading-transform: none;       /* none | uppercase | capitalize */
+
+  /* ---------- 5. BUTTONS ---------- */
+  --fw-button:           600;
+  --btn-transform:       none;                     /* none | uppercase */
+  --btn-radius:          9px;                      /* main-site buttons */
+  --btn-text:            #FFFFFF;
+  --btn-primary-bg:      var(--color-primary);
+  --btn-primary-hover-bg: var(--color-primary-dark);
+  /* Home page + used-*.html buttons use gradients: */
+  --btn-home-bg:   linear-gradient(90deg, var(--home-primary), var(--home-accent));
+  --btn-hub-bg:    linear-gradient(180deg, #1a80ff, #0b62dc);
+  --btn-hub-ghost-text:   var(--hub-blue-2);
+  --btn-hub-ghost-border: #b9d2f5;
+
+  /* ---------- 6. FOOTER ---------- */
+  --footer-bg:           var(--color-navy-deep);
+  --footer-text:         #9FB4C8;
+  --footer-heading-text: #FFFFFF;
+  --fw-footer-heading:   600;
+  --fs-footer-links:     13.8px;
+  --home-footer-bg:      color-mix(in srgb, var(--home-dark) 80%, #000);
+  --home-footer-text:    color-mix(in srgb, #fff 70%, var(--home-dark));
+}

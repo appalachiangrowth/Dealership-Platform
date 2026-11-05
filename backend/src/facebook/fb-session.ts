@@ -106,7 +106,8 @@ export function createFbSession(opts) {
   let mpActive = null; // { vehicleId, action }
   let lastReport = null;
   let launching = null;
-  const S = { lastSeen: Date.now(), lastAction: Date.now() };
+  // lastSeen: portal polled the state · lastAction: something was done · startedAt: Chrome start · lastFrame: live view asked for a picture
+  const S = { lastSeen: Date.now(), lastAction: Date.now(), startedAt: 0, lastFrame: 0, loginLost: false };
 
   // ---------- activity log (shown in the portal) ----------
   const logs = [];
@@ -139,11 +140,20 @@ export function createFbSession(opts) {
   async function launch(puppeteer) {
     const exe = findBrowserPath();
     const proxy = parseProxy(hooks.proxy ? hooks.proxy() : '');
-    const args = ['--disable-notifications', '--lang=en-US', `--window-size=${VIEW_W},${VIEW_H + 140}`, '--disable-dev-shm-usage'];
-    if (process.platform === 'linux') args.push('--no-sandbox', '--disable-setuid-sandbox');
+    const args = [
+      '--disable-notifications', '--lang=en-US', `--window-size=${VIEW_W},${VIEW_H + 140}`, '--disable-dev-shm-usage',
+      // lighter Chrome for a server that runs several of them (none of this changes what Facebook sees)
+      '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-component-extensions-with-background-pages',
+      '--disable-background-networking', '--disable-component-update', '--disable-default-apps', '--disable-sync',
+      '--disable-breakpad', '--metrics-recording-only', '--mute-audio', '--autoplay-policy=user-gesture-required',
+      '--disable-features=Translate,MediaRouter,OptimizationHints,CalculateNativeWinOcclusion',
+      '--renderer-process-limit=3', '--disk-cache-size=67108864',
+    ];
+    if (process.platform === 'linux') args.push('--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu');
     if (proxy) args.push(`--proxy-server=${proxy.server}`);
     const o = {
       headless: process.env.FB_HEADLESS !== 'false',
+      protocolTimeout: 120000, // a hung Chrome fails a call after 2 minutes instead of blocking the dealer forever
       defaultViewport: { width: VIEW_W, height: VIEW_H },
       args,
       userDataDir: profileDir, // the Facebook login is remembered here
@@ -175,6 +185,7 @@ export function createFbSession(opts) {
       log('Starting the Facebook browser...');
       const { b, proxy } = await launch(puppeteer);
       browser = b;
+      S.startedAt = Date.now();
       browser.on('disconnected', () => {
         if (browser !== b) return;
         browser = null; page = null; busy = false; view.cdp = null; view.page = null;
@@ -215,7 +226,22 @@ export function createFbSession(opts) {
 
   async function needLogin() {
     await ensureBrowser();
-    if (!(await isLoggedIn())) throw new Error('Not logged in to Facebook yet. Click "Connect Facebook" and log in.');
+    if (!(await isLoggedIn())) {
+      S.loginLost = true;
+      throw new Error('Facebook is not connected (the login was never made or Facebook ended it). Open FB Poster, click "Connect Facebook" and log in once — after that posting works by itself again.');
+    }
+    S.loginLost = false;
+  }
+
+  /** Chrome still answers (a frozen Chrome is closed by the server and started again on the next use) */
+  async function healthy() {
+    if (!browser || !page || page.isClosed()) return true;
+    try {
+      await Promise.race([page.evaluate(() => 1), sleep(15000).then(() => { throw new Error('timeout'); })]);
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   async function withBusy(what, fn) {
@@ -267,6 +293,7 @@ export function createFbSession(opts) {
   /** the newest picture after `after` (waits up to waitMs for a new one) */
   async function frame(after, waitMs = 8000) {
     S.lastSeen = Date.now();
+    S.lastFrame = Date.now();
     // someone is asking for pictures, so someone is watching (also undoes a late "stop" from a closed tab)
     view.on = true;
     if (browser && page && !page.isClosed() && view.page !== page) await startScreencast().catch(() => {});
@@ -507,6 +534,110 @@ export function createFbSession(opts) {
     await sleep(3000);
     return { clicked: true, method: 'profile menu' };
   }
+  // ---------- who are we posting as: the personal profile or a Page ----------
+  // Facebook sets the "i_user" cookie while you act as a Page (new Pages experience); without it you are the profile.
+  async function actingPageId() {
+    const c = (await fbCookies()).find((x) => x.name === 'i_user');
+    return c ? String(c.value) : '';
+  }
+
+  /** back to the personal profile (Marketplace and groups posted "as you" need it) */
+  async function useProfile() {
+    if (!(await actingPageId())) return false;
+    const cdp = await page.createCDPSession();
+    try {
+      await cdp.send('Network.deleteCookies', { name: 'i_user', domain: '.facebook.com' });
+      await cdp.send('Network.deleteCookies', { name: 'i_user', url: 'https://www.facebook.com/' });
+    } finally {
+      await cdp.detach().catch(() => {});
+    }
+    log('Switched back to your personal profile.');
+    return true;
+  }
+
+  /** become this Page (open it, press its "Switch now") — for posting AS the Page */
+  async function becomePage(url, name) {
+    log(`Switching into the Page${name ? ' "' + name + '"' : ''}...`);
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await sleep(2500);
+    await autoSwitchToPage(name || (await currentPageName()));
+    await sleep(1500);
+    return !!(await actingPageId());
+  }
+
+  /**
+   * Facebook's extra pop-ups around posting ("Talk with people directly — Add button / Not now", "Add a WhatsApp
+   * button", "Boost this post", "Turn on notifications" …): press "Not now" / "Skip" / "No thanks".
+   * Only pop-ups WITHOUT a text box are touched, so the post box itself is never closed. Returns how many were closed.
+   */
+  async function dismissPrompts() {
+    let n = 0;
+    for (let i = 0; i < 3; i++) {
+      const h = await page.evaluateHandle(() => {
+        const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+        // only "say no" buttons: never "Close" / "OK" (an error message must stay readable)
+        const re = /^(not now|skip|skip for now|no thanks|no, thanks|maybe later|not interested)$/i;
+        for (const d of Array.from(document.querySelectorAll('div[role="dialog"]')).filter(vis)) {
+          if (d.querySelector('[contenteditable="true"], [role="textbox"], textarea')) continue; // the post box
+          const b = Array.from(d.querySelectorAll('[role="button"], button')).filter(vis)
+            .find((x) => re.test((x.innerText || '').trim()) || re.test((x.getAttribute('aria-label') || '').trim()));
+          if (b) return b;
+        }
+        // inside the post box (Pages show it as an extra step): only when it is clearly the "add a button" offer
+        const offer = /talk with people|add (a |the )?(whatsapp|messenger|call|contact)? ?button|get more (messages|leads)|add button/i;
+        for (const x of Array.from(document.querySelectorAll('div[role="dialog"] [role="button"], div[role="dialog"] button')).filter(vis)) {
+          if (!/^not now$/i.test((x.innerText || x.getAttribute('aria-label') || '').trim())) continue;
+          let p = x.parentElement;
+          for (let k = 0; k < 6 && p; k++, p = p.parentElement) if (offer.test(p.innerText || '')) return x;
+        }
+        return null;
+      }).catch(() => null);
+      const el = h && h.asElement();
+      if (!el) break;
+      const label = await el.evaluate((e) => (e.innerText || e.getAttribute('aria-label') || '').trim()).catch(() => '');
+      try { await el.click(); } catch (e) { try { await el.evaluate((e2) => e2.click()); } catch (e3) {} }
+      n++;
+      log(`Closed a Facebook pop-up ("${label || 'Not now'}").`);
+      await sleep(900);
+    }
+    return n;
+  }
+
+  /**
+   * Pages without Meta Verified may only post a few links a month: Facebook then shows
+   * "Get more links with Meta Verified — you've already used 2 links". Returns that text ('' = not shown).
+   */
+  async function linkLimitShown() {
+    return page.evaluate(() => {
+      const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+      const txt = Array.from(document.querySelectorAll('div[role="dialog"], div[role="alert"], [role="status"]')).filter(vis).map((d) => d.innerText || '').join('\n');
+      const re = /(get more links[^\n]*|meta verified[^\n]*link[^\n]*|[^\n]*used (all )?(\d+|your|the) (free )?links?[^\n]*|[^\n]*link limit[^\n]*|[^\n]*links? (per|each|this) month[^\n]*)/i;
+      const m = txt.match(re);
+      return m ? m[0].trim().slice(0, 200) : '';
+    }).catch(() => '');
+  }
+
+  /** the post text without links (for Pages that reached their link limit) */
+  function withoutLinks(text) {
+    const LINK = /(?:https?:\/\/|www\.)[^\s]+|\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:com|net|org|co|us|io|info|biz|auto|cars|car|ca|uk|pk|ae|me|site|online|store|shop)\b(?:\/[^\s]*)?/gi;
+    return String(text || '')
+      .split('\n')
+      .map((line) => {
+        if (!LINK.test(line)) return line;
+        LINK.lastIndex = 0;
+        const left = line.replace(LINK, '').replace(/[ \t]{2,}/g, ' ').trimEnd();
+        // a line that was only a link (+ an icon or "Website:" / "See more:") goes completely
+        return /^[^A-Za-z0-9]*([A-Za-z][A-Za-z ]{0,20}:)?[^A-Za-z0-9]*$/.test(left) ? null : left;
+      })
+      .filter((l) => l !== null)
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+  const linkLimitError = (msg) => { const e = new Error(`Facebook link limit on this Page: "${msg}"`); e.linkLimit = true; return e; };
+
+  /** set by startPost: the Page the groups are posted as (null = your personal profile) */
+  let groupsAs = null;
   // SWITCH-HELPERS-END
 
 
@@ -747,7 +878,11 @@ export function createFbSession(opts) {
       const els = Array.from(document.querySelectorAll('[role="button"], [role="textbox"], div[tabindex="0"], span'));
       const matches = els.filter((e) => {
         const t = (e.getAttribute('aria-label') || e.innerText || '').trim();
-        return t && t.length < 80 && re.test(t) && vis(e);
+        if (!t || t.length >= 80 || !re.test(t) || !vis(e)) return false;
+        // never the profile / cover picture buttons of a Page or profile
+        if (/profile (picture|photo)|cover (photo|picture)|update (your )?(profile|cover)|avatar|story/i.test(t)) return false;
+        if (e.closest('[aria-label*="profile picture" i], [aria-label*="cover photo" i]')) return false;
+        return true;
       });
       return matches.find((e) => e.getAttribute('role') === 'button') || matches[matches.length - 1] || null;
     }, kind);
@@ -755,10 +890,14 @@ export function createFbSession(opts) {
   }
 
   async function openComposer(wantPhoto) {
-    const order = wantPhoto ? ['photo', 'text'] : ['text', 'photo'];
+    // always the normal post box first ("What's on your mind?" / "Create post"); photos are added inside it.
+    // (The "photo" button is only a fallback: on a Page it can be confused with the profile-picture camera.)
+    void wantPhoto;
+    const order = ['text', 'photo'];
     const end = Date.now() + 30000;
     let rounds = 0;
     while (Date.now() < end) {
+      await dismissPrompts();
       if (await composerOpen()) return true;
       if (rounds++ >= 1) {
         const why = await page.evaluate(() => {
@@ -883,6 +1022,38 @@ export function createFbSession(opts) {
       throw new Error('Facebook asked for login again. Click "Connect Facebook" and log in.');
     }
 
+    // Post AS the right one: a Page is posted as the Page itself (a normal post on its timeline);
+    // groups as the Page chosen in FB Poster, or as your personal profile.
+    const isGroup = /facebook\.com\/groups\//i.test(targetUrl);
+    const reopen = async () => {
+      await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('[role="main"]', { timeout: 15000 }).catch(() => {});
+      await sleep(1200);
+    };
+    if (!isGroup) {
+      // "Switch now" on a Page = you are looking at it as your profile: become the Page first
+      // (already acting as this Page: its id is in the "i_user" cookie — nothing to do)
+      const urlId = (targetUrl.match(/[?&]id=(\d+)/) || [])[1] || '';
+      const already = urlId && urlId === (await actingPageId());
+      if (!already && (await findByLabel('^switch now$', { inDialogFirst: true }))) {
+        log('This is a Page: switching into it so the post goes out as the Page (not as your profile)...');
+        await autoSwitchToPage(await currentPageName());
+        await reopen();
+        if (await findByLabel('^switch now$', { inDialogFirst: true })) {
+          throw new Error('Skipped: could not switch into this Page. Your Facebook account must be an admin of the Page.');
+        }
+      }
+    } else {
+      const acting = await actingPageId();
+      if (!groupsAs && acting) {
+        await useProfile();
+        await reopen();
+      } else if (groupsAs && groupsAs.url && !acting) {
+        await becomePage(groupsAs.url, groupsAs.name);
+        await reopen();
+      }
+    }
+
     const hasMedia = mediaPaths.length > 0;
     const hasVideo = mediaPaths.some(isVideoFile);
 
@@ -927,6 +1098,9 @@ export function createFbSession(opts) {
     let clicked = false, nextClicks = 0;
     const start = Date.now();
     while (Date.now() - start < Math.max(60000, uploadMs)) {
+      await dismissPrompts();
+      const lim = /https?:\/\/|www\./i.test(caption) ? await linkLimitShown() : '';
+      if (lim) throw linkLimitError(lim);
       const found = await findPostButton();
       if (found && !found.disabled) {
         await found.handle.evaluate((b) => b.scrollIntoView({ block: 'center' }));
@@ -959,15 +1133,23 @@ export function createFbSession(opts) {
     // From here on the post may already exist: never retry this target automatically (no double posts)
     const afterClick = (msg) => { const e = new Error(msg); e.clicked = true; return e; };
     let closed = false;
-    try {
-      await page.waitForFunction(
-        () => !Array.from(document.querySelectorAll('div[role="dialog"]')).some(
+    {
+      const until = Date.now() + (hasVideo ? Math.max(60000, uploadMs) : 45000);
+      const hasLink = /https?:\/\/|www\./i.test(caption);
+      while (Date.now() < until) {
+        await dismissPrompts();
+        const lim = hasLink ? await linkLimitShown() : '';
+        if (lim) throw linkLimitError(lim); // Facebook refused the post because of the links: safe to post again without them
+        const open = await page.evaluate(() => Array.from(document.querySelectorAll('div[role="dialog"]')).some(
           (d) => d.querySelector('[contenteditable="true"], [role="textbox"]')
-        ),
-        { timeout: hasVideo ? Math.max(60000, uploadMs) : 45000, polling: 500 }
-      );
-      closed = true;
-    } catch (e) {}
+        )).catch(() => true);
+        if (!open) { closed = true; break; }
+        await sleep(500);
+      }
+      // a last pop-up right after posting ("Add button" / "Boost post"): close it so the next target starts clean
+      await sleep(800);
+      await dismissPrompts();
+    }
     const fbError = await page.evaluate(() => {
       const t = Array.from(document.querySelectorAll('div[role="dialog"], div[role="alert"]')).map((d) => d.innerText || '').join(' ');
       const m = t.match(/(couldn.t (post|share)[^.\n]*|something went wrong[^.\n]*|you can.t (post|use this feature)[^.\n]*|try again later[^.\n]*|temporarily blocked[^.\n]*|spam[^.\n]*)/i);
@@ -1157,6 +1339,8 @@ export function createFbSession(opts) {
     const uploadMs = Math.min(15 * 60000, 60000 + Math.ceil(totalBytes / 1048576) * 3000);
 
     let ok = 0, failed = 0;
+    // once a Page hit its link limit, later Page posts of this run go out without links straight away
+    let pagesWithoutLinks = false;
     try {
       for (let i = 0; i < targets.length; i++) {
         if (cancelFlag) { log('Stopped by you.'); break; }
@@ -1166,15 +1350,29 @@ export function createFbSession(opts) {
         log(`--- [${i + 1}/${targets.length}] ---`);
         emit({ type: 'target', ...meta, status: 'running' });
         let posted = false;
+        const isGroupTarget = /facebook\.com\/groups\//i.test(url);
+        let noLinks = !isGroupTarget && pagesWithoutLinks;
         for (let attempt = 1; attempt <= 2 && !cancelFlag; attempt++) {
           try {
-            const note = await postToTarget(url, mediaPaths, caption, uploadMs);
+            const text = noLinks ? withoutLinks(caption) : caption;
+            if (noLinks && text !== caption && attempt === 1) log('Posting without links (this Page reached Facebook\'s link limit).');
+            const note = await postToTarget(url, mediaPaths, text, uploadMs);
             ok++; posted = true;
             emit({ type: 'target', ...meta, status: 'done', note });
             log(note === 'posted' ? 'Posted.' : `Posted: ${note}.`);
             break;
           } catch (err) {
             await closeLeftoverComposer();
+            // Page link limit ("Get more links with Meta Verified"): remove the links and post again (once)
+            if (err.linkLimit && !noLinks) {
+              log(`${err.message} → removing the links from the text and posting again...`);
+              noLinks = true;
+              if (!isGroupTarget) pagesWithoutLinks = true;
+              emit({ type: 'target', ...meta, status: 'retry' });
+              await interruptibleSleep(2500);
+              attempt--; // this retry does not count as a failed try
+              continue;
+            }
             // Retry once, but only if nothing was posted yet and it is not a "can't post here" case
             const retry = attempt === 1 && !err.clicked && !/^Skipped:|asked for login/i.test(err.message);
             if (retry) {
@@ -1212,22 +1410,38 @@ export function createFbSession(opts) {
   }
 
   /** start posting in the background; targets are facebook.com links (Page first, then groups) */
-  async function startPost({ targets, names, mediaPaths, tempFiles, caption, delayMin, delayMax, runId }) {
-    if (busy) throw new Error('Another task is running (' + (busyWhat || 'Facebook') + '). Wait for it to finish or press Stop.');
-    await needLogin();
-    busy = true; busyWhat = 'posting'; cancelFlag = false; S.lastAction = Date.now();
+  async function startPost({ targets, names, mediaPaths, tempFiles, caption, delayMin, delayMax, runId, actAs }) {
+    if (job && job.status === 'running') throw new Error('A Facebook post is already running. Wait for it to finish or press Stop.');
+    if (busy && busyWhat !== 'Marketplace') throw new Error('Another task is running (' + (busyWhat || 'Facebook') + '). Wait for it to finish or press Stop.');
+    await needLogin(); // starts Chrome with the saved login when it is asleep
+    cancelFlag = false; S.lastAction = Date.now();
+    groupsAs = actAs && actAs.url ? { url: String(actAs.url), name: String(actAs.name || '') } : null;
     job = {
       runId, status: 'running', total: targets.length, ok: 0, failed: 0, cancelled: false, startedAt: Date.now(), finishedAt: null, nextAt: null,
       results: targets.map((u) => ({ url: u, name: (names && names[u]) || u, status: 'waiting', note: '', error: '' })),
     };
+    const myJob = job;
     const nVid = mediaPaths.filter(isVideoFile).length;
     log(mediaPaths.length
       ? `Media received: ${mediaPaths.length - nVid} photo(s), ${nVid} video(s)${mediaPaths.length > 1 ? ' (featured first)' : ''}.`
       : 'No media selected: text-only post.');
-    runJob({ targets, mediaPaths, tempFiles, caption, delayMin, delayMax }).catch((e) => {
+    (async () => {
+      // a Marketplace listing is being filled in: post to the groups right after it (one Chrome, one task at a time)
+      if (busy) log(`Waiting for the ${busyWhat || 'current task'} to finish, then posting to the groups...`);
+      while (busy && !cancelFlag) await sleep(1000);
+      if (cancelFlag) {
+        for (const r of myJob.results) r.status = 'cancelled';
+        Object.assign(myJob, { status: 'finished', cancelled: true, finishedAt: Date.now() });
+        for (const p of tempFiles) fs.unlink(p, () => {});
+        try { hooks.onJobDone && hooks.onJobDone(myJob); } catch (e) {}
+        return;
+      }
+      busy = true; busyWhat = 'posting';
+      await runJob({ targets, mediaPaths, tempFiles, caption, delayMin, delayMax });
+    })().catch((e) => {
       busy = false; busyWhat = '';
       log(`Job crashed: ${e.message}`);
-      if (job) Object.assign(job, { status: 'finished', cancelled: false, finishedAt: Date.now() });
+      if (myJob) Object.assign(myJob, { status: 'finished', cancelled: false, finishedAt: Date.now() });
     });
     return job;
   }
@@ -1342,16 +1556,38 @@ export function createFbSession(opts) {
       }
 
       // Open a dropdown and pick the option whose text matches one of `choices` (scrolls long lists such as Year)
-      async function pickOption(comboH, choices) {
+      // options are read from the list that belongs to this dropdown (aria-controls), else every visible option on the page
+      async function openOptionsGone(ms) {
+        const end = Date.now() + ms;
+        while (Date.now() < end) {
+          const n = await page().evaluate(() => Array.from(document.querySelectorAll('[role="option"]')).filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }).length).catch(() => 0);
+          if (!n) return true;
+          await sleep(100);
+        }
+        return false;
+      }
+
+      async function pickOptionOnce(comboH, choices) {
+        // the previous dropdown (e.g. Exterior color) must be closed first, or its options would be picked here
+        if (!(await openOptionsGone(1500))) {
+          await page().keyboard.press('Escape').catch(() => {});
+          await openOptionsGone(1000);
+        }
         await realClick(comboH);
         const want = choices.map((c) => String(c).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()).filter(Boolean);
-        const optsShown = async () => page().evaluate(() => document.querySelectorAll('[role="option"]').length > 0).catch(() => false);
+        const listId = () => comboH.evaluate((e) => e.getAttribute('aria-controls') || e.getAttribute('aria-owns') || '').catch(() => '');
+        let lid = '';
+        const optsShown = async () => {
+          lid = (await listId()) || '';
+          return page().evaluate((id) => { const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }; const box = id ? document.getElementById(id) : null; const all = Array.from((box || document).querySelectorAll('[role="option"]')).filter(vis); return all.length > 0; }, lid).catch(() => false);
+        };
         for (let i = 0; i < 25 && !(await optsShown()); i++) await sleep(120);
         if (!(await optsShown())) return { ok: false, why: 'list did not open' };
         for (let round = 0; round < 40; round++) {
-          const optH = await page().evaluateHandle((want) => {
+          const optH = await page().evaluateHandle((want, id) => {
             const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-            const opts = Array.from(document.querySelectorAll('[role="option"]'));
+            const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }; const box = id ? document.getElementById(id) : null; const all = Array.from((box || document).querySelectorAll('[role="option"]')).filter(vis);
+            const opts = all;
             for (const w of want) {
               const exact = opts.find((o) => norm(o.innerText) === w);
               if (exact) return exact;
@@ -1361,26 +1597,44 @@ export function createFbSession(opts) {
               if (part) return part;
             }
             return null;
-          }, want);
+          }, want, lid);
           const opt = optH.asElement();
-          if (opt) { const txt = await opt.evaluate((o) => (o.innerText || '').trim()).catch(() => ''); await realClick(opt); await sleep(150); return { ok: true, text: txt }; }
+          if (opt) { const txt = await opt.evaluate((o) => (o.innerText || '').trim()).catch(() => ''); await realClick(opt); await sleep(250); return { ok: true, text: txt }; }
           // scroll the list (Year / Make lists are long and only render what is visible)
-          const moved = await page().evaluate(() => {
-            const o = document.querySelector('[role="option"]');
+          const moved = await page().evaluate((id) => {
+            const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }; const box = id ? document.getElementById(id) : null; const all = Array.from((box || document).querySelectorAll('[role="option"]')).filter(vis);
+            const o = all[0];
             if (!o) return false;
             let el = o.parentElement;
             while (el && el !== document.body && !(el.scrollHeight > el.clientHeight + 4 && /(auto|scroll)/.test(getComputedStyle(el).overflowY))) el = el.parentElement;
             if (!el || el === document.body) return false;
             const before = el.scrollTop; el.scrollTop += Math.max(200, el.clientHeight * 0.9);
             return el.scrollTop !== before;
-          }).catch(() => false);
+          }, lid).catch(() => false);
           if (!moved) break;
           await sleep(120);
         }
-        const seen = await page().evaluate(() => Array.from(document.querySelectorAll('[role="option"]')).slice(0, 15).map((o) => (o.innerText || '').trim()).join(' / ')).catch(() => '');
+        const seen = await page().evaluate((id) => { const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }; const box = id ? document.getElementById(id) : null; const all = Array.from((box || document).querySelectorAll('[role="option"]')).filter(vis); return all.slice(0, 15).map((o) => (o.innerText || '').trim()).join(' / '); }, lid).catch(() => '');
         await page().keyboard.press('Escape').catch(() => {});
         await sleep(150);
         return { ok: false, why: `option not in list (Facebook shows: ${seen || 'nothing'})` };
+      }
+
+      /** pick an option, then check the dropdown really shows it (tries again once if Facebook ignored the click) */
+      async function pickOption(comboH, choices) {
+        let r = null;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          r = await pickOptionOnce(comboH, choices);
+          if (!r.ok) {
+            if (attempt === 1 && /did not open/.test(r.why)) { await sleep(600); continue; }
+            return r;
+          }
+          await openOptionsGone(1200);
+          const shown = await comboH.evaluate((e) => ((e.innerText || '') + ' ' + (e.value || '') + ' ' + (e.getAttribute('aria-label') || '')).toLowerCase()).catch(() => '');
+          if (!r.text || shown.includes(String(r.text).toLowerCase())) return r;
+          await sleep(500);
+        }
+        return { ok: false, why: `Facebook did not keep "${r && r.text}"` };
       }
 
       // --- value mapping to Facebook's option names
@@ -1388,6 +1642,12 @@ export function createFbSession(opts) {
         const t = String(c || '').toLowerCase();
         if (!t) return [];
         const order = [['off white', 'Off white'], ['off-white', 'Off white'], ['charcoal', 'Charcoal'], ['burgundy', 'Burgundy'], ['maroon', 'Burgundy'],
+          // interior / trim names dealers use → Facebook's colour list
+          ['ebony', 'Black'], ['jet', 'Black'], ['onyx', 'Black'], ['obsidian', 'Black'], ['espresso', 'Brown'], ['mocha', 'Brown'], ['cocoa', 'Brown'],
+          ['saddle', 'Brown'], ['chestnut', 'Brown'], ['cognac', 'Brown'], ['camel', 'Tan'], ['caramel', 'Tan'], ['sand', 'Beige'], ['cream', 'Beige'],
+          ['ivory', 'Beige'], ['parchment', 'Beige'], ['oyster', 'Beige'], ['cashmere', 'Beige'], ['linen', 'Beige'], ['stone', 'Beige'], ['almond', 'Beige'],
+          ['ash', 'Grey'], ['slate', 'Grey'], ['titanium', 'Grey'], ['steel', 'Grey'], ['pewter', 'Grey'], ['dove', 'Grey'],
+          ['wine', 'Burgundy'], ['oxblood', 'Burgundy'], ['bordeaux', 'Burgundy'],
           ['turquoise', 'Turquoise'], ['teal', 'Turquoise'], ['beige', 'Beige'], ['tan', 'Tan'], ['gold', 'Gold'], ['silver', 'Silver'],
           ['grey', 'Grey'], ['gray', 'Grey'], ['graphite', 'Grey'], ['gunmetal', 'Grey'], ['black', 'Black'], ['white', 'White'], ['pearl', 'White'],
           ['blue', 'Blue'], ['navy', 'Blue'], ['red', 'Red'], ['green', 'Green'], ['brown', 'Brown'], ['bronze', 'Brown'],
@@ -1597,7 +1857,8 @@ export function createFbSession(opts) {
         await step('Price', () => text(['Price'], v.price));
         await step('Body style', () => combo(['Body style'], fbBody(v.bodyStyle)));
         await step('Exterior color', () => combo(['Exterior color', 'Exterior colour'], fbColor(v.exteriorColor)));
-        await step('Interior color', () => combo(['Interior color', 'Interior colour'], fbColor(v.interiorColor)));
+        await sleep(400);
+        await step('Interior color', () => combo(['Interior color', 'Interior colour', 'Interior'], fbColor(v.interiorColor)));
         await step('Vehicle condition', () => combo(['Vehicle condition', 'Condition'], fbCond(v)));
         await step('Fuel type', () => combo(['Fuel type'], fbFuel(v.fuelType)));
         await step('Transmission', () => combo(['Transmission'], fbTrans(v.transmission)));
@@ -1640,46 +1901,104 @@ export function createFbSession(opts) {
       function knownIds(v) {
         return v.knownIds || []; // Facebook ids of this dealership's other listings
       }
+      // words Facebook shows on a listing it did not publish (Needs attention, duplicate, rejected, under review …)
+      const FLAG_RE_SRC = "needs attention|duplicate listing|duplicate|similar listing|rejected|not published|wasn.t published|couldn.t be published|removed by facebook|was removed|under review|being reviewed|pending review|violat|commerce polic|declined|isn.t visible|not visible to buyers";
+
+      /** listings on the current "Your listings" view that look like this vehicle (+ Facebook's warning on the card) */
+      async function scanListings(v, skip) {
+        return page().evaluate((y, make, model, price, skip, flagSrc) => {
+          const norm = (t) => String(t || '').toLowerCase();
+          const flagRe = new RegExp(flagSrc, 'i');
+          const res = new Map();
+          const score = (t) => {
+            let n = 0;
+            if (y && t.includes(String(y))) n += 2;
+            if (make && t.includes(norm(make))) n += 2;
+            if (model && t.includes(norm(model.split(' ')[0]))) n += 2;
+            if (price && t.replace(/[^0-9]/g, ' ').split(/\s+/).includes(String(price))) n += 1;
+            return n;
+          };
+          for (const a of document.querySelectorAll('a[href]')) {
+            const m = a.href.match(/marketplace\/item\/(\d+)/) || a.href.match(/[?&]listing_id=(\d+)/);
+            if (!m || skip.includes(m[1])) continue;
+            let box = a, txt = '';
+            for (let i = 0; i < 8 && box; i++) { txt = box.innerText || ''; if (txt.length > 30) break; box = box.parentElement; }
+            // a little wider for the status line under the card ("Needs attention · Duplicate listing")
+            // (only when that wider box holds this one listing, so a neighbour's warning is never taken)
+            const par = box && box.parentElement;
+            const oneCard = par && new Set(Array.from(par.querySelectorAll('a[href*="/marketplace/item/"], a[href*="listing_id="]')).map((x) => x.href.replace(/[?#].*$/, ''))).size <= 1;
+            const wide = (oneCard ? par.innerText : txt) || txt;
+            const t = norm(txt);
+            const fm = wide.match(flagRe);
+            const flag = fm ? (wide.split('\n').find((l) => flagRe.test(l)) || fm[0]).trim().slice(0, 160) : '';
+            const sc = score(t);
+            const prev = res.get(m[1]);
+            if (!prev || prev.score < sc) res.set(m[1], { id: m[1], score: sc, flag });
+          }
+          // cards without a link (Facebook sometimes shows rejected listings that way)
+          if (!res.size) {
+            for (const el of document.querySelectorAll('[role="main"] div')) {
+              const txt = el.innerText || '';
+              if (txt.length < 20 || txt.length > 600 || !flagRe.test(txt)) continue;
+              const sc = score(norm(txt));
+              if (sc >= 4) {
+                res.set('card:' + res.size, { id: '', score: sc, flag: (txt.split('\n').find((l) => flagRe.test(l)) || '').trim().slice(0, 160) });
+                break;
+              }
+            }
+          }
+          return [...res.values()].sort((a, b) => b.score - a.score);
+        }, v.year, v.make, v.model, v.price, skip, FLAG_RE_SRC).catch(() => []);
+      }
+
+      /** open Facebook's "Needs attention" view of Your listings (a tab / filter / chip with that name) */
+      async function openNeedsAttention() {
+        const h = await page().evaluateHandle(() => {
+          const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+          const all = Array.from(document.querySelectorAll('[role="tab"], [role="radio"], [role="button"], [role="link"], a, [role="option"]')).filter(vis);
+          return all.find((e) => /^needs attention/i.test((e.innerText || e.getAttribute('aria-label') || '').trim()) && (e.innerText || '').length < 60) || null;
+        }).catch(() => null);
+        const el = h && h.asElement();
+        if (!el) return false;
+        await realClick(el);
+        await sleep(2500);
+        return true;
+      }
+
       async function findListingOnSellingPage(v) {
         const skip = knownIds(v);
+        const hit = (best) => ({ fbId: best.id, url: best.id ? `https://www.facebook.com/marketplace/item/${best.id}/` : '', flagged: best.flag || '' });
         for (let attempt = 1; attempt <= 4 && !mpCancel; attempt++) {
           log(`Looking for the new listing in "Your listings" (try ${attempt}/4)...`);
           await page().goto('https://www.facebook.com/marketplace/you/selling', { waitUntil: 'domcontentloaded' });
           await page().waitForSelector('a[href*="/marketplace/item/"], a[href*="listing_id="]', { timeout: 8000 }).catch(() => {});
           await sleep(800);
           for (let i = 0; i < 2; i++) { await page().mouse.wheel({ deltaY: 1200 }).catch(() => {}); await sleep(500); }
-          const found = await page().evaluate((y, make, model, price, skip) => {
-            const norm = (t) => String(t || '').toLowerCase();
-            const res = new Map();
-            for (const a of document.querySelectorAll('a[href]')) {
-              const m = a.href.match(/marketplace\/item\/(\d+)/) || a.href.match(/[?&]listing_id=(\d+)/);
-              if (!m || skip.includes(m[1])) continue;
-              let box = a, txt = '';
-              for (let i = 0; i < 8 && box; i++) { txt = box.innerText || ''; if (txt.length > 30) break; box = box.parentElement; }
-              const t = norm(txt);
-              let score = 0;
-              if (y && t.includes(String(y))) score += 2;
-              if (make && t.includes(norm(make))) score += 2;
-              if (model && t.includes(norm(model.split(' ')[0]))) score += 2;
-              if (price && t.replace(/[^0-9]/g, ' ').split(/\s+/).includes(String(price))) score += 1;
-              const prev = res.get(m[1]);
-              if (!prev || prev.score < score) res.set(m[1], { id: m[1], score });
+          let found = await scanListings(v, skip);
+          if (found[0] && found[0].score >= 4) return hit(found[0]);
+          // not among the active listings: Facebook may have put it under "Needs attention" (duplicate, rejected, under review…)
+          if (attempt >= 2) {
+            await page().mouse.wheel({ deltaY: -4000 }).catch(() => {});
+            if (await openNeedsAttention()) {
+              log('Checking "Needs attention"...');
+              for (let i = 0; i < 2; i++) { await page().mouse.wheel({ deltaY: 1200 }).catch(() => {}); await sleep(500); }
+              found = await scanListings(v, skip);
+              if (found[0] && found[0].score >= 4) {
+                const b = found[0];
+                return hit({ ...b, flag: b.flag || 'Needs attention' });
+              }
             }
-            return [...res.values()].sort((a, b) => b.score - a.score);
-          }, v.year, v.make, v.model, v.price, skip).catch(() => []);
-          const best = found[0];
-          if (best && best.score >= 4) return { fbId: best.id, url: `https://www.facebook.com/marketplace/item/${best.id}/` };
+          }
           await sleep(3000);
         }
         return null;
       }
 
-
-
       async function publishVehicle(v) {
         mpActive = { vehicleId: v.id, action: 'publish' }; emit({ type: 'mp', active: mpActive });
         setListing(v, { status: 'publishing', error: '' }, 'Publishing started');
         log(`Marketplace: preparing ${v.year} ${v.make} ${v.model}...`);
+        await useProfile(); // vehicles are listed by your personal profile (Pages cannot list vehicles)
         await page().goto('https://www.facebook.com/marketplace/create/vehicle', { waitUntil: 'domcontentloaded' });
         if (await page().$('#email, input[name="email"]')) throw new Error('Facebook asked for login again. Click "Connect Facebook" and log in.');
         // wait for the form instead of a fixed pause
@@ -1761,20 +2080,30 @@ export function createFbSession(opts) {
         await sleep(1500);
         const fbErr = await page().evaluate(() => {
           const t = Array.from(document.querySelectorAll('div[role="dialog"], div[role="alert"]')).map((d) => d.innerText || '').join(' ');
-          const m = t.match(/(couldn.t (publish|post|list)[^.\n]*|something went wrong[^.\n]*|limit[^.\n]*listings?[^.\n]*|you can.t (list|post|sell)[^.\n]*|try again later[^.\n]*|temporarily blocked[^.\n]*)/i);
+          const m = t.match(/(couldn.t (publish|post|list)[^.\n]*|something went wrong[^.\n]*|limit[^.\n]*listings?[^.\n]*|you can.t (list|post|sell)[^.\n]*|try again later[^.\n]*|temporarily blocked[^.\n]*|[^.\n]*duplicate[^.\n]*|[^.\n]*similar to (a|one of your|another) listing[^.\n]*)/i);
           return m ? m[0].trim() : '';
         }).catch(() => '');
         if (fbErr) throw new Error('Facebook said: "' + fbErr + '"');
 
         const hit = await findListingOnSellingPage(v);
+        if (hit && hit.flagged) {
+          // created, but Facebook did not publish it (e.g. "duplicate listing", rejected, under review)
+          const s2 = await shot('mp_needs_attention');
+          setListing(v, {
+            status: 'needs_attention', url: hit.url, fbId: hit.fbId, postedPrice: v.price, publishedAt: now(), checkedAt: now(),
+            error: `Facebook put this listing under "Needs attention": ${hit.flagged}. Open it on Facebook to see why (for example a duplicate of an earlier listing) and fix or delete it (screenshot ${s2}).`,
+          }, 'Needs attention on Facebook: ' + hit.flagged);
+          log(`Marketplace: created but NOT live — Facebook says "${hit.flagged}" (Needs attention).`);
+          return;
+        }
         if (hit) {
           setListing(v, { status: 'published', url: hit.url, fbId: hit.fbId, postedPrice: v.price, error: '', publishedAt: now(), checkedAt: now() }, 'Published, listing link found: ' + hit.url);
           log(`Marketplace: PUBLISHED ✓ ${hit.url}`);
           return;
         }
         const s = await shot('mp_unconfirmed');
-        setListing(v, { status: 'unconfirmed', error: 'Publish was clicked but the new listing was not found in "Your listings". Open Facebook, copy the listing link and paste it here (screenshot ' + s + ').' }, 'Publish clicked, listing not found yet');
-        log('Marketplace: Publish was clicked but the listing was not found in "Your listings" yet. Paste its link on the Marketplace page once it appears.');
+        setListing(v, { status: 'unconfirmed', error: 'Publish was clicked but the new listing was found neither in "Your listings" nor under "Needs attention". Facebook can take a few minutes: open Facebook, copy the listing link and paste it here (screenshot ' + s + ').' }, 'Publish clicked, listing not found yet');
+        log('Marketplace: Publish was clicked but the listing was not found in "Your listings" or "Needs attention" yet. Paste its link on the Marketplace page once it appears.');
       }
 
       async function updateListing(v, { price, description }) {
@@ -1887,9 +2216,9 @@ export function createFbSession(opts) {
           // a group posting run (or a Pages / groups load) may be busy: wait for it instead of failing
           while (busy && !mpCancel) await sleep(1000);
           if (mpCancel) throw new Error('Stopped by you.');
-          await needLogin();
           busy = true; busyWhat = 'Marketplace'; mpCancel = false; S.lastAction = Date.now();
           try {
+            await needLogin(); // starts Chrome with the saved login when it is asleep
             if (task.action === 'publish') await MP.publishVehicle(v);
             else if (task.action === 'update') await MP.updateListing(v, task.opts || {});
             else if (task.action === 'sold' || task.action === 'delete') await MP.removeListing(v, task.action);
@@ -1939,9 +2268,12 @@ export function createFbSession(opts) {
   async function state(logAfter = 0) {
     S.lastSeen = Date.now();
     const open = !!(browser && page && !page.isClosed());
+    const li = open ? await isLoggedIn() : null;
+    if (li) S.loginLost = false;
     return {
       browserOpen: open,
-      loggedIn: open ? await isLoggedIn() : null, // null = browser asleep, login not checked
+      loggedIn: open ? li : S.loginLost ? false : null, // null = browser asleep, login not checked
+      loginLost: S.loginLost,
       busy,
       busyWhat,
       view: view.on,
@@ -1958,6 +2290,7 @@ export function createFbSession(opts) {
   return {
     S, log, state, idle,
     isOpen: () => !!browser,
+    healthy, viewOn: () => view.on,
     ensureBrowser, isLoggedIn, fbUserId, fetchName, connect, close, switchAccount, forget,
     viewStart, viewStop, frame, input, nav,
     loadPages, loadGroups, switchToPage, startPost, stopPosting,

@@ -110,6 +110,9 @@ Custom (`backend/src/common/permissions.ts`).
 
 ## 4. Production (Hostinger VPS or any Node host)
 
+**Step-by-step for a Contabo VPS: [`deploy/DEPLOY-CONTABO.md`](deploy/DEPLOY-CONTABO.md)** (server setup script, PM2 `ecosystem.config.cjs`, Nginx config, FB Poster on the server).
+
+
 * Run the four apps with PM2 (`npm run build` then `npm start` in each folder) behind Nginx.
 * `api.yourcompany.com` → backend :4000, `portal.yourcompany.com` → dealer-portal :3000, `admin.yourcompany.com` → admin :3001, **every dealer domain** → frontend :3002.
 * Set `API_URL` (frontend) and `NEXT_PUBLIC_API_URL` (dealer-portal, admin) to the API address, `NEXT_PUBLIC_DEALER_PORTAL_URL` / `NEXT_PUBLIC_PLATFORM_ADMIN_URL` to the two admin addresses and `ADMIN_URL` (frontend) to both of them; `npx prisma migrate deploy` on each release.
@@ -137,9 +140,10 @@ The old `fb-poster` app (Group Poster + Marketplace add-on) is built in: Dealers
   folder private and backed up; it is in `.gitignore`. Groups, Pages, collections, posting runs and Marketplace
   listings are in the database (`FbAccount`, `FbCollection`, `FbPostRun`, `FbListing`).
 * Marketplace uses the vehicles from Inventory (no second inventory). Marketplace settings: `TenantSettings.fbSettings`.
-* Backend `.env` (all optional): `FB_MAX_BROWSERS=4` (Chromes at the same time), `FB_IDLE_MINUTES=15` (close an
+* Backend `.env` (all optional): `FB_MAX_BROWSERS` (Chromes at the same time; default = what the server's memory allows), `FB_IDLE_MINUTES=10` (close an
   unused browser; the login is kept), `FB_STORAGE_DIR`, `CHROME_PATH` (use this Chrome), `FB_HEADLESS=false` (show
-  the Chrome windows on the server, for debugging).
+  the Chrome windows on the server, for debugging), `FB_RECYCLE_HOURS=6`, `FB_MIN_FREE_MB=400`. A saved login starts its Chrome again by
+  itself when a dealer posts from Inventory; frozen Chromes are restarted automatically.
 * **On a Linux VPS:** run `npx puppeteer browsers install chrome` once in `backend/` (or install Google Chrome), plus
   Chrome's libraries: `sudo apt-get install -y libnss3 libatk-bridge2.0-0 libgbm1 libxkbcommon0 libasound2 (libasound2t64 on Ubuntu 24) libxdamage1
   libxrandr2 libpango-1.0-0 libcairo2 fonts-liberation`. About 300–500 MB RAM per open Facebook browser.

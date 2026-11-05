@@ -31,7 +31,8 @@ export function mpMissing(v: VehicleLike | null | undefined): string[] {
   if (!(Number(String(v.price ?? '').replace(/[^0-9.]/g, '')) > 0)) out.push('Price');
   const imgs = Array.isArray(v.images) ? v.images.filter(filled) : [];
   if (!imgs.length) out.push('Image URLs');
-  if (v.mileage === null || v.mileage === undefined || v.mileage === '' || isNaN(Number(v.mileage))) out.push('Mileage');
+  // Marketplace does not take 0 miles: the mileage must be a number above 0
+  if (!(Number(String(v.mileage ?? '').replace(/[,\s]/g, '')) > 0)) out.push('Mileage');
   if (!filled(v.bodyStyle) && !filled(v.vehicleType)) out.push('Body style');
   if (!filled(v.exteriorColor)) out.push('Exterior color');
   if (!filled(v.interiorColor)) out.push('Interior color');

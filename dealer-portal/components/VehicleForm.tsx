@@ -7,6 +7,7 @@ import { AlertTriangle, ArrowLeft, Check, ChevronDown, Copy, Trash2, X } from 'l
 import { api, mediaUrl, siteUrl } from '@/lib/api';
 import { cgIssues, CG_ITEMS } from '@/lib/cargurus';
 import { MP_FIELDS, mpMissing } from '@/lib/marketplace';
+import { autoDescription } from '@/lib/vehicle-description';
 import { FacebookIcon } from '@/lib/facebook';
 import { FbPostModal } from './fb/FbPostModal';
 import { brandRun } from '@/lib/branding';
@@ -30,7 +31,7 @@ export const EMPTY_VEHICLE: Vehicle = {
 };
 
 /** help under each Marketplace check */
-const HELP_MP: Record<string, string> = {"year": "4 digits", "make": "e.g. Ford", "model": "e.g. F-150", "price": "more than $0", "images": "at least one photo", "mileage": "whole number", "bodyStyle": "e.g. Sedan, SUV", "exteriorColor": "e.g. Silver", "interiorColor": "e.g. Black"};
+const HELP_MP: Record<string, string> = {"year": "4 digits", "make": "e.g. Ford", "model": "e.g. F-150", "price": "more than $0", "images": "at least one photo", "mileage": "more than 0", "bodyStyle": "e.g. Sedan, SUV", "exteriorColor": "e.g. Silver", "interiorColor": "e.g. Black"};
 
 const TYPES = ['Car', 'Truck', 'SUV'];
 const BODY = ['SUV', 'Sedan', 'Pickup Truck', 'Hatchback', 'Coupe', 'Convertible', 'Wagon', 'Minivan', 'Van / Passenger Van', 'Cargo Van'];
@@ -81,6 +82,8 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   const [v, setV] = useState<Vehicle>(initial);
   const [featText, setFeatText] = useState((initial.features || []).join('\n'));
   const [safeText, setSafeText] = useState((initial.safetyFeatures || []).join('\n'));
+  // the description writes itself from the details while the dealer has not typed in it (empty description)
+  const [descAuto, setDescAuto] = useState(!String(initial.description || '').trim());
   const [saving, setSaving] = useState('');
   const [dirty, setDirty] = useState(false);
   const [del, setDel] = useState(false);
@@ -99,6 +102,12 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
     setDirty(true);
     setV((x) => ({ ...x, [k]: val }));
   };
+
+  useEffect(() => {
+    if (!descAuto) return;
+    const t = autoDescription(v, lines(featText), lines(safeText));
+    if (t !== (v.description || '')) setV((x) => ({ ...x, description: t }));
+  }, [descAuto, v, featText, safeText]);
 
   // the rest of the inventory: "already in your inventory" warning + duplicate VIN / stock checks
   useEffect(() => {
@@ -395,7 +404,9 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
                 </span>
                 <span className="min-w-0">
                   <b className="block text-sm text-slate-800">{label}</b>
-                  <small className={cx('block text-xs', miss ? 'text-red-600' : 'text-slate-500')}>{miss ? `Missing ${label}` : HELP_MP[k]}</small>
+                  <small className={cx('block text-xs', miss ? 'text-red-600' : 'text-slate-500')}>
+                    {miss ? (k === 'mileage' && String(v.mileage ?? '').trim() !== '' ? 'Mileage must be more than 0' : `Missing ${label}`) : HELP_MP[k]}
+                  </small>
                 </span>
               </button>
             );
@@ -456,14 +467,48 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
         </div>
       </Section>
 
-      <Section title="Description & features" hint="What makes this vehicle worth a visit" open={!isNew || cgOn}>
+      <Section title="Description & installed options" hint="What makes this vehicle worth a visit" open={!isNew || cgOn}>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <F label="Description" name="description" hot={hot}>
-              <Textarea name="description" rows={5} value={v.description || ''} onChange={(e) => set('description', e.target.value)} />
+            <F
+              label={
+                <span className="flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    Description{' '}
+                    <span className="font-normal text-slate-400">
+                      {descAuto ? '— written automatically from the details; type in it to change it' : '— your own text'}
+                    </span>
+                  </span>
+                  {!descAuto && (
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-blue-700 hover:underline"
+                      onClick={() => {
+                        if (String(v.description || '').trim() && !window.confirm('Replace your description with one written from the vehicle details?')) return;
+                        setDirty(true);
+                        setDescAuto(true);
+                      }}
+                    >
+                      Write it from the details
+                    </button>
+                  )}
+                </span>
+              }
+              name="description"
+              hot={hot}
+            >
+              <Textarea
+                name="description"
+                rows={7}
+                value={v.description || ''}
+                onChange={(e) => {
+                  setDescAuto(false);
+                  set('description', e.target.value);
+                }}
+              />
             </F>
           </div>
-          <F label={<>Features <span className="font-normal text-slate-400">one per line</span></>} name="features" hot={hot}>
+          <F label={<>Installed options <span className="font-normal text-slate-400">one per line</span></>} name="features" hot={hot}>
             <Textarea
               rows={6}
               placeholder={'Heated seats\nApple CarPlay'}
@@ -474,7 +519,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
               }}
             />
           </F>
-          <F label={<>Safety <span className="font-normal text-slate-400">one per line</span></>} name="safetyFeatures" hot={hot}>
+          <F label={<>Installed options — safety <span className="font-normal text-slate-400">one per line</span></>} name="safetyFeatures" hot={hot}>
             <Textarea
               rows={6}
               placeholder="Blind-spot monitoring"

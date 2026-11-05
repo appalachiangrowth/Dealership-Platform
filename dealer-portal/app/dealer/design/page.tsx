@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Check, Eye, Lock, RotateCcw, Undo2 } from 'lucide-react';
+import { Check, CreditCard, Eye, Lock, RotateCcw, Smartphone, Undo2 } from 'lucide-react';
 import { api, mediaUrl, siteUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { useTenant } from '@/components/DealerShell';
@@ -10,6 +10,13 @@ import { Badge, Button, ErrorBox, Field, Input, Loading, Modal, Textarea, cx } f
 import { LivePreview, SiteThumbnail, type LivePreviewHandle } from '@/components/LivePreview';
 
 type Slot = { key: string; label: string; default: string; hint: string };
+
+/** How a dealer can pay for a design. The payment gateways are connected later: for now the choice is recorded. */
+const PAY_METHODS = [
+  { id: 'card', name: 'Credit / Debit card', sub: 'Visa, Mastercard, UnionPay', color: 'text-slate-700 bg-slate-100', Icon: CreditCard },
+  { id: 'jazzcash', name: 'JazzCash', sub: 'Mobile account or JazzCash app', color: 'text-red-700 bg-red-50', Icon: Smartphone },
+  { id: 'easypaisa', name: 'Easypaisa', sub: 'Mobile account or Easypaisa app', color: 'text-emerald-700 bg-emerald-50', Icon: Smartphone },
+] as const;
 
 /** Design picture: the saved preview image, or a live picture of the design when there is no image. */
 function DesignPicture({ src, alt, live }: { src: string; alt: string; live: string }) {
@@ -27,6 +34,8 @@ export default function DesignPage() {
   const [busy, setBusy] = useState('');
   const [request, setRequest] = useState<any>(null);
   const [note, setNote] = useState('');
+  const [payMethod, setPayMethod] = useState('');
+  const [payDone, setPayDone] = useState('');
   const [previewId, setPreviewId] = useState(''); // a design being tried (not activated)
   const preview = useRef<LivePreviewHandle>(null);
 
@@ -235,42 +244,108 @@ export default function DesignPage() {
 
       <Modal
         open={!!request}
-        onClose={() => setRequest(null)}
+        onClose={() => {
+          setRequest(null);
+          setPayMethod('');
+          setPayDone('');
+        }}
         title={`Unlock ${request?.name}`}
         footer={
-          <>
-            <Button variant="secondary" onClick={() => setRequest(null)}>
-              Cancel
-            </Button>
+          payDone ? (
             <Button
-              loading={busy === 'request'}
-              onClick={async () => {
-                setBusy('request');
-                try {
-                  await api('/dealer/design/request', { body: { themeId: request.id, note } });
-                  toast.ok('Request sent. The design is unlocked once your payment is confirmed.');
-                  setRequest(null);
-                  setNote('');
-                  reload();
-                } catch (e) {
-                  toast.error((e as Error).message);
-                } finally {
-                  setBusy('');
-                }
+              onClick={() => {
+                setRequest(null);
+                setPayMethod('');
+                setPayDone('');
               }}
             >
-              Send request
+              Done
             </Button>
-          </>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={() => setRequest(null)}>
+                Cancel
+              </Button>
+              <Button
+                disabled={!payMethod}
+                loading={busy === 'request'}
+                onClick={async () => {
+                  const m = PAY_METHODS.find((x) => x.id === payMethod);
+                  if (!m) return;
+                  setBusy('request');
+                  try {
+                    // until the gateways are connected the choice is sent to the platform team, who completes the payment with the dealer
+                    await api('/dealer/design/request', { body: { themeId: request.id, note: [`Payment method: ${m.name}`, note.trim()].filter(Boolean).join('\n') } });
+                    setPayDone(m.name);
+                    setNote('');
+                    reload();
+                  } catch (e) {
+                    toast.error((e as Error).message);
+                  } finally {
+                    setBusy('');
+                  }
+                }}
+              >
+                <Lock className="mr-1.5 h-3.5 w-3.5" />
+                {payMethod ? `Pay ${request?.access.label} with ${PAY_METHODS.find((x) => x.id === payMethod)?.name}` : 'Choose a payment method'}
+              </Button>
+            </>
+          )
         }
       >
-        <p className="mb-3">
-          <b>{request?.access.label}</b> — {request?.description}
-        </p>
-        {data.paymentInstructions && <p className="mb-3 whitespace-pre-line rounded-lg bg-slate-50 p-3 text-xs">{data.paymentInstructions}</p>}
-        <Field label="Message (optional)">
-          <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Paid by bank transfer on…" />
-        </Field>
+        {payDone ? (
+          <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+            <Check className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <b className="block">Payment with {payDone} chosen</b>
+              Online payment opens here soon. For now the platform team has your request and will contact you to complete the payment; {request?.name} is
+              unlocked as soon as it is confirmed.
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
+              <span className="min-w-0">
+                <b className="block text-slate-900">{request?.name}</b>
+                <span className="line-clamp-2 text-xs text-slate-500">{request?.description}</span>
+              </span>
+              <b className="shrink-0 text-lg text-slate-900">{request?.access.label}</b>
+            </div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Choose how to pay</p>
+            <div className="space-y-2" role="radiogroup" aria-label="Payment method">
+              {PAY_METHODS.map((m) => {
+                const on = payMethod === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => setPayMethod(m.id)}
+                    className={cx(
+                      'flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition',
+                      on ? 'border-blue-600 bg-blue-50/60 ring-1 ring-blue-600' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+                    )}
+                  >
+                    <span className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', m.color)}>
+                      <m.Icon className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <b className="block text-sm text-slate-900">{m.name}</b>
+                      <span className="text-xs text-slate-500">{m.sub}</span>
+                    </span>
+                    <span className={cx('flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2', on ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300')}>
+                      {on && <Check className="h-3 w-3" />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <Field label="Message (optional)" className="mt-4">
+              <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything the platform team should know" />
+            </Field>
+          </>
+        )}
       </Modal>
     </div>
   );

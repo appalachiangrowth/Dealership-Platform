@@ -120,6 +120,12 @@ export class TenantsService {
     const dom = await this.prisma.tenantDomain.findUnique({ where: { domain: d }, include: { tenant: true } });
     if (dom) return dom.tenant;
     const sub = d.match(/^([a-z0-9][a-z0-9-]{1,39})\.(localhost|lvh\.me)$/);
+    // live server: <dealer-id>.<SITES_DOMAIN> (e.g. blue-motors.sites.yourcompany.com) for dealers without their own domain
+    const sitesDomain = String(process.env.SITES_DOMAIN || '').trim().toLowerCase().replace(/^\.+|\.+$/g, '');
+    if (sitesDomain && d.endsWith('.' + sitesDomain)) {
+      const t = await this.prisma.tenant.findUnique({ where: { id: d.slice(0, -sitesDomain.length - 1) } });
+      if (t) return t;
+    }
     if (sub) {
       const t = await this.prisma.tenant.findUnique({ where: { id: sub[1] } });
       if (t) return t;

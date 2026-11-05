@@ -8,7 +8,9 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { extname, join, normalize } from 'path';
-import { existsSync, mkdirSync, readFileSync, rmSync, unlink, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlink, writeFileSync } from 'fs';
+import { freemem, totalmem } from 'os';
+import { execFile } from 'child_process';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { TenantsService } from '../tenants/tenants.service.js';
@@ -26,11 +28,22 @@ const DEBUG = join(FB_STORAGE, 'debug');
 export const FB_TMP = join(FB_STORAGE, 'tmp');
 mkdirSync(FB_TMP, { recursive: true });
 
-const MAX_BROWSERS = Math.max(1, Number(process.env.FB_MAX_BROWSERS) || 4);
-/** close a browser nobody is looking at (portal closed) after this many minutes */
-const IDLE_UNSEEN_MIN = Math.max(2, Number(process.env.FB_IDLE_MINUTES) || 15);
+const MB = 1024 * 1024;
+/**
+ * Chromes at the same time. Default: what the server's memory allows (about 450 MB per Facebook browser after
+ * ~1.5 GB for the database, the API and the websites) — e.g. 8 GB → 12, 4 GB → 5. FB_MAX_BROWSERS overrides it.
+ */
+const MAX_BROWSERS = Math.max(1, Number(process.env.FB_MAX_BROWSERS) || Math.min(12, Math.floor((totalmem() / MB - 1536) / 450)) || 1);
+/** no new Chrome when the server has less free memory than this (idle ones are closed first) */
+const MIN_FREE_MB = Math.max(150, Number(process.env.FB_MIN_FREE_MB) || 400);
+/** close a browser nobody is looking at (portal closed) after this many minutes — the login stays saved */
+const IDLE_UNSEEN_MIN = Math.max(2, Number(process.env.FB_IDLE_MINUTES) || 10);
 /** …and one that is open in the portal but not used */
-const IDLE_UNUSED_MIN = 60;
+const IDLE_UNUSED_MIN = 45;
+/** an idle Chrome older than this is restarted (Chrome grows over the hours; a fresh one is lighter) */
+const RECYCLE_HOURS = Math.max(1, Number(process.env.FB_RECYCLE_HOURS) || 6);
+/** the live-view picture stream stops when nobody has asked for a picture for this long */
+const VIEW_IDLE_MS = 60_000;
 
 const FB_URL = /^https:\/\/(www\.|m\.|web\.)?facebook\.com\/.+/i;
 const MAX_MEDIA = 20;
@@ -86,6 +99,7 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
   private tempPhotos = new Map<string, string[]>();
   private writes: Promise<unknown> = Promise.resolve();
   private reaper?: NodeJS.Timeout;
+  private lastHealth = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -95,6 +109,7 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     cleanupStaleTemp(); // media left from a run that was cut off by a restart
+    await cleanupStaleChrome(); // Chromes / profile locks left by a crash or a hard restart
     // Anything left "publishing" from before a restart cannot still be in progress
     await this.prisma.fbListing
       .updateMany({
@@ -147,28 +162,62 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
     return s;
   }
 
-  /** make room before a new Chrome starts (closes the longest-unused idle one) */
+  /**
+   * Make room before a new Chrome starts: below the browser limit and with enough free memory.
+   * Idle Chromes of other users are closed first (their logins stay saved); when every Chrome is busy posting,
+   * wait up to ~40 s for one to finish before giving up with a friendly message.
+   */
   private async makeRoom(except: string) {
-    const open = [...this.sessions.entries()].filter(([, s]) => s.isOpen());
-    if (open.length < MAX_BROWSERS) return;
-    const idle = open.filter(([k, s]) => k !== except && s.idle()).sort((a, b) => a[1].S.lastAction - b[1].S.lastAction);
-    if (!idle.length) {
-      throw new ServiceUnavailableException(`The server is already running ${MAX_BROWSERS} Facebook browsers for other users. Try again in a few minutes.`);
+    for (let attempt = 0; ; attempt++) {
+      const open = [...this.sessions.entries()].filter(([, s]) => s.isOpen());
+      const lowMem = freemem() / MB < MIN_FREE_MB;
+      if (open.length < MAX_BROWSERS && !lowMem) return;
+      const idle = open.filter(([k, s]) => k !== except && s.idle()).sort((a, b) => a[1].S.lastAction - b[1].S.lastAction);
+      if (idle.length) {
+        idle[0][1].log('Browser closed to make room for another user (the login is kept).');
+        await idle[0][1].close().catch(() => undefined);
+        await new Promise((r) => setTimeout(r, 400)); // let Chrome give its memory back
+        continue;
+      }
+      if (attempt >= 20) {
+        throw new ServiceUnavailableException(
+          lowMem
+            ? 'The server is short of memory right now (other dealers are posting). Try again in a few minutes.'
+            : `The server is already posting for ${MAX_BROWSERS} other users. Try again in a few minutes.`,
+        );
+      }
+      await new Promise((r) => setTimeout(r, 2000));
     }
-    await idle[0][1].close();
   }
 
+  /** every minute: close unused Chromes, stop unwatched live views, restart frozen or old ones */
   private async reap() {
     const now = Date.now();
+    const checkHealth = now - this.lastHealth > 5 * 60_000;
+    if (checkHealth) this.lastHealth = now;
     for (const [k, s] of this.sessions) {
-      if (!s.isOpen() || !s.idle()) continue;
-      const unseen = now - s.S.lastSeen > IDLE_UNSEEN_MIN * 60_000;
-      const unused = now - s.S.lastAction > IDLE_UNUSED_MIN * 60_000;
-      if (unseen || unused) {
-        s.log(`Browser closed after ${unseen ? IDLE_UNSEEN_MIN : IDLE_UNUSED_MIN} minutes without use (the login is kept).`);
+      try {
+        if (s.isOpen() && s.viewOn() && now - s.S.lastFrame > VIEW_IDLE_MS && now - s.S.lastAction > VIEW_IDLE_MS) await s.viewStop().catch(() => undefined);
+        if (!s.isOpen() || !s.idle()) {
+          if (!s.isOpen() && now - s.S.lastSeen > 6 * 3600_000) this.sessions.delete(k);
+          continue;
+        }
+        const unseen = now - s.S.lastSeen > IDLE_UNSEEN_MIN * 60_000;
+        const unused = now - s.S.lastAction > IDLE_UNUSED_MIN * 60_000;
+        const old = s.S.startedAt && now - s.S.startedAt > RECYCLE_HOURS * 3600_000 && now - s.S.lastAction > 2 * 60_000;
+        if (unseen || unused) {
+          s.log(`Browser closed after ${unseen ? IDLE_UNSEEN_MIN : IDLE_UNUSED_MIN} minutes without use (the login is kept; it starts again by itself).`);
+          await s.close().catch(() => undefined);
+        } else if (old) {
+          s.log(`Browser restarted after ${RECYCLE_HOURS} hours to keep the server fast (the login is kept).`);
+          await s.close().catch(() => undefined);
+        } else if (checkHealth && !(await s.healthy())) {
+          s.log('The Facebook browser stopped responding and was closed. It starts again by itself on the next post.');
+          await s.close().catch(() => undefined);
+        }
+      } catch {
         await s.close().catch(() => undefined);
       }
-      if (!s.isOpen() && now - s.S.lastSeen > 6 * 3600_000) this.sessions.delete(k);
     }
   }
 
@@ -408,13 +457,16 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getQuickConfig(tenantId: string, u: AuthUser) {
-    const { account } = await this.ctx(tenantId, u);
+    const { account, uk } = await this.ctx(tenantId, u);
+    const live = this.sessions.get(this.key(tenantId, uk));
     const ts = await this.prisma.tenantSettings.findUnique({ where: { tenantId } });
     const s = (ts?.fbSettings && typeof ts.fbSettings === 'object' ? ts.fbSettings : {}) as Record<string, unknown>;
     const quick = (s.quickPost && typeof s.quickPost === 'object' ? s.quickPost : {}) as Record<string, unknown>;
     return {
       quickPost: quick,
       account: this.accountView(account),
+      // for the "Post to Facebook" popup: is there a saved Facebook login? (Chrome may be asleep — it starts by itself)
+      connection: { connected: !!account.fbUserId && !live?.S.loginLost, loginLost: !!live?.S.loginLost, fbName: account.fbName },
     };
   }
 
@@ -459,7 +511,7 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
     const tempFiles: string[] = files.map((f) => f.path);
     let started = false;
     try {
-      const { s, uk } = await this.live(tenantId, u);
+      const { s, uk, account } = await this.live(tenantId, u);
       const parse = <T>(v: string | undefined, d: T): T => {
         try {
           return v ? (JSON.parse(v) as T) : d;
@@ -502,7 +554,11 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
           results: targets.map((url) => ({ url, name: names[url] || url, status: 'waiting' })),
         },
       });
-      const job = await this.wrap(s.startPost({ targets, names, mediaPaths, tempFiles, caption, delayMin, delayMax, runId: run.id })).catch(async (e) => {
+      const job = await this.wrap(s.startPost({
+          targets, names, mediaPaths, tempFiles, caption, delayMin, delayMax, runId: run.id,
+          // the Page chosen in FB Poster ("Post as"): groups are posted as that Page, otherwise as the personal profile
+          actAs: (account.actingAs || {}) as { url?: string; name?: string },
+        })).catch(async (e) => {
         await this.prisma.fbPostRun.delete({ where: { id: run.id } }).catch(() => undefined);
         throw e;
       });
@@ -586,6 +642,7 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
     id: string; year: number | null; make: string; model: string; trim: string; price: unknown; mileage: number | null; condition: string; certified: boolean;
     bodyStyle: string; vehicleType: string; exteriorColor: string; interiorColor: string; transmission: string; fuelType: string; drivetrain: string;
     engine: string; features: string[]; vin: string; stockNumber: string; images: string[];
+    horsepower?: string; mpg?: string; doors?: string; seats?: string; owners?: string; accidents?: string; description?: string; safetyFeatures?: string[];
   }, l: ReturnType<FacebookService['emptyListing']> | null) {
     const listing = l || this.emptyListing();
     const cond = /new/i.test(v.condition) ? 'new' : v.certified || /cert|cpo/i.test(v.condition) ? 'cpo' : 'used';
@@ -595,6 +652,9 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
       fbCondition: listing.fbCondition, cleanTitle: listing.cleanTitle, bodyStyle: v.bodyStyle || v.vehicleType,
       exteriorColor: v.exteriorColor, interiorColor: v.interiorColor, transmission: v.transmission, fuelType: v.fuelType,
       drivetrain: v.drivetrain, engine: v.engine, features: v.features,
+      // details Facebook's form has no box for: they go into the description
+      horsepower: v.horsepower || '', mpg: v.mpg || '', doors: v.doors || '', seats: v.seats || '', owners: v.owners || '', accidents: v.accidents ?? '',
+      comments: v.description || '', safetyFeatures: v.safetyFeatures || [], certified: !!v.certified, conditionText: v.condition || '',
       title: listing.title, description: listing.description, hashtags: listing.hashtags, copySource: listing.copySource,
       photos: v.images,
     };
@@ -808,7 +868,9 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
       // no listing text yet: write it from the template (same as pressing "Template")
-      if (!mp.title && !mp.description) await this.makeCopy(tenantId, id, false);
+      // no text yet, or text made by the template earlier: write it again from the vehicle as it is now
+      // (text the dealer edited or the AI wrote is kept)
+      if ((!mp.title && !mp.description) || mp.copySource === 'template' || !mp.copySource) await this.makeCopy(tenantId, id, false);
       used++;
       await this.upsertListing(tenantId, id, { status: 'queued', error: '', postedBy: uk });
       this.queueListingWrite(tenantId, id, {}, 'Queued for publishing');
@@ -898,4 +960,26 @@ export function cleanupStaleTemp() {
   } catch {
     /* ignore */
   }
+}
+
+
+/**
+ * After a crash or a hard restart, Chrome processes of the old run can still be alive and hold the profile locks:
+ * end them (Linux / macOS: only Chromes started with our profiles folder) and remove the lock files.
+ */
+async function cleanupStaleChrome() {
+  if (process.platform !== 'win32') {
+    await new Promise<void>((r) => execFile('pkill', ['-f', `user-data-dir=${PROFILES}`], () => r()));
+  }
+  const walk = (dir: string, depth: number) => {
+    let list: string[] = [];
+    try {
+      list = readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const f of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) if (list.includes(f)) rmSync(join(dir, f), { force: true });
+    if (depth < 2) for (const d of list) if (!d.startsWith('Singleton')) walk(join(dir, d), depth + 1);
+  };
+  walk(PROFILES, 0);
 }

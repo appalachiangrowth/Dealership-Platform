@@ -1,0 +1,96 @@
+{
+  "id": "classic",
+  "name": "Classic",
+  "version": "1.0.2",
+  "description": "A clean, traditional dealership layout with a photo slideshow hero, quick search, featured vehicles and detailed category pages.",
+  "author": "Appalachian Growth Solutions",
+  "released": "2026-10-29",
+  "pages": [
+    {
+      "id": "home",
+      "label": "Home (and Inventory, Vehicle, About, Contact, Blog)",
+      "template": "index.html",
+      "sitemap": true
+    },
+    {
+      "id": "used-cars",
+      "label": "Used Cars",
+      "template": "used-cars.html",
+      "sitemap": true
+    },
+    {
+      "id": "used-sedans",
+      "label": "Used Sedans",
+      "template": "used-sedans.html",
+      "sitemap": true
+    },
+    {
+      "id": "used-trucks",
+      "label": "Used Trucks",
+      "template": "used-trucks.html",
+      "sitemap": true
+    },
+    {
+      "id": "used-suvs",
+      "label": "Used SUVs",
+      "template": "used-suvs.html",
+      "sitemap": true
+    },
+    {
+      "id": "used-wagons",
+      "label": "Used Wagons",
+      "template": "used-wagons.html",
+      "sitemap": true
+    }
+  ],
+  "design": {
+    "colors": [
+      {
+        "var": "--color-primary",
+        "label": "Main brand colour",
+        "default": "#0057B8",
+        "also": [
+          "--home-primary",
+          "--hub-blue"
+        ],
+        "hint": "Buttons, links and highlights"
+      },
+      {
+        "var": "--color-navy",
+        "label": "Dark colour",
+        "default": "#062B49",
+        "also": [
+          "--home-dark",
+          "--hub-navy"
+        ],
+        "hint": "Header, footer and dark sections"
+      },
+      {
+        "var": "--home-accent",
+        "label": "Accent colour",
+        "default": "#22D3EE",
+        "also": [
+          "--hub-accent",
+          "--color-primary-bright"
+        ],
+        "hint": "Small highlights and highlighted words"
+      }
+    ]
+  },
+  "content_map": {
+    "global.footer.text": "home.footer.text",
+    "about.story.p1": "about.story.copy",
+    "about.story.p2": "about.story.copy2",
+    "contact.form.text": "contact.form.intro",
+    "usedcars.hero.title": "cars.hero.title",
+    "usedcars.hero.text": "cars.hero.text"
+  },
+  "hash_routes": {
+    "about": "#/about",
+    "contact": "#/contact",
+    "inventory": "#/inventory",
+    "blog": "#/blog"
+  },
+  "preview": "assets/preview.jpg",
+  "style": "Bright & professional"
+}

@@ -286,6 +286,30 @@ export class ThemeInstallerService {
     return { ok: true, message: `Previous theme restored for ${tenant.name}.` };
   }
 
+  /**
+   * Delete a design for good: its database rows (releases, price, licences, unlock requests, saved colours) and its
+   * files (templates, assets, preview picture). Refused while a dealership uses it, and for Classic (the design new
+   * dealerships start with). The seed script skips a built-in design whose files are gone, so it does not come back.
+   */
+  async removeTheme(id: string, user: AuthUser) {
+    const theme = await this.prisma.theme.findUnique({ where: { id } });
+    if (!theme) throw new NotFoundException('Design not found');
+    if (id === 'classic') fail('Classic is the design new dealerships start with, so it cannot be deleted. Hide it instead (Edit price & release › Enabled off).');
+    const using = await this.prisma.tenant.findMany({ where: { themeId: id }, select: { name: true }, orderBy: { name: 'asc' } });
+    if (using.length) {
+      const names = using.slice(0, 5).map((t) => t.name).join(', ') + (using.length > 5 ? ` and ${using.length - 5} more` : '');
+      fail(`${using.length} dealership${using.length === 1 ? ' uses' : 's use'} this design (${names}). Switch ${using.length === 1 ? 'it' : 'them'} to another design first (Install & switch), then delete it.`);
+    }
+    await this.prisma.theme.delete({ where: { id } }); // releases, licences, requests and colours go with it
+    if (VALID_ID.test(id)) {
+      await rm(join(TEMPLATES_ROOT, id), { recursive: true, force: true }).catch(() => undefined);
+      await rm(join(ASSETS_ROOT, id), { recursive: true, force: true }).catch(() => undefined);
+      for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) await rm(join(process.cwd(), 'public', 'themes', id + ext), { force: true }).catch(() => undefined);
+    }
+    await this.audit.record('theme.delete', { actor: user.login, detail: { theme: id, name: theme.name } });
+    return { ok: true, message: `${theme.name} was deleted.` };
+  }
+
   private history(v: unknown): { themeId: string; themePin: string; at: string; by: string }[] {
     return Array.isArray(v) ? (v as { themeId: string; themePin: string; at: string; by: string }[]).filter((x) => x && typeof x.themeId === 'string') : [];
   }

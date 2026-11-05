@@ -53,8 +53,8 @@ const IMP_FIELDS: [string, string, string[]][] = [
   ['msrp', 'MSRP', ['msrp']],
   ['dealLabel', 'Deal badge', ['deal', 'deallabel', 'dealbadge']],
   ['description', 'Description', ['description', 'dealercommentsonvehicle', 'dealercomments', 'comments', 'notes', 'remarks', 'vehiclecomments']],
-  ['features', 'Features', ['features', 'options', 'installedoptions', 'equipment']],
-  ['safetyFeatures', 'Safety', ['safety', 'safetyfeatures']],
+  ['features', 'Installed options', ['features', 'options', 'installedoptions', 'equipment']],
+  ['safetyFeatures', 'Installed options (safety)', ['safety', 'safetyfeatures']],
   ['images', 'Photo URLs', ['images', 'imageurls', 'photos', 'photourls', 'pictures', 'imagelist', 'imageurl', 'image', 'mainimage', 'photo', 'photourl']],
   ['status', 'Status', ['status']],
 ];
@@ -800,7 +800,7 @@ export default function ImportPage() {
                                     ) : (
                                       <>
                                         <b className="mr-1.5 text-slate-800">{label}</b>
-                                        {cols[k] ? 'is empty' : 'is not in your file'}
+                                        {!cols[k] ? 'is not in your file' : k === 'mileage' && String(current).trim() !== '' ? `must be more than 0 (now “${current}”)` : 'is empty'}
                                         {alsoCg && <span className="ml-1.5 text-xs text-slate-500">(CarGurus needs it too)</span>}
                                         {k && (
                                           <button

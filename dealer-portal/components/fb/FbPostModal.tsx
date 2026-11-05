@@ -24,6 +24,9 @@ type LiveState = {
   mp: { active: { vehicleId: string; action: string } | null; queue: { id: string; action: string }[]; running: boolean };
 };
 type MpListing = { status: string; url: string; error: string };
+/** saved Facebook login on the server (Chrome may be asleep; it starts by itself with this login) */
+type Connection = { connected: boolean; loginLost: boolean; fbName: string };
+const NEEDS_LOGIN = /not connected|log ?in|logged out|checkpoint/i;
 
 const MP_STATUS: Record<string, string> = {
   queued: 'Waiting in the Marketplace queue…',
@@ -31,6 +34,7 @@ const MP_STATUS: Record<string, string> = {
   awaiting_publish: 'Needs you: open FB Poster and click Publish',
   published: 'Listed on Marketplace',
   unconfirmed: 'Publish clicked — listing link not found yet',
+  needs_attention: 'Created, but Facebook put it under "Needs attention" (not live)',
   failed: 'Marketplace listing failed',
 };
 
@@ -60,6 +64,8 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
   const [live, setLive] = useState<LiveState | null>(null);
   const [mpListing, setMpListing] = useState<MpListing | null>(null);
   const [stopping, setStopping] = useState(false);
+  const [conn, setConn] = useState<Connection | null>(null);
+  const [needLogin, setNeedLogin] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* ───── open: texts, saved choice, collections & groups ───── */
@@ -71,6 +77,8 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
     setMpStarted(false);
     setLive(null);
     setMpListing(null);
+    setNeedLogin(false);
+    setConn(null);
     setFind('');
     setColIds(new Set(saved?.collection?.id ? [saved.collection.id] : []));
     setSel(new Set((saved?.groups || []).map((g) => g.url)));
@@ -80,7 +88,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
     const name = vehicleName(v);
     const priceStr = v.price ? money(v.price) : '';
     const milesStr = v.mileage ? `${(Number(v.mileage) || 0).toLocaleString()} miles` : '';
-    setCaption(`🚗 ${name}\n${priceStr ? `💰 Price: ${priceStr}\n` : ''}${milesStr ? `📍 Mileage: ${milesStr}\n` : ''}Stock #: ${v.stockNumber || '—'}\n\nCall or visit us today!`);
+    setCaption(`${name}\n${priceStr ? `Price: ${priceStr}\n` : ''}${milesStr ? `Mileage: ${milesStr}\n` : ''}${v.stockNumber ? `Stock number: ${v.stockNumber}\n` : ''}\nCall or visit us today.`);
     setHashtags(saved?.hashtags || '#carsforsale #usedcars');
     setLoadingText(true);
     fb.post<{ copy: { hashtags: string }; text: string }>(`mp/vehicles/${v.id}/generate`, { ai: false, save: false })
@@ -95,12 +103,13 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
 
     setTargetsLoading(true);
     Promise.all([
-      fb.get<{ quickPost: FbPostingConfig; account: FbAccountView }>('quick-config').catch(() => null),
+      fb.get<{ quickPost: FbPostingConfig; account: FbAccountView; connection?: Connection }>('quick-config').catch(() => null),
       fb.get<{ collections: FbCollection[] }>('collections').catch(() => null),
     ])
       .then(([q, c]) => {
         const acc = q?.account || null;
         setAccount(acc);
+        if (q?.connection) setConn(q.connection);
         setCols(c?.collections || []);
         if (!saved && q?.quickPost?.configured) {
           // first time on this browser: the choice saved in FB Poster
@@ -144,6 +153,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
         if (alive && l && l.status !== 'queued') {
           mpEnded = true;
           setMpListing(l);
+          if (l.status === 'failed' && NEEDS_LOGIN.test(l.error || '')) setNeedLogin(true);
         }
       }
       const sameJob = !!s?.job && (!runId || s.job.runId === runId);
@@ -198,6 +208,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
       return n;
     });
 
+  const disconnected = needLogin || (!!conn && !conn.connected);
   const missing = mpMissing(v);
   const mpReady = !!v && !missing.length;
   const targetCount = sel.size + (includePage && pageTarget ? 1 : 0);
@@ -257,7 +268,9 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
       setLive((l) => ({ job: r?.job || l?.job || null, mp: l?.mp || { active: null, queue: [], running: false } }));
       void poll();
     } catch (e) {
-      toast.error((e as Error).message || 'Failed to start the Facebook post.');
+      const m = (e as Error).message || 'Failed to start the Facebook post.';
+      if (NEEDS_LOGIN.test(m)) setNeedLogin(true);
+      toast.error(m);
     } finally {
       setPosting(false);
     }
@@ -274,6 +287,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
         void poll();
       } else toast.error(`Marketplace: ${r.rejected?.[0]?.error || 'could not be queued'}`);
     } catch (e) {
+      if (NEEDS_LOGIN.test((e as Error).message)) setNeedLogin(true);
       toast.error(`Marketplace: ${(e as Error).message}`);
     } finally {
       setMpPosting(false);
@@ -313,7 +327,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
           <div className="flex items-center gap-2 text-sm">
             {jobRunning ? <Loader2 className="h-4 w-4 animate-spin text-[#1877F2]" /> : <CheckCircle2 className={cx('h-4 w-4', job && job.failed ? 'text-amber-600' : 'text-emerald-600')} />}
             <b className="flex-1 text-slate-900">
-              {jobRunning ? `Posting to Facebook… ${okN} of ${total || '…'} posted` : job?.cancelled ? `Stopped · ${okN} of ${total} posted` : `Done · ${okN} of ${total} posted${job?.failed ? ` · ${job.failed} failed` : ''}`}
+              {jobRunning && job && job.results.every((x) => x.status === 'waiting') && live?.mp.active ? 'Waiting for the Marketplace listing, then posting to the groups…' : jobRunning ? `Posting to Facebook… ${okN} of ${total || '…'} posted` : job?.cancelled ? `Stopped · ${okN} of ${total} posted` : `Done · ${okN} of ${total} posted${job?.failed ? ` · ${job.failed} failed` : ''}`}
             </b>
             {jobRunning && (
               <Button size="sm" variant="ghost" loading={stopping} onClick={stop}>
@@ -408,7 +422,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
               <Button
                 className="border-transparent bg-[#1877F2] font-bold text-white hover:bg-[#166fe5]"
                 loading={posting}
-                disabled={!targetCount || mpPosting}
+                disabled={!targetCount || mpPosting || disconnected}
                 onClick={postToGroups}
                 title="Post to the ticked groups and Page"
               >
@@ -420,7 +434,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
               <Button
                 className="border-transparent bg-[#0B5CD5] font-bold text-white hover:bg-[#0a4fb8]"
                 loading={mpPosting}
-                disabled={posting}
+                disabled={posting || disconnected}
                 onClick={postToMarketplace}
                 title="List this vehicle on Facebook Marketplace (posted automatically)"
               >
@@ -434,6 +448,31 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
     >
       {v && (
         <div className="space-y-4">
+          {disconnected && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <b className="block">{conn?.loginLost || needLogin ? 'Facebook asks to log in again' : 'Facebook is not connected yet'}</b>
+              <p className="mt-0.5 text-xs text-amber-800">
+                Open FB Poster and click <b>Connect Facebook</b> to log in once. The login is saved on the server, so after that every post from Inventory
+                works with one click.
+              </p>
+              <Button
+                size="sm"
+                className="mt-2 border-transparent bg-[#1877F2] font-semibold text-white hover:bg-[#166fe5]"
+                onClick={() => {
+                  onClose();
+                  router.push('/dealer/facebook');
+                }}
+              >
+                <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Connect in FB Poster
+              </Button>
+            </div>
+          )}
+          {!disconnected && conn?.connected && runId === null && !mpStarted && (
+            <p className="text-[11px] text-slate-500">
+              Posting as <b className="text-slate-700">{conn.fbName || 'your saved Facebook login'}</b>. The first post after a break takes a few seconds longer while
+              Facebook starts on the server.
+            </p>
+          )}
           {/* live progress stays on top while posting */}
           {progress}
           {intro}

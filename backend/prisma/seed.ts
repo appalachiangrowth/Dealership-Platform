@@ -6,13 +6,22 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client.js';
+import { existsSync } from 'fs';
+import { join, resolve } from 'path';
 import { BUILTIN_THEMES } from '../src/themes/themes.registry.js';
+
+/** a built-in design deleted in Platform Admin has no files any more: it is not added again */
+const WEBSITE_DIR = resolve(process.env.WEBSITE_DIR || join(process.cwd(), '..', 'frontend'));
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
 
 async function main() {
   let order = 0;
   for (const t of BUILTIN_THEMES) {
+    if (!existsSync(join(WEBSITE_DIR, 'themes', t.id))) {
+      console.log(`- ${t.name}: deleted (no files), skipped`);
+      continue;
+    }
     await prisma.theme.upsert({
       where: { id: t.id },
       create: {

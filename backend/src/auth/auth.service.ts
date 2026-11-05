@@ -154,6 +154,6 @@ export class AuthService {
     });
     await this.audit.record('signup', { tenantId: t.id, actor: email, ip });
     const r = await this.login({ login: email, password: dto.password, portal: 'dealer', tenantId: t.id }, ip);
-    return { ...r, websiteDomain: domains[0] || `${id}.localhost` };
+    return { ...r, websiteDomain: domains[0] || (process.env.SITES_DOMAIN ? `${id}.${process.env.SITES_DOMAIN}` : `${id}.localhost`) };
   }
 }

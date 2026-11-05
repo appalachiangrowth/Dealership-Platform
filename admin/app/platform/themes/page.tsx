@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { api, mediaUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { useToast } from '@/components/toast';
-import { Badge, Button, Card, Drawer, Field, Input, Loading, PageHeader, Select, StatusBadge, Table, Tabs, Td, Textarea, Toggle } from '@/components/ui';
+import { Badge, Button, Card, Drawer, Field, Input, Loading, Modal, PageHeader, Select, StatusBadge, Table, Tabs, Td, Textarea, Toggle } from '@/components/ui';
 import { dateTime } from '@/lib/format';
 import { ThemeInstall } from '@/components/ThemeInstall';
 
@@ -17,6 +17,9 @@ export default function ThemesPage() {
   const [edit, setEdit] = useState<any>(null);
   const [release, setRelease] = useState({ version: '', notes: '' });
   const [payment, setPayment] = useState<string | null>(null);
+  // "Delete design" confirmation
+  const [del, setDel] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
 
   if (loading || !data) return <Loading />;
   const pending = requests.data?.filter((r: any) => r.status === 'PENDING').length || 0;
@@ -64,9 +67,29 @@ export default function ThemesPage() {
                   Stable <b>{t.stableVersion}</b>
                   {t.betaVersion && <> · Beta <b>{t.betaVersion}</b></>} · {t.dealers} dealers · {t.priceLabel} · {t.licenses} licences
                 </p>
-                <Button size="sm" variant="secondary" className="mt-3" onClick={() => setEdit({ ...t })}>
-                  Edit price & release
-                </Button>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => setEdit({ ...t })}>
+                    Edit price & release
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={t.id === 'classic' || t.dealers > 0}
+                    title={
+                      t.id === 'classic'
+                        ? 'Classic is the design new dealerships start with — hide it instead'
+                        : t.dealers > 0
+                          ? `${t.dealers} dealership${t.dealers === 1 ? ' uses' : 's use'} this design: switch ${t.dealers === 1 ? 'it' : 'them'} first (Install & switch)`
+                          : 'Delete this design'
+                    }
+                    onClick={() => setDel(t)}
+                  >
+                    Delete
+                  </Button>
+                </div>
+                {t.dealers > 0 && t.id !== 'classic' && (
+                  <p className="mt-1.5 text-[11px] text-slate-400">To delete it, switch its {t.dealers} dealership{t.dealers === 1 ? '' : 's'} to another design first.</p>
+                )}
               </div>
             </Card>
           ))}
@@ -146,6 +169,47 @@ export default function ThemesPage() {
           </Button>
         </Card>
       )}
+      <Modal
+        open={!!del}
+        onClose={() => !deleting && setDel(null)}
+        title={`Delete ${del?.name || 'design'}?`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDel(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              loading={deleting}
+              onClick={async () => {
+                setDeleting(true);
+                try {
+                  const r = await api(`/platform/themes/${del.id}`, { method: 'DELETE' });
+                  toast.ok(r?.message || 'Design deleted');
+                  setDel(null);
+                  setData(await api('/platform/themes'));
+                } catch (e) {
+                  toast.error((e as Error).message);
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              Delete design
+            </Button>
+          </>
+        }
+      >
+        {del && (
+          <div className="space-y-2 text-sm">
+            <p>
+              <b>{del.name}</b> is removed from the platform for good: its files ({del.installed?.length ? `versions ${del.installed.join(', ')}` : 'all versions'}), its price,
+              {del.licenses ? ` ${del.licenses} unlocked licence${del.licenses === 1 ? '' : 's'},` : ''} its unlock requests and the colours dealers saved for it.
+            </p>
+            <p className="text-slate-500">No dealership uses it now. This cannot be undone — to bring it back you would install its ZIP again.</p>
+          </div>
+        )}
+      </Modal>
       <Drawer
         open={!!edit}
         onClose={() => setEdit(null)}
