@@ -4,13 +4,16 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { brandRun, onBrandingChange } from '@/lib/branding';
 import { useRouter } from 'next/navigation';
-import { Car, ExternalLink, ImageIcon, Plus, Search, Star, Upload } from 'lucide-react';
+import { Car, ImageIcon, Plus, Search, Star, Trash2, Upload } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { useToast } from '@/components/toast';
 import { Button, ErrorBox, Input, LinkButton, Loading, Modal, PageHeader, Pagination, Select, cx } from '@/components/ui';
 import { money, vehicleName } from '@/lib/format';
-import { FacebookIcon, fb, getSavedFbPostingConfig, saveFbPostingConfig, type FbPostingConfig } from '@/lib/facebook';
+import { FacebookIcon } from '@/lib/facebook';
+import { mpMissing } from '@/lib/marketplace';
+import { FbPostModal } from '@/components/fb/FbPostModal';
+
 
 type Issue = { field: string; label: string; msg: string };
 
@@ -58,96 +61,9 @@ export default function InventoryPage() {
   );
 
   const [fbVehicle, setFbVehicle] = useState<any>(null);
-  const [fbConfig, setFbConfig] = useState<FbPostingConfig | null>(null);
-  const [fbCaption, setFbCaption] = useState('');
-  const [fbHashtags, setFbHashtags] = useState('');
-  const [fbPosting, setFbPosting] = useState(false);
-  const [fbLoadingText, setFbLoadingText] = useState(false);
-
-  useEffect(() => {
-    const cfg = getSavedFbPostingConfig();
-    if (cfg) {
-      setFbConfig(cfg);
-    } else {
-      fb.get<{ quickPost: FbPostingConfig }>('quick-config')
-        .then((r) => {
-          if (r.quickPost?.configured) {
-            saveFbPostingConfig(r.quickPost);
-            setFbConfig(r.quickPost);
-          }
-        })
-        .catch(() => { });
-    }
-  }, []);
-
-  async function openFbModal(v: any) {
-    setFbVehicle(v);
-    const cfg = getSavedFbPostingConfig() || fbConfig;
-    setFbConfig(cfg);
-
-    const name = vehicleName(v);
-    const priceStr = v.price ? money(v.price) : '';
-    const milesStr = v.mileage ? `${(Number(v.mileage) || 0).toLocaleString()} miles` : '';
-
-    setFbLoadingText(true);
-    setFbCaption(`🚗 ${name}\n${priceStr ? `💰 Price: ${priceStr}\n` : ''}${milesStr ? `📍 Mileage: ${milesStr}\n` : ''}Stock #: ${v.stockNumber || '—'}\n\nCall or visit us today!`);
-    setFbHashtags(cfg?.hashtags || '#carsforsale #usedcars');
-
-    try {
-      const r = await fb.post<{ copy: { hashtags: string }; text: string; photos: string[] }>(`mp/vehicles/${v.id}/generate`, { ai: false, save: false });
-      if (r?.text) {
-        setFbCaption(r.text.replace(r.copy?.hashtags || '', '').replace(/\n{3,}/g, '\n\n').trim());
-        if (r.copy?.hashtags) setFbHashtags(r.copy.hashtags);
-      }
-    } catch {
-      // fallback caption already set
-    } finally {
-      setFbLoadingText(false);
-    }
-  }
-
-  async function postVehicleToFacebook() {
-    if (!fbVehicle || !fbConfig) return;
-    const targets: string[] = [];
-    const names: Record<string, string> = {};
-
-    if (fbConfig.includePage && fbConfig.page?.url) {
-      targets.push(fbConfig.page.url);
-      names[fbConfig.page.url] = fbConfig.page.name || fbConfig.page.url;
-    }
-    for (const g of fbConfig.groups || []) {
-      if (g.url && !targets.includes(g.url)) {
-        targets.push(g.url);
-        names[g.url] = g.name || g.url;
-      }
-    }
-
-    if (!targets.length) {
-      toast.error('No targets selected. Click "Change settings" to configure your Page and groups.');
-      return;
-    }
-
-    setFbPosting(true);
-    try {
-      const form = new FormData();
-      const order = fbVehicle.images.map((u: string) => `v:${u}`);
-      form.append('targets', JSON.stringify(targets));
-      form.append('names', JSON.stringify(names));
-      form.append('order', JSON.stringify(order));
-      form.append('caption', fbCaption || vehicleName(fbVehicle));
-      form.append('hashtags', fbHashtags || '');
-      form.append('delayMin', String(fbConfig.delayMin || 45));
-      form.append('delayMax', String(fbConfig.delayMax || 90));
-
-      await api('/dealer/facebook/post', { method: 'POST', form });
-      toast.ok(`Posting to Facebook started for ${vehicleName(fbVehicle)}!`);
-      setFbVehicle(null);
-    } catch (e) {
-      toast.error((e as Error).message || 'Failed to start Facebook post.');
-    } finally {
-      setFbPosting(false);
-    }
-  }
+  // delete straight from the table (asks first)
+  const [delVehicle, setDelVehicle] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // photos that still need the branding bands are done in the background (progress pill at the bottom)
   useEffect(() => {
@@ -158,16 +74,34 @@ export default function InventoryPage() {
 
   const open = (id: string, field?: string) => router.push(`/dealer/inventory/${id}${field ? `?focus=${encodeURIComponent(field)}` : ''}`);
 
+  async function deleteVehicle() {
+    if (!delVehicle) return;
+    setDeleting(true);
+    try {
+      await api(`/dealer/vehicles/${delVehicle.id}`, { method: 'DELETE' });
+      toast.ok(`${vehicleName(delVehicle) || 'Vehicle'} deleted`);
+      setDelVehicle(null);
+      reload();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   async function quick(v: any, body: Record<string, unknown>, msg: string) {
     // update the row at once, then save (like the old portal)
     setData({ ...data, items: data.items.map((x: any) => (x.id === v.id ? { ...x, ...body } : x)) });
+    let ok = false;
     try {
       await api(`/dealer/vehicles/${v.id}`, { method: 'PATCH', body });
       toast.ok(msg);
+      ok = true;
     } catch (e) {
       toast.error((e as Error).message);
     }
     reload();
+    return ok;
   }
 
   const counts = data?.counts || {};
@@ -337,10 +271,11 @@ export default function InventoryPage() {
                         <Button
                           size="sm"
                           className="mr-1 inline-flex items-center gap-1 border-transparent bg-[#1877F2] text-xs font-bold text-white hover:bg-[#166fe5]"
-                          onClick={() => openFbModal(v)}
-                          title="Post to Facebook"
+                          onClick={() => setFbVehicle(v)}
+                          title={mpMissing(v).length === 0 ? 'Post to Facebook · Marketplace ready' : 'Post to Facebook'}
                         >
                           <FacebookIcon className="h-3.5 w-3.5" /> FB
+                          {mpMissing(v).length === 0 && <span className="ml-0.5 rounded bg-white/25 px-1 text-[10px] font-extrabold" title="Marketplace ready">MP</span>}
                         </Button>
                         {v.status === 'PUBLISHED' ? (
                           <Button size="sm" variant="secondary" onClick={() => quick(v, { status: 'SOLD' }, 'Marked as sold - hidden from your website')}>
@@ -356,7 +291,8 @@ export default function InventoryPage() {
                                 open(v.id, 'images');
                                 return;
                               }
-                              void quick(v, { status: 'PUBLISHED' }, 'Published - live on your website');
+                              // published → offer to post it on Facebook right away
+                              void quick(v, { status: 'PUBLISHED' }, 'Published - live on your website').then((ok) => ok && setFbVehicle({ ...v, status: 'PUBLISHED' }));
                             }}
                           >
                             Publish
@@ -365,6 +301,15 @@ export default function InventoryPage() {
                         <Link href={`/dealer/inventory/${v.id}`} className="inline-flex rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                           Edit
                         </Link>
+                        <button
+                          type="button"
+                          title="Delete this vehicle"
+                          aria-label={`Delete ${vehicleName(v)}`}
+                          onClick={() => setDelVehicle(v)}
+                          className="ml-1 inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:border-red-300 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" /> Delete
+                        </button>
                       </td>
                     </tr>
                   );
@@ -376,150 +321,28 @@ export default function InventoryPage() {
         )}
       </div>
 
+      <FbPostModal vehicle={fbVehicle} onClose={() => setFbVehicle(null)} />
       <Modal
-        open={!!fbVehicle}
-        onClose={() => !fbPosting && setFbVehicle(null)}
-        title={
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#1877F2] text-white">
-              <FacebookIcon className="h-4 w-4" />
-            </span>
-            <span className="font-heading font-bold text-slate-900">Post to Facebook</span>
-          </div>
-        }
+        open={!!delVehicle}
+        onClose={() => !deleting && setDelVehicle(null)}
+        title={`Delete ${delVehicle ? vehicleName(delVehicle) || 'this vehicle' : 'this vehicle'}?`}
         footer={
-          <div className="flex w-full flex-wrap items-center justify-between gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setFbVehicle(null);
-                router.push('/dealer/facebook');
-              }}
-              disabled={fbPosting}
-            >
-              <ExternalLink className="mr-1 h-3.5 w-3.5" />
-              Change settings
+          <>
+            <Button variant="secondary" onClick={() => setDelVehicle(null)} disabled={deleting}>
+              Cancel
             </Button>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" onClick={() => setFbVehicle(null)} disabled={fbPosting}>
-                Cancel
-              </Button>
-              <Button
-                className="border-transparent bg-[#1877F2] font-bold text-white hover:bg-[#166fe5]"
-                loading={fbPosting}
-                disabled={!fbConfig || (!fbConfig.page && !fbConfig.groups?.length)}
-                onClick={postVehicleToFacebook}
-              >
-                <FacebookIcon className="mr-1.5 h-3.5 w-3.5" />
-                Post to Facebook
-              </Button>
-            </div>
-          </div>
+            <Button variant="danger" loading={deleting} onClick={deleteVehicle}>
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete vehicle
+            </Button>
+          </>
         }
       >
-        {fbVehicle && (
-          <div className="space-y-4">
-            {/* Vehicle preview */}
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-              <div className="flex h-14 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
-                {fbVehicle.images?.[0] ? (
-                  <img src={mediaUrl(fbVehicle.images[0])} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <ImageIcon className="h-5 w-5 text-slate-400" />
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <b className="block truncate text-sm text-slate-900">{vehicleName(fbVehicle)}</b>
-                <div className="mt-0.5 text-xs text-slate-500">
-                  <span className="font-semibold text-slate-700">{money(fbVehicle.price)}</span> · {(Number(fbVehicle.mileage) || 0).toLocaleString()} mi · Stock: #{fbVehicle.stockNumber || '—'}
-                </div>
-                <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                  <span className="inline-flex items-center rounded bg-blue-100 px-1.5 py-0.5 font-medium text-blue-800">
-                    {fbVehicle.images?.length || 0} photo{fbVehicle.images?.length === 1 ? '' : 's'}
-                  </span>
-                  {fbVehicle.vin && <span className="font-mono text-[11px] text-slate-400">VIN: {fbVehicle.vin}</span>}
-                </div>
-              </div>
-            </div>
-
-            {/* Configured settings */}
-            {!fbConfig || (!fbConfig.page && !fbConfig.groups?.length) ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                <b>No Facebook posting targets configured yet</b>
-                <p className="mt-1 text-xs text-amber-800">
-                  You haven't selected a Facebook Page or Groups to post to yet. Go to FB Poster to select your Page and groups.
-                </p>
-                <Button
-                  size="sm"
-                  className="mt-3 border-transparent bg-[#1877F2] font-semibold text-white hover:bg-[#166fe5]"
-                  onClick={() => {
-                    setFbVehicle(null);
-                    router.push('/dealer/facebook');
-                  }}
-                >
-                  <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                  Configure in FB Poster
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3.5 text-sm">
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Configured Posting Options</div>
-
-                {/* Page */}
-                <div className="flex items-center justify-between border-b border-slate-100 py-1 text-xs">
-                  <span className="font-medium text-slate-500">Facebook Page:</span>
-                  {fbConfig.page ? (
-                    <span className="inline-flex items-center rounded-full border border-purple-200 bg-purple-50 px-2.5 py-0.5 font-semibold text-purple-700">
-                      {fbConfig.page.name || fbConfig.page.url}
-                    </span>
-                  ) : (
-                    <span className="italic text-slate-400">None (personal profile)</span>
-                  )}
-                </div>
-
-                {/* Collection */}
-                {fbConfig.collection && (
-                  <div className="flex items-center justify-between border-b border-slate-100 py-1 text-xs">
-                    <span className="font-medium text-slate-500">Selected Collection:</span>
-                    <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 font-semibold text-blue-700">
-                      {fbConfig.collection.name}
-                    </span>
-                  </div>
-                )}
-
-                {/* Groups */}
-                <div className="space-y-1.5 py-1 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-slate-500">Selected Groups:</span>
-                    <span className="font-bold text-slate-700">{fbConfig.groups?.length || 0} group{fbConfig.groups?.length === 1 ? '' : 's'}</span>
-                  </div>
-                  {fbConfig.groups && fbConfig.groups.length > 0 ? (
-                    <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto pt-0.5">
-                      {fbConfig.groups.map((g) => (
-                        <span key={g.url} className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700" title={g.url}>
-                          {g.name || g.url}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="italic text-slate-400">No groups selected</span>
-                  )}
-                </div>
-
-                {/* Caption preview */}
-                <div className="space-y-1 border-t border-slate-100 pt-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-600">Post description & hashtags:</span>
-                    {fbLoadingText && <span className="text-slate-400">Loading preview…</span>}
-                  </div>
-                  <div className="max-h-28 overflow-y-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-2.5 font-mono text-xs text-slate-700">
-                    {fbCaption}
-                    {fbHashtags ? `\n\n${fbHashtags}` : ''}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+        {delVehicle && (
+          <p>
+            {delVehicle.stockNumber ? <>Stock #{delVehicle.stockNumber} · </> : null}
+            {money(delVehicle.price)} — it disappears from your website, your feeds and CarGurus. This cannot be undone.
+            {delVehicle.status === 'PUBLISHED' && <span className="mt-2 block text-xs text-slate-500">Sold it? Use “Mark sold” instead to keep it in your records.</span>}
+          </p>
         )}
       </Modal>
     </>

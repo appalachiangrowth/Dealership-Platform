@@ -8,6 +8,7 @@ import { CG_IMG_OK, photoExt } from '@/lib/cargurus';
 import { brandRun } from '@/lib/branding';
 import { useToast } from '@/components/toast';
 import { FacebookIcon } from '@/lib/facebook';
+import { MP_FIELDS, MP_FIX, MP_REQ_N, mpMissing } from '@/lib/marketplace';
 import { Button, Input, LinkButton, cx } from '@/components/ui';
 import { money, vehicleName } from '@/lib/format';
 
@@ -19,7 +20,8 @@ type Rec = Record<string, string>;
 type Parsed = { headers: string[]; records: Rec[] };
 type V = Record<string, any>;
 type Problem = { f: string; m: string; w?: boolean };
-type Row = { row: number; v: V; ex: V | null; by: string; probs: Problem[]; ok: boolean };
+/** ok = CarGurus ready; mp = Marketplace fields this vehicle is missing (empty = Marketplace ready) */
+type Row = { row: number; v: V; ex: V | null; by: string; probs: Problem[]; ok: boolean; mp: string[] };
 
 /** [field, label, header names it is found under] */
 const IMP_FIELDS: [string, string, string[]][] = [
@@ -244,11 +246,12 @@ function impProblems(v: V, rec: Rec, cols: Record<string, string>, seen: { vin: 
 }
 
 function downloadTemplate() {
+  // CarGurus columns + the two more Facebook Marketplace needs
   const csv =
-    IMP_CG.map((c) => c[1]).join(',') +
+    [...IMP_CG.map((c) => c[1]), 'Body Style', 'Interior Color'].join(',') +
     '\r\n' +
-    '1HGCM82633A004352,Honda,Accord,2003,EX,6995,142000,https://yourdealership.com/photos/accord-1.jpg|https://yourdealership.com/photos/accord-2.jpg,Silver,"One owner, clean history",A100,Automatic,Sunroof | Leather seats\r\n' +
-    '2T1BURHE3JC012345,Toyota,Corolla,2018,LE,15990,40210,https://yourdealership.com/photos/corolla-1.png,White,Great fuel economy,C200,CVT,Backup camera | Bluetooth\r\n';
+    '1HGCM82633A004352,Honda,Accord,2003,EX,6995,142000,https://yourdealership.com/photos/accord-1.jpg|https://yourdealership.com/photos/accord-2.jpg,Silver,"One owner, clean history",A100,Automatic,Sunroof | Leather seats,Sedan,Black\r\n' +
+    '2T1BURHE3JC012345,Toyota,Corolla,2018,LE,15990,40210,https://yourdealership.com/photos/corolla-1.png,White,Great fuel economy,C200,CVT,Backup camera | Bluetooth,Sedan,Gray\r\n';
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }));
   a.download = 'inventory-template.csv';
@@ -269,11 +272,12 @@ export default function ImportPage() {
   const [cols, setCols] = useState<Record<string, string>>({});
   const [inv, setInv] = useState<V[]>([]);
   const [cgOn, setCgOn] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'bad' | 'ok' | 'dup'>('all');
+  const [filter, setFilter] = useState<'all' | 'bad' | 'ok' | 'mp' | 'dup'>('all');
   const [dupMode, setDupMode] = useState<'update' | 'skip'>('update');
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState('');
-  const [fix, setFix] = useState<{ row: number; field: string; value: string } | null>(null);
+  /** inline "Fix": src = which list it was opened from (CarGurus problems or the Marketplace box) */
+  const [fix, setFix] = useState<{ row: number; field: string; value: string; src?: 'cg' | 'mp' } | null>(null);
   const [done, setDone] = useState<{ add: number; upd: number; left: number; bad: number; ready: number; skipped: { row: number; reason: string }[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -331,7 +335,9 @@ export default function ImportPage() {
     const seen = { vin: {}, stock: {} };
     const missReq = IMP_CG.filter((c) => c[2] === 'req' && !cols[c[0]]);
     const absent = new Set(IMP_CG.filter((c) => !cols[c[0]]).map((c) => c[1]));
-    const out = { rows: [] as Row[], ready: 0, bad: 0, add: 0, upd: 0, skip: [] as number[], missReq };
+    // Marketplace columns the file does not have at all
+    const mpMissCols = MP_FIELDS.filter(([f]) => !cols[f] && !(f === 'bodyStyle' && cols.vehicleType));
+    const out = { rows: [] as Row[], ready: 0, bad: 0, mpReady: 0, add: 0, upd: 0, skip: [] as number[], missReq, mpMissCols };
     P.records.forEach((rec, i) => {
       const row = i + 2;
       const v = impVehicle(rec, map);
@@ -346,8 +352,10 @@ export default function ImportPage() {
       const ex = exV || exS || null;
       // a vehicle is only CarGurus-ready when the file has every required column too
       const ok = !errs.length && !missReq.length;
-      out.rows.push({ row, v, ex, by: exV ? 'VIN' : exS ? 'stock number' : '', probs, ok });
+      const mp = mpMissing(v);
+      out.rows.push({ row, v, ex, by: exV ? 'VIN' : exS ? 'stock number' : '', probs, ok, mp });
       if (ok) out.ready++;
+      if (!mp.length) out.mpReady++;
       else out.bad++;
       if (ex) out.upd++;
       else out.add++;
@@ -381,10 +389,19 @@ export default function ImportPage() {
 
   function saveFix() {
     if (!fix || !P) return;
-    const col = cols[fix.field];
+    let col = cols[fix.field];
+    let headers = P.headers;
+    if (!col) {
+      // the file has no such column (e.g. Interior Color for Marketplace): add it, empty for the other vehicles
+      col = MP_FIELDS.find((f) => f[0] === fix.field)?.[1] || fix.field;
+      if (headers.includes(col)) col = `${col} (added)`;
+      headers = [...headers, col];
+      setMap((m) => ({ ...m, [col as string]: fix.field }));
+      setCols((c) => ({ ...c, [fix.field]: col as string }));
+    }
     const records = P.records.slice();
     records[fix.row - 2] = { ...records[fix.row - 2], [col]: fix.value.trim() };
-    setP({ ...P, records });
+    setP({ ...P, headers, records });
     setFix(null);
     toast.ok('Saved: the vehicle was checked again');
   }
@@ -486,14 +503,22 @@ export default function ImportPage() {
         const extra = P.headers.filter((h) => map[h] && !IMP_CG.some((c) => c[0] === map[h]));
         const kept = extraColumns(P.headers, map);
         const dups = R.rows.filter((r) => r.ex);
-        const list = R.rows.filter((r) => (filter === 'all' ? true : filter === 'bad' ? !r.ok : filter === 'dup' ? !!r.ex : r.ok));
+        const list = R.rows.filter((r) => (filter === 'all' ? true : filter === 'bad' ? !r.ok : filter === 'dup' ? !!r.ex : filter === 'mp' ? !r.mp.length : r.ok));
         const keep = (r: Row) => !(dupMode === 'skip' && r.ex);
         const sk = dupMode === 'skip' ? dups.length : 0;
         const skR = dupMode === 'skip' ? dups.filter((r) => r.ok).length : 0;
         const fT = total - sk;
         const fReady = R.ready - skR;
         const fBad = R.bad - (sk - skR);
-        const both = !blocking && fBad > 0 && fReady > 0;
+        const fMp = R.mpReady - (dupMode === 'skip' ? dups.filter((r) => !r.mp.length).length : 0);
+        // why vehicles are not Marketplace ready: columns the file lacks, otherwise the fields most vehicles miss
+        const mpWhy = (() => {
+          if (R.mpMissCols.length) return `${R.mpMissCols.map((c) => c[1]).join(', ')} ${R.mpMissCols.length === 1 ? 'is' : 'are'} missing`;
+          const n: Record<string, number> = {};
+          for (const r of R.rows) if (keep(r)) for (const m of r.mp) n[m] = (n[m] || 0) + 1;
+          const top = Object.entries(n).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([m, c]) => `${m} (${c})`);
+          return top.length ? `missing ${top.join(', ')}` : '';
+        })();
         return (
           <div className="mt-6 space-y-5">
             <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm">
@@ -527,11 +552,21 @@ export default function ImportPage() {
             )}
 
             {/* numbers */}
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Card3 n={total} label={`vehicle${total === 1 ? '' : 's'} in file`} sub={`${R.add} new · ${R.upd} already in your inventory`} />
               <Card3 tone="ok" n={R.ready} label="ready for CarGurus" sub={`Meets all ${CG_REQ_N} CarGurus mandatory criteria. Ready to syndicate.`} />
+              <Card3
+                tone="fb"
+                n={R.mpReady}
+                label="ready for Marketplace"
+                sub={R.mpMissCols.length ? `Your file has no ${R.mpMissCols.map((c) => c[1]).join(', ')} column${R.mpMissCols.length === 1 ? '' : 's'}.` : `Has all ${MP_REQ_N} Facebook Marketplace fields. The FB button lists them on Marketplace.`}
+              />
               <Card3 tone={R.bad ? 'bad' : undefined} n={R.bad} label="website only (issues)" sub="Will be imported to your website, but cannot be listed on CarGurus until the issues are fixed." />
             </div>
+            <p className="-mt-2 text-xs text-slate-500">
+              <FacebookIcon className="mr-1 inline h-3.5 w-3.5 text-[#1877F2]" />
+              Marketplace needs: {MP_FIELDS.map((f) => f[1]).join(', ')}.
+            </p>
 
             {/* columns */}
             {IMP_CG.every((c) => cols[c[0]]) ? (
@@ -617,13 +652,14 @@ export default function ImportPage() {
               <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
                   <h3 className="font-heading text-base font-bold text-slate-900">Vehicles</h3>
-                  {(R.bad > 0 || dups.length > 0) && (
+                  {(R.bad > 0 || dups.length > 0 || R.mpReady !== total) && (
                     <div className="flex rounded-lg bg-slate-100 p-1 text-xs font-semibold">
                       {(
                         [
                           ['all', `All ${total}`],
                           ['bad', `Problems ${R.bad}`],
-                          ['ok', `Ready ${R.ready}`],
+                          ['ok', `CarGurus ready ${R.ready}`],
+                          ['mp', `Marketplace ready ${R.mpReady}`],
                           ...(dups.length ? ([['dup', `Already in inventory ${dups.length}`]] as const) : []),
                         ] as [typeof filter, string][]
                       ).map(([k, l]) => (
@@ -657,13 +693,20 @@ export default function ImportPage() {
                           >
                             {r.ex ? (dupMode === 'skip' ? 'In inventory · skipped' : 'In inventory · will update') : 'New'}
                           </span>
+                          <span
+                            title={r.mp.length ? `Facebook Marketplace needs: ${r.mp.join(', ')}` : 'Has every Facebook Marketplace field'}
+                            className={cx('inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold', r.mp.length ? 'bg-slate-100 text-slate-500' : 'bg-blue-50 text-[#1877F2] ring-1 ring-blue-200')}
+                          >
+                            <FacebookIcon className="h-3 w-3" />
+                            {r.mp.length ? (r.mp.length <= 2 ? `Marketplace: needs ${r.mp.join(', ')}` : `Marketplace: ${r.mp.length} missing`) : 'Marketplace ready'}
+                          </span>
                         </div>
                         {(errs.length > 0 || warns.length > 0) && (
                           <ul className="ml-9 mt-2 space-y-1 text-sm">
                             {errs.map((p, i) => {
                               const k = IMP_FIX[p.f];
                               const canFix = !!(k && cols[k]);
-                              const editing = fix && fix.row === r.row && fix.field === k;
+                              const editing = fix && fix.src !== 'mp' && fix.row === r.row && fix.field === k;
                               return (
                                 <li key={i} className="text-red-700">
                                   {editing ? (
@@ -697,7 +740,7 @@ export default function ImportPage() {
                                       {canFix && (
                                         <button
                                           type="button"
-                                          onClick={() => setFix({ row: r.row, field: k, value: P.records[r.row - 2][cols[k]] || '' })}
+                                          onClick={() => setFix({ row: r.row, field: k, value: P.records[r.row - 2][cols[k]] || '', src: 'cg' })}
                                           className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline"
                                         >
                                           <Pencil className="h-3 w-3" /> Fix
@@ -715,6 +758,66 @@ export default function ImportPage() {
                               </li>
                             ))}
                           </ul>
+                        )}
+                        {r.mp.length > 0 && (
+                          <div className="ml-9 mt-2 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2">
+                            <div className="mb-1 flex items-center gap-1.5 text-xs font-bold text-[#1877F2]">
+                              <FacebookIcon className="h-3.5 w-3.5" /> Fix for Facebook Marketplace
+                              <span className="font-normal text-slate-500">· needs {r.mp.length} more field{r.mp.length === 1 ? '' : 's'}</span>
+                            </div>
+                            <ul className="space-y-1 text-sm">
+                              {r.mp.map((label) => {
+                                const k = MP_FIX[label];
+                                const editing = fix && fix.src === 'mp' && fix.row === r.row && fix.field === k;
+                                const alsoCg = errs.some((p) => IMP_FIX[p.f] === k);
+                                const current = cols[k] ? P.records[r.row - 2][cols[k]] || '' : '';
+                                return (
+                                  <li key={label} className="text-blue-900">
+                                    {editing ? (
+                                      <span className="flex flex-wrap items-center gap-2">
+                                        <b className="text-slate-800">{label}</b>
+                                        <Input
+                                          autoFocus
+                                          className="min-w-[260px] flex-1"
+                                          value={fix.value}
+                                          placeholder={k === 'images' ? 'https://…/photo.jpg | https://…/photo2.jpg' : k === 'bodyStyle' ? 'e.g. Sedan, SUV, Pickup truck' : `Type the ${label}`}
+                                          onChange={(e) => setFix({ ...fix, value: e.target.value })}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              e.preventDefault();
+                                              saveFix();
+                                            }
+                                            if (e.key === 'Escape') setFix(null);
+                                          }}
+                                        />
+                                        <Button size="sm" className="border-transparent bg-[#1877F2] text-white hover:bg-[#166fe5]" onClick={saveFix}>
+                                          Save
+                                        </Button>
+                                        <Button size="sm" variant="ghost" onClick={() => setFix(null)}>
+                                          Cancel
+                                        </Button>
+                                      </span>
+                                    ) : (
+                                      <>
+                                        <b className="mr-1.5 text-slate-800">{label}</b>
+                                        {cols[k] ? 'is empty' : 'is not in your file'}
+                                        {alsoCg && <span className="ml-1.5 text-xs text-slate-500">(CarGurus needs it too)</span>}
+                                        {k && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setFix({ row: r.row, field: k, value: current, src: 'mp' })}
+                                            className="ml-2 inline-flex items-center gap-1 rounded-md bg-[#1877F2] px-2 py-0.5 text-xs font-semibold text-white hover:bg-[#166fe5]"
+                                          >
+                                            <Pencil className="h-3 w-3" /> Fix for Marketplace
+                                          </button>
+                                        )}
+                                      </>
+                                    )}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
                         )}
                       </div>
                     );
@@ -736,25 +839,17 @@ export default function ImportPage() {
               <LinkButton href="/dealer/inventory" variant="secondary">
                 Cancel
               </LinkButton>
-              {!blocking &&
-                (both ? (
-                  <>
-                    <Button variant="secondary" loading={busy === 'all'} onClick={() => run(R.rows.filter(keep), 'all')}>
-                      Import all {fT} (website only for incomplete cars)
-                    </Button>
-                    <Button loading={busy === 'ready'} onClick={() => run(R.rows.filter((r) => r.ok && keep(r)), 'ready')}>
-                      Import {fReady} CarGurus-ready vehicle{fReady === 1 ? '' : 's'}
-                    </Button>
-                  </>
-                ) : fBad > 0 ? (
-                  <Button loading={busy === 'all'} onClick={() => run(R.rows.filter(keep), 'all')}>
-                    {fT === 1 ? 'Import 1 vehicle' : `Import all ${fT}`} (website only until fixed)
+              {!blocking && (
+                <>
+                  <Button variant="secondary" disabled={!fT} loading={busy === 'all'} onClick={() => run(R.rows.filter(keep), 'all')}>
+                    {fT ? `Import all ${fT}` : 'Nothing new to import'}
                   </Button>
-                ) : (
-                  <Button disabled={!fT} loading={busy === 'all'} onClick={() => run(R.rows.filter(keep), 'all')}>
-                    {fT ? `Import ${fT} vehicle${fT === 1 ? '' : 's'}` : 'Nothing new to import'}
+                  <Button disabled={!fReady} loading={busy === 'ready'} onClick={() => run(R.rows.filter((r) => r.ok && keep(r)), 'ready')}>
+                    Import {fReady} CarGurus-ready vehicle{fReady === 1 ? '' : 's'}
                   </Button>
-                ))}
+                  <MpButton n={fMp} why={mpWhy} busy={busy === 'mp'} onClick={() => run(R.rows.filter((r) => !r.mp.length && keep(r)), 'mp')} />
+                </>
+              )}
             </div>
           </div>
         );
@@ -869,10 +964,23 @@ function Verdict({ tone, title, children }: { tone: 'ok' | 'warn' | 'bad'; title
   );
 }
 
-function Card3({ n, label, sub, tone }: { n: number; label: string; sub: string; tone?: 'ok' | 'bad' }) {
+/** "Import N Marketplace-ready vehicles" — with the reason underneath when some (or all) are not ready */
+function MpButton({ n, why, busy, onClick }: { n: number; why: string; busy: boolean; onClick: () => void }) {
   return (
-    <div className={cx('rounded-2xl border bg-white p-4 shadow-sm', tone === 'ok' ? 'border-emerald-200' : tone === 'bad' ? 'border-red-200' : 'border-slate-200')}>
-      <b className={cx('block font-heading text-3xl font-extrabold', tone === 'ok' ? 'text-emerald-700' : tone === 'bad' ? 'text-red-700' : 'text-slate-900')}>{n}</b>
+    <span className="inline-flex flex-col items-end">
+      <Button className="border-transparent bg-[#1877F2] text-white hover:bg-[#166fe5] disabled:bg-[#1877F2]/50" disabled={!n} loading={busy} onClick={onClick}>
+        <FacebookIcon className="mr-1.5 h-3.5 w-3.5" />
+        Import {n} Marketplace-ready vehicle{n === 1 ? '' : 's'}
+      </Button>
+      {why && <small className="mt-1 max-w-[320px] text-right text-[11px] font-semibold text-red-600">Marketplace: {why}</small>}
+    </span>
+  );
+}
+
+function Card3({ n, label, sub, tone }: { n: number; label: string; sub: string; tone?: 'ok' | 'bad' | 'fb' }) {
+  return (
+    <div className={cx('rounded-2xl border bg-white p-4 shadow-sm', tone === 'ok' ? 'border-emerald-200' : tone === 'bad' ? 'border-red-200' : tone === 'fb' ? 'border-blue-200' : 'border-slate-200')}>
+      <b className={cx('block font-heading text-3xl font-extrabold', tone === 'ok' ? 'text-emerald-700' : tone === 'bad' ? 'text-red-700' : tone === 'fb' ? 'text-[#1877F2]' : 'text-slate-900')}>{n}</b>
       <span className="font-semibold text-slate-800">{label}</span>
       <small className="mt-1 block text-xs text-slate-500">{sub}</small>
     </div>

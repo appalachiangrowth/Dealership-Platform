@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, Check, ChevronDown, Copy, Trash2, X } from 'lucide-react';
 import { api, mediaUrl, siteUrl } from '@/lib/api';
 import { cgIssues, CG_ITEMS } from '@/lib/cargurus';
+import { MP_FIELDS, mpMissing } from '@/lib/marketplace';
+import { FacebookIcon } from '@/lib/facebook';
+import { FbPostModal } from './fb/FbPostModal';
 import { brandRun } from '@/lib/branding';
 import { useToast } from './toast';
 import { useTenant } from './DealerShell';
@@ -25,6 +28,9 @@ export const EMPTY_VEHICLE: Vehicle = {
   dealLabel: '', description: '', features: [], safetyFeatures: [], images: [], status: 'PUBLISHED', featured: false,
   slug: '', title: '', metaTitle: '', metaDescription: '',
 };
+
+/** help under each Marketplace check */
+const HELP_MP: Record<string, string> = {"year": "4 digits", "make": "e.g. Ford", "model": "e.g. F-150", "price": "more than $0", "images": "at least one photo", "mileage": "whole number", "bodyStyle": "e.g. Sedan, SUV", "exteriorColor": "e.g. Silver", "interiorColor": "e.g. Black"};
 
 const TYPES = ['Car', 'Truck', 'SUV'];
 const BODY = ['SUV', 'Sedan', 'Pickup Truck', 'Hatchback', 'Coupe', 'Convertible', 'Wagon', 'Minivan', 'Van / Passenger Van', 'Cargo Van'];
@@ -81,6 +87,8 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   const [all, setAll] = useState<Vehicle[]>([]);
   const [cgOn, setCgOn] = useState(false);
   const [hot, setHot] = useState('');
+  // after "Publish vehicle": the Facebook popup for the saved vehicle (closing it goes back to Inventory)
+  const [fbVehicle, setFbVehicle] = useState<Vehicle | null>(null);
   const router = useRouter();
   const toast = useToast();
   const { tenant } = useTenant();
@@ -179,11 +187,15 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
     setSaving(status);
     try {
       const body = bodyFor(status);
-      if (isNew) await api('/dealer/vehicles', { body });
-      else await api(`/dealer/vehicles/${v.id}`, { method: 'PATCH', body });
+      const out = isNew ? await api('/dealer/vehicles', { body }) : await api(`/dealer/vehicles/${v.id}`, { method: 'PATCH', body });
       setDirty(false);
       toast.ok(msg);
       void brandRun(); // the main photo gets the dealer's branding bands (when photo branding is on)
+      // just published (new, or was a draft / sold): offer to post it on Facebook straight away
+      if (status === 'PUBLISHED' && (isNew || status0 !== 'PUBLISHED')) {
+        setFbVehicle({ ...v, ...body, ...(out && typeof out === 'object' && out.id ? out : { id: v.id }) } as Vehicle);
+        return;
+      }
       router.push('/dealer/inventory');
     } catch (e) {
       toast.error((e as Error).message);
@@ -235,6 +247,9 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   );
   const grid = 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4';
   const ready = issues.length === 0;
+  // Facebook Marketplace: the 9 fields a listing needs (lib/marketplace)
+  const mpMiss = useMemo(() => new Set(mpMissing({ ...v, images: v.images })), [v]);
+  const mpOk = mpMiss.size === 0;
   const badCount = CG_ITEMS.filter(([k]) => bad[k]).length;
 
   return (
@@ -349,6 +364,44 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
           </div>
         </div>
       )}
+
+      {/* live Facebook Marketplace checklist */}
+      <div className={cx('overflow-hidden rounded-2xl border bg-white shadow-sm', mpOk ? 'border-blue-200' : 'border-slate-200')}>
+        <div className={cx('flex items-start gap-2.5 px-5 py-3', mpOk ? 'bg-blue-50 text-blue-900' : 'bg-slate-50 text-slate-800')}>
+          <FacebookIcon className="mt-0.5 h-4 w-4 shrink-0 text-[#1877F2]" />
+          <span>
+            {mpOk ? (
+              <>
+                <b className="block">✓ Ready for Facebook Marketplace</b>
+                <span className="text-sm">All {MP_FIELDS.length} Marketplace details are complete. After publishing you can post it to Marketplace in one click.</span>
+              </>
+            ) : (
+              <>
+                <b className="block">
+                  Facebook Marketplace: {mpMiss.size} of {MP_FIELDS.length} details missing
+                </b>
+                <span className="text-sm">It can still go on your website and in your Facebook groups; Marketplace needs these too.</span>
+              </>
+            )}
+          </span>
+        </div>
+        <div className="grid gap-px bg-slate-100 sm:grid-cols-2 lg:grid-cols-3">
+          {MP_FIELDS.map(([k, label]) => {
+            const miss = mpMiss.has(label);
+            return (
+              <button key={k} type="button" onClick={() => goField(k)} className="flex items-start gap-2.5 bg-white px-4 py-2.5 text-left hover:bg-slate-50">
+                <span className={cx('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full', miss ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-[#1877F2]')}>
+                  {miss ? <X className="h-3 w-3" /> : <Check className="h-3 w-3" />}
+                </span>
+                <span className="min-w-0">
+                  <b className="block text-sm text-slate-800">{label}</b>
+                  <small className={cx('block text-xs', miss ? 'text-red-600' : 'text-slate-500')}>{miss ? `Missing ${label}` : HELP_MP[k]}</small>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <Section title="Photos" hint="The first photo is the cover on your website. JPG, PNG or GIF — other formats are converted to JPG automatically." collapsible={false}>
         <div data-f="images" className={cx('rounded-xl transition', hot === 'images' && 'ring-2 ring-amber-400 ring-offset-4')}>
@@ -486,6 +539,19 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
       >
         It disappears from your website, your feeds and CarGurus. This cannot be undone.
       </Modal>
+
+      <FbPostModal
+        vehicle={fbVehicle}
+        onClose={() => {
+          setFbVehicle(null);
+          router.push('/dealer/inventory');
+        }}
+        intro={
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+            <Check className="h-4 w-4" /> Published on your website. Post it on Facebook now?
+          </div>
+        }
+      />
     </form>
   );
 }
