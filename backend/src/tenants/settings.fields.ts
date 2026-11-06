@@ -53,7 +53,7 @@ export const SETTINGS_FIELDS: Record<string, FieldDef> = {
   dealerCrmEmail: { kind: 'email', max: 160, group: 'settings' },
   dealerCrmFormat: { kind: 'enum', values: ['text', 'adf'], group: 'settings' },
   dealerRadius: { kind: 'text', max: 10, group: 'settings' },
-  feedOperation: { kind: 'text', max: 40, group: 'settings' },
+  feedOperation: { kind: 'text', max: 40, group: 'business' },
   feedCompleteBatch: { kind: 'enum', values: ['Y', 'N'], group: 'settings' },
   feedToken: { kind: 'secret', max: 120, group: 'settings' },
   cargurusFtpHost: { kind: 'text', max: 120, group: 'settings' },

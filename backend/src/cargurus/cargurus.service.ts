@@ -106,7 +106,14 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
 
   async cargurusOn(tenantId: string) {
     const t = await this.tenants.get(tenantId);
-    return !!(await this.tenants.features(t)).cargurus;
+    if (!(await this.tenants.features(t)).cargurus) return false;
+    const s = await this.prisma.tenantSettings.findUnique({ where: { tenantId }, select: { feedOperation: true } });
+    const op = s?.feedOperation;
+    if (op && typeof op === 'string') {
+      const activePlatforms = op.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+      return activePlatforms.includes('cargurus');
+    }
+    return true;
   }
 
   private async liveSub(tenantId: string) {
@@ -440,7 +447,7 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
     });
     const results: Record<string, unknown> = {};
     for (const t of tenants) {
-      if (!(await this.tenants.features(t)).cargurus) continue;
+      if (!(await this.cargurusOn(t.id))) continue;
       results[t.id] = await this.dispatch(t.id, 'cron');
     }
     return results;

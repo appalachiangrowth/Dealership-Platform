@@ -26,6 +26,7 @@ const KEYS = [
   'street', 'city', 'state', 'stateName', 'zip', 'country', 'lat', 'lng',
   'hours', 'hoursShort',
   'facebook', 'instagram', 'google', 'googleReviews', 'youtube', 'tiktok', 'messenger',
+  'feedOperation',
 ];
 
 interface OsmItem {
@@ -505,6 +506,60 @@ export default function BusinessPage() {
                   className="h-8 text-xs sm:text-sm"
                 />
               </Field>
+            </div>
+          </Card>
+
+          {/* Syndication & Destination Platforms */}
+          <Card title="Destination Platforms">
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600">
+                Configure which platforms inventory should be validated and prepared for by default (CarGurus, Facebook Marketplace, or both). When adding vehicles or importing CSV feeds, validation requirements and fix checklists automatically adapt to this configuration without needing to select them each time.
+              </p>
+              <div className="flex flex-wrap gap-2 pt-1">
+                {(['cargurus', 'marketplace'] as const).map((p) => {
+                  const currentStr = form.feedOperation || 'cargurus,marketplace';
+                  const activePlatforms = currentStr.split(',').map((s: string) => s.trim()).filter(Boolean);
+                  const active = activePlatforms.includes(p);
+                  const label = p === 'cargurus' ? 'CarGurus' : 'Facebook Marketplace';
+
+                  const togglePlatform = () => {
+                    let next: string[];
+                    if (active) {
+                      next = activePlatforms.filter((x: string) => x !== p);
+                      if (next.length === 0) return; // keep at least one
+                    } else {
+                      next = [...activePlatforms, p];
+                    }
+                    set('feedOperation', next.join(','));
+                  };
+
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={togglePlatform}
+                      className={`flex items-center gap-2 rounded-lg border-2 px-4 py-2 text-sm font-semibold transition ${
+                        active
+                          ? 'border-blue-600 bg-blue-50 text-blue-700'
+                          : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-flex h-4 w-4 items-center justify-center rounded border-2 ${
+                          active ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white'
+                        }`}
+                      >
+                        {active && (
+                          <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 10 10" fill="none">
+                            <path d="M1.5 5.5L4 8L8.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </span>
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </Card>
         </div>

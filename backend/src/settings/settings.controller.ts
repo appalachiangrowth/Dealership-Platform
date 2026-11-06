@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, ForbiddenException, Get, Patch }
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { TenantsService } from '../tenants/tenants.service.js';
+import { CargurusService } from '../cargurus/cargurus.service.js';
 import { CurrentUser, Perms, TenantId } from '../common/decorators.js';
 import { cleanSettingsPatch } from '../tenants/settings.fields.js';
 import type { AuthUser } from '../common/auth.types.js';
@@ -17,6 +18,7 @@ export class SettingsController {
     private readonly prisma: PrismaService,
     private readonly tenants: TenantsService,
     private readonly audit: AuditService,
+    private readonly cargurus: CargurusService,
   ) {}
 
   @Get()
@@ -39,6 +41,9 @@ export class SettingsController {
     const s = await this.prisma.tenantSettings.upsert({ where: { tenantId }, create: { tenantId, ...data }, update: data });
     if (typeof data.name === 'string' && data.name) await this.prisma.tenant.update({ where: { id: tenantId }, data: { name: data.name } });
     if (s.name && s.phone && (s.street || s.city)) await this.tenants.setOnboarding(tenantId, 'business_done');
+    if ('feedOperation' in data) {
+      await this.cargurus.afterInventoryChange(tenantId, user.login);
+    }
     await this.audit.record('settings.save', { tenantId, actor: user.login, detail: { keys: Object.keys(data) } });
     return this.get(tenantId);
   }

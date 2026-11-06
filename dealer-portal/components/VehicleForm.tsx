@@ -16,6 +16,19 @@ import { useTenant } from './DealerShell';
 import { ImageUploader } from './ImageUploader';
 import { Button, Input, Modal, Select, Textarea, cx } from './ui';
 import { money, vehicleName } from '@/lib/format';
+import {
+  VEHICLE_MAKES,
+  VEHICLE_TYPES,
+  VEHICLE_CONDITIONS,
+  EXTERIOR_COLORS,
+  INTERIOR_COLORS,
+  CYLINDERS,
+  INTERIOR_TYPES,
+  TRANSMISSIONS,
+  DRIVES,
+  FUEL_TYPES,
+  getModelsForMake,
+} from '@/lib/vehicle-options';
 
 const nameOf = (x: Record<string, any>) => vehicleName(x as { year?: number | null; make?: string; model?: string; trim?: string });
 
@@ -77,6 +90,43 @@ function F({ label, name, hot, children, full }: { label: React.ReactNode; name:
   );
 }
 
+/** Platform toggle — CarGurus / Marketplace multi-select */
+function PlatformToggle({ value, onChange }: { value: ('cargurus' | 'marketplace')[]; onChange: (v: ('cargurus' | 'marketplace')[]) => void }) {
+  const toggle = (p: 'cargurus' | 'marketplace') => {
+    if (value.includes(p)) {
+      const next = value.filter((x) => x !== p);
+      if (next.length > 0) onChange(next);
+    } else onChange([...value, p]);
+  };
+  return (
+    <div className="flex flex-wrap gap-2">
+      {(['cargurus', 'marketplace'] as const).map((p) => {
+        const active = value.includes(p);
+        return (
+          <button
+            key={p}
+            type="button"
+            onClick={() => toggle(p)}
+            className={cx(
+              'flex items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-sm font-semibold transition',
+              active ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300',
+            )}
+          >
+            <span className={cx('inline-flex h-4 w-4 items-center justify-center rounded border-2', active ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white')}>
+              {active && (
+                <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 10 10" fill="none">
+                  <path d="M1.5 5.5L4 8L8.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </span>
+            {p === 'cargurus' ? 'CarGurus' : 'Marketplace'}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusField?: string }) {
   const isNew = !initial.id;
   const [v, setV] = useState<Vehicle>(initial);
@@ -90,6 +140,9 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   const [all, setAll] = useState<Vehicle[]>([]);
   const [cgOn, setCgOn] = useState(false);
   const [hot, setHot] = useState('');
+
+  // Platform selection — CarGurus / Marketplace toggles
+  const [platforms, setPlatforms] = useState<('cargurus' | 'marketplace')[]>(['cargurus', 'marketplace']);
   // after "Publish vehicle": the Facebook popup for the saved vehicle (closing it goes back to Inventory)
   const [fbVehicle, setFbVehicle] = useState<Vehicle | null>(null);
   const router = useRouter();
@@ -115,6 +168,20 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
       .then((r) => {
         setAll(r.items);
         setCgOn(!!r.cargurusOn);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Load destination platforms configured in Business details
+  useEffect(() => {
+    api('/dealer/settings')
+      .then((r) => {
+        const op = r?.settings?.feedOperation;
+        if (op && typeof op === 'string') {
+          const list = op.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean) as ('cargurus' | 'marketplace')[];
+          const valid = list.filter((p) => p === 'cargurus' || p === 'marketplace');
+          if (valid.length > 0) setPlatforms(valid);
+        }
       })
       .catch(() => {});
   }, []);
@@ -176,15 +243,26 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
 
   async function save(status: string, msg: string) {
     if (status === 'PUBLISHED') {
-      const miss = (['year', 'make', 'model', 'price', 'mileage'] as const).filter((k) => String(v[k] ?? '').trim() === '');
-      if (miss.length) {
-        toast.error('Fill in the starred fields to publish, or save it as a draft.');
-        goField(miss[0]);
+      if (platforms.length === 0) {
+        toast.error('Select at least one platform (CarGurus or Marketplace).');
         return;
       }
-      if (!v.images.length) {
-        toast.error('Add at least one photo to publish. You can save it as a draft without photos.');
-        goField('images');
+      if (!canPublish) {
+        const issuesList: string[] = [];
+        if (cgSelected && !ready) {
+          issuesList.push(`CarGurus: ${badCount} required field(s) missing or invalid`);
+        }
+        if (mpSelected && !mpOk) {
+          issuesList.push(`Marketplace: ${mpMiss.size} required field(s) missing`);
+        }
+        toast.error(`Please complete all required fields for the selected platform(s): ${issuesList.join('; ')}`);
+        if (cgSelected && !ready && issues[0]) {
+          goField(issues[0].f);
+        } else if (mpSelected && !mpOk) {
+          const firstMiss = Array.from(mpMiss)[0];
+          const f = MP_FIELDS.find(([, l]) => l === firstMiss)?.[0];
+          if (f) goField(f);
+        }
         return;
       }
     } else if (!String(v.make || '').trim() && !String(v.model || '').trim()) {
@@ -248,18 +326,109 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   const pick = (k: string, label: string, opts: string[]) => (
     <F label={label} name={k} hot={hot}>
       <Select name={k} value={v[k] ?? ''} onChange={(e) => set(k, e.target.value)}>
+        <option value="">Select {label}...</option>
         {withOptions(opts, v[k]).map((o) => (
-          <option key={o}>{o}</option>
+          <option key={o} value={o}>{o}</option>
         ))}
       </Select>
     </F>
   );
+
+  // Datalist input for fields that support typing or picking from extensive options
+  const datalistInput = (
+    k: string,
+    label: string,
+    listId: string,
+    opts: string[],
+    props: React.InputHTMLAttributes<HTMLInputElement> = {},
+    customOnChange?: (val: string) => void,
+  ) => (
+    <F label={label} name={k} hot={hot}>
+      <Input
+        name={k}
+        list={listId}
+        value={v[k] ?? ''}
+        onChange={(e) => {
+          if (customOnChange) {
+            customOnChange(e.target.value);
+          } else {
+            set(k, e.target.value);
+          }
+        }}
+        {...props}
+      />
+      <datalist id={listId}>
+        {opts.map((o) => (
+          <option key={o} value={o} />
+        ))}
+      </datalist>
+      {k === dup?.field && (
+        <div className="mt-1.5 text-xs font-semibold text-amber-700">
+          Already in your inventory: <b>{nameOf(dup.v)}</b> ·{' '}
+          <Link className="underline" href={`/dealer/inventory/${dup.v.id}`}>
+            Open it
+          </Link>
+        </div>
+      )}
+    </F>
+  );
+
+  // Dynamic models for current make
+  const availableModels = useMemo(() => {
+    return getModelsForMake(v.make || '');
+  }, [v.make]);
   const grid = 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4';
   const ready = issues.length === 0;
   // Facebook Marketplace: the 9 fields a listing needs (lib/marketplace)
   const mpMiss = useMemo(() => new Set(mpMissing({ ...v, images: v.images })), [v]);
   const mpOk = mpMiss.size === 0;
   const badCount = CG_ITEMS.filter(([k]) => bad[k]).length;
+
+  const cgSelected = platforms.includes('cargurus');
+  const mpSelected = platforms.includes('marketplace');
+
+  // Fields required depending on active platforms
+  const isReq = (k: string) => {
+    if (cgSelected && mpSelected) {
+      return (
+        k === 'vin' || k === 'make' || k === 'model' || k === 'year' || k === 'trim' ||
+        k === 'price' || k === 'mileage' || k === 'images' || k === 'exteriorColor' ||
+        k === 'description' || k === 'stockNumber' || k === 'transmission' ||
+        k === 'bodyStyle' || k === 'interiorColor'
+      );
+    }
+    if (cgSelected) {
+      return (
+        k === 'vin' || k === 'make' || k === 'model' || k === 'year' || k === 'trim' ||
+        k === 'price' || k === 'mileage' || k === 'images' || k === 'exteriorColor' ||
+        k === 'description' || k === 'stockNumber' || k === 'transmission'
+      );
+    }
+    if (mpSelected) {
+      return (
+        k === 'year' || k === 'make' || k === 'model' || k === 'price' ||
+        k === 'images' || k === 'mileage' || k === 'bodyStyle' ||
+        k === 'exteriorColor' || k === 'interiorColor'
+      );
+    }
+    return false;
+  };
+
+  const reqStar = (k: string, label: string) => (isReq(k) ? `${label} *` : label);
+
+  // Validation checks for publishing/adding
+  const missingReqFields = useMemo(() => {
+    const miss: string[] = [];
+    if (cgSelected && !ready) {
+      miss.push('CarGurus requirements');
+    }
+    if (mpSelected && !mpOk) {
+      miss.push('Marketplace requirements');
+    }
+    return miss;
+  }, [cgSelected, mpSelected, ready, mpOk]);
+
+  const canPublish = missingReqFields.length === 0 && platforms.length > 0;
 
   return (
     <form ref={formRef} onSubmit={(e) => e.preventDefault()} className="mx-auto max-w-5xl space-y-5 pb-10" autoComplete="off">
@@ -307,7 +476,13 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
           >
             {!isNew && status0 === 'SOLD' ? 'Keep as sold' : 'Save as draft'}
           </Button>
-          <Button type="button" loading={saving === 'PUBLISHED'} onClick={() => save('PUBLISHED', !isNew && status0 === 'PUBLISHED' ? 'Vehicle saved' : 'Published - live on your website')}>
+          <Button
+            type="button"
+            loading={saving === 'PUBLISHED'}
+            disabled={!canPublish}
+            onClick={() => save('PUBLISHED', !isNew && status0 === 'PUBLISHED' ? 'Vehicle saved' : 'Published - live on your website')}
+            title={!canPublish ? `Please fulfill required fields for ${platforms.join(' & ')} before publishing` : undefined}
+          >
             {!isNew && status0 === 'PUBLISHED' ? 'Save changes' : 'Publish vehicle'}
           </Button>
         </div>
@@ -338,7 +513,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
       )}
 
       {/* live CarGurus checklist */}
-      {cgOn && (
+      {cgSelected && (
         <div className={cx('overflow-hidden rounded-2xl border bg-white shadow-sm', ready ? 'border-emerald-200' : 'border-amber-200')}>
           <div className={cx('px-5 py-3', ready ? 'bg-emerald-50 text-emerald-900' : 'bg-amber-50 text-amber-900')}>
             {ready ? (
@@ -375,44 +550,46 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
       )}
 
       {/* live Facebook Marketplace checklist */}
-      <div className={cx('overflow-hidden rounded-2xl border bg-white shadow-sm', mpOk ? 'border-blue-200' : 'border-slate-200')}>
-        <div className={cx('flex items-start gap-2.5 px-5 py-3', mpOk ? 'bg-blue-50 text-blue-900' : 'bg-slate-50 text-slate-800')}>
-          <FacebookIcon className="mt-0.5 h-4 w-4 shrink-0 text-[#1877F2]" />
-          <span>
-            {mpOk ? (
-              <>
-                <b className="block">✓ Ready for Facebook Marketplace</b>
-                <span className="text-sm">All {MP_FIELDS.length} Marketplace details are complete. After publishing you can post it to Marketplace in one click.</span>
-              </>
-            ) : (
-              <>
-                <b className="block">
-                  Facebook Marketplace: {mpMiss.size} of {MP_FIELDS.length} details missing
-                </b>
-                <span className="text-sm">It can still go on your website and in your Facebook groups; Marketplace needs these too.</span>
-              </>
-            )}
-          </span>
+      {mpSelected && (
+        <div className={cx('overflow-hidden rounded-2xl border bg-white shadow-sm', mpOk ? 'border-blue-200' : 'border-slate-200')}>
+          <div className={cx('flex items-start gap-2.5 px-5 py-3', mpOk ? 'bg-blue-50 text-blue-900' : 'bg-slate-50 text-slate-800')}>
+            <FacebookIcon className="mt-0.5 h-4 w-4 shrink-0 text-[#1877F2]" />
+            <span>
+              {mpOk ? (
+                <>
+                  <b className="block">✓ Ready for Facebook Marketplace</b>
+                  <span className="text-sm">All {MP_FIELDS.length} Marketplace details are complete. After publishing you can post it to Marketplace in one click.</span>
+                </>
+              ) : (
+                <>
+                  <b className="block">
+                    Facebook Marketplace: {mpMiss.size} of {MP_FIELDS.length} details missing
+                  </b>
+                  <span className="text-sm">It can still go on your website and in your Facebook groups; Marketplace needs these too.</span>
+                </>
+              )}
+            </span>
+          </div>
+          <div className="grid gap-px bg-slate-100 sm:grid-cols-2 lg:grid-cols-3">
+            {MP_FIELDS.map(([k, label]) => {
+              const miss = mpMiss.has(label);
+              return (
+                <button key={k} type="button" onClick={() => goField(k)} className="flex items-start gap-2.5 bg-white px-4 py-2.5 text-left hover:bg-slate-50">
+                  <span className={cx('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full', miss ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-[#1877F2]')}>
+                    {miss ? <X className="h-3 w-3" /> : <Check className="h-3 w-3" />}
+                  </span>
+                  <span className="min-w-0">
+                    <b className="block text-sm text-slate-800">{label}</b>
+                    <small className={cx('block text-xs', miss ? 'text-red-600' : 'text-slate-500')}>
+                      {miss ? (k === 'mileage' && String(v.mileage ?? '').trim() !== '' ? 'Mileage must be more than 0' : `Missing ${label}`) : HELP_MP[k]}
+                    </small>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div className="grid gap-px bg-slate-100 sm:grid-cols-2 lg:grid-cols-3">
-          {MP_FIELDS.map(([k, label]) => {
-            const miss = mpMiss.has(label);
-            return (
-              <button key={k} type="button" onClick={() => goField(k)} className="flex items-start gap-2.5 bg-white px-4 py-2.5 text-left hover:bg-slate-50">
-                <span className={cx('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full', miss ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-[#1877F2]')}>
-                  {miss ? <X className="h-3 w-3" /> : <Check className="h-3 w-3" />}
-                </span>
-                <span className="min-w-0">
-                  <b className="block text-sm text-slate-800">{label}</b>
-                  <small className={cx('block text-xs', miss ? 'text-red-600' : 'text-slate-500')}>
-                    {miss ? (k === 'mileage' && String(v.mileage ?? '').trim() !== '' ? 'Mileage must be more than 0' : `Missing ${label}`) : HELP_MP[k]}
-                  </small>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      )}
 
       <Section title="Photos" hint="The first photo is the cover on your website. JPG, PNG or GIF — other formats are converted to JPG automatically." collapsible={false}>
         <div data-f="images" className={cx('rounded-xl transition', hot === 'images' && 'ring-2 ring-amber-400 ring-offset-4')}>
@@ -422,22 +599,42 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
 
       <Section title="The basics" collapsible={false}>
         <div className={grid}>
-          {text('year', 'Year *', { type: 'number', min: 1900 })}
-          {text('make', 'Make *', { placeholder: 'Ford' })}
-          {text('model', 'Model *', { placeholder: 'F-150' })}
-          {text('trim', 'Trim', { placeholder: 'XLT SuperCrew' })}
-          {pick('vehicleType', 'Type', TYPES)}
-          {pick('bodyStyle', 'Body style', BODY)}
+          {text('year', reqStar('year', 'Year'), { type: 'number', min: 1900 })}
+          {datalistInput(
+            'make',
+            reqStar('make', 'Make'),
+            'makes-list',
+            VEHICLE_MAKES,
+            { placeholder: 'e.g. Honda, Toyota, Ford' },
+            (newMake) => {
+              setDirty(true);
+              setV((prev) => {
+                const updated: Vehicle = { ...prev, make: newMake };
+                // If model is set but doesn't belong to new make, clear or keep as user wishes
+                return updated;
+              });
+            },
+          )}
+          {datalistInput(
+            'model',
+            reqStar('model', 'Model'),
+            'models-list',
+            availableModels,
+            { placeholder: v.make ? `Models for ${v.make}...` : 'Select or type model' },
+          )}
+          {text('trim', reqStar('trim', 'Trim'), { placeholder: 'XLT SuperCrew' })}
+          {datalistInput('vehicleType', 'Vehicle Type', 'vehicle-types-list', VEHICLE_TYPES, { placeholder: 'e.g. Sedan, SUV, Truck' })}
+          {pick('bodyStyle', reqStar('bodyStyle', 'Body style'), BODY)}
         </div>
       </Section>
 
       <Section title="Price & identification" collapsible={false}>
         <div className={grid}>
-          {text('price', 'Price ($) *', { type: 'number', min: 0 })}
-          {text('mileage', 'Mileage *', { type: 'number', min: 0 })}
-          {text('stockNumber', 'Stock number')}
-          {text('vin', 'VIN', { placeholder: '17 characters - needed for feeds', maxLength: 17, className: 'font-mono uppercase' })}
-          {pick('condition', 'Condition', ['Used', 'New'])}
+          {text('price', reqStar('price', 'Price ($)'), { type: 'number', min: 0 })}
+          {text('mileage', reqStar('mileage', 'Mileage'), { type: 'number', min: 0 })}
+          {text('stockNumber', reqStar('stockNumber', 'Stock number'))}
+          {text('vin', reqStar('vin', 'VIN'), { placeholder: '17 characters - needed for feeds', maxLength: 17, className: 'font-mono uppercase' })}
+          {pick('condition', 'Condition', VEHICLE_CONDITIONS.length ? VEHICLE_CONDITIONS : ['Used', 'New', 'Rebuilt', 'Salvage'])}
           <F label="Certified pre-owned" name="certified" hot={hot}>
             <Select value={v.certified ? 'Yes' : 'No'} onChange={(e) => set('certified', e.target.value === 'Yes')}>
               <option>No</option>
@@ -451,13 +648,15 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
 
       <Section title="Specifications" hint="Engine, colours, drivetrain, history" open={!isNew || cgOn}>
         <div className={grid}>
-          {text('exteriorColor', 'Exterior colour')}
-          {text('interiorColor', 'Interior colour')}
+          {datalistInput('exteriorColor', reqStar('exteriorColor', 'Exterior colour'), 'ext-colors-list', EXTERIOR_COLORS, { placeholder: 'e.g. Black, White, Silver' })}
+          {datalistInput('interiorColor', reqStar('interiorColor', 'Interior colour'), 'int-colors-list', INTERIOR_COLORS, { placeholder: 'e.g. Black, Gray, Beige' })}
           {text('engine', 'Engine', { placeholder: '3.5L EcoBoost V6' })}
           {text('horsepower', 'Horsepower')}
-          {pick('drivetrain', 'Drivetrain', DRIVE)}
-          {text('transmission', 'Transmission', { placeholder: '10-speed automatic' })}
-          {pick('fuelType', 'Fuel', FUEL)}
+          {pick('drivetrain', 'Drivetrain', DRIVES.length ? DRIVES : DRIVE)}
+          {datalistInput('transmission', reqStar('transmission', 'Transmission'), 'transmissions-list', TRANSMISSIONS, { placeholder: 'e.g. Automatic, Manual, 10 Speed' })}
+          {pick('fuelType', 'Fuel', FUEL_TYPES.length ? FUEL_TYPES : FUEL)}
+          {datalistInput('cylinders', 'Cylinders', 'cylinders-list', CYLINDERS, { placeholder: 'e.g. 4, 6, 8' })}
+          {pick('interiorType', 'Interior Type', INTERIOR_TYPES)}
           {text('mpg', 'MPG', { placeholder: '18 city / 24 hwy' })}
           {text('fuelTank', 'Tank size')}
           {text('doors', 'Doors', { type: 'number', min: 0 })}
@@ -474,7 +673,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
               label={
                 <span className="flex flex-wrap items-center justify-between gap-2">
                   <span>
-                    Description{' '}
+                    {reqStar('description', 'Description')}{' '}
                     <span className="font-normal text-slate-400">
                       {descAuto ? '— written automatically from the details; type in it to change it' : '— your own text'}
                     </span>

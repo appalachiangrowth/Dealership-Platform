@@ -263,9 +263,51 @@ function downloadTemplate() {
   }, 300);
 }
 
+type Platform = 'cargurus' | 'marketplace';
+
+function PlatformToggle({ value, onChange }: { value: Platform[]; onChange: (v: Platform[]) => void }) {
+  const toggle = (p: Platform) => {
+    if (value.includes(p)) {
+      const next = value.filter((x) => x !== p);
+      if (next.length > 0) onChange(next);
+    } else {
+      onChange([...value, p]);
+    }
+  };
+  return (
+    <div className="flex gap-2">
+      {(['cargurus', 'marketplace'] as Platform[]).map((p) => {
+        const active = value.includes(p);
+        const label = p === 'cargurus' ? 'CarGurus' : 'Marketplace';
+        return (
+          <button
+            key={p}
+            type="button"
+            onClick={() => toggle(p)}
+            className={cx(
+              'flex items-center gap-2 rounded-lg border-2 px-4 py-2 text-sm font-semibold transition',
+              active ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300',
+            )}
+          >
+            <span className={cx('inline-flex h-4 w-4 items-center justify-center rounded border-2', active ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white')}>
+              {active && (
+                <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 10 10" fill="none">
+                  <path d="M1.5 5.5L4 8L8.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </span>
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ImportPage() {
   const toast = useToast();
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [platforms, setPlatforms] = useState<Platform[]>(['cargurus', 'marketplace']);
   const [P, setP] = useState<Parsed | null>(null);
   const [fileName, setFileName] = useState('');
   const [map, setMap] = useState<Record<string, string>>({});
@@ -286,6 +328,17 @@ export default function ImportPage() {
       .then((r) => {
         setInv(r.items);
         setCgOn(!!r.cargurusOn);
+      })
+      .catch(() => { });
+
+    api('/dealer/settings')
+      .then((r) => {
+        const op = r?.settings?.feedOperation;
+        if (op && typeof op === 'string') {
+          const list = op.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean) as Platform[];
+          const valid = list.filter((p) => p === 'cargurus' || p === 'marketplace');
+          if (valid.length > 0) setPlatforms(valid);
+        }
       })
       .catch(() => { });
   }, []);
@@ -835,21 +888,72 @@ export default function ImportPage() {
             <p className="text-xs text-slate-500">Vehicles with photos are published on your website; vehicles without photos are saved as drafts.</p>
 
             {/* actions */}
-            <div className="sticky bottom-0 -mx-4 flex flex-wrap justify-end gap-2 border-t border-slate-200 bg-[#f4f6fb]/95 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8">
-              <LinkButton href="/dealer/inventory" variant="secondary">
-                Cancel
-              </LinkButton>
-              {!blocking && (
-                <>
-                  <Button variant="secondary" disabled={!fT} loading={busy === 'all'} onClick={() => run(R.rows.filter(keep), 'all')}>
-                    {fT ? `Import all ${fT}` : 'Nothing new to import'}
-                  </Button>
-                  <Button disabled={!fReady} loading={busy === 'ready'} onClick={() => run(R.rows.filter((r) => r.ok && keep(r)), 'ready')}>
-                    Import {fReady} CarGurus-ready vehicle{fReady === 1 ? '' : 's'}
-                  </Button>
-                  <MpButton n={fMp} why={mpWhy} busy={busy === 'mp'} onClick={() => run(R.rows.filter((r) => !r.mp.length && keep(r)), 'mp')} />
-                </>
-              )}
+            <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-[#f4f6fb]/95 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8">
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span>Configured platforms:</span>
+                <span className="font-semibold text-slate-800">
+                  {platforms.map((p) => (p === 'cargurus' ? 'CarGurus' : 'Marketplace')).join(' & ')}
+                </span>
+                <Link href="/dealer/business" className="ml-1 text-blue-600 hover:underline">
+                  (change in Business details)
+                </Link>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <LinkButton href="/dealer/inventory" variant="secondary">
+                  Cancel
+                </LinkButton>
+                {!blocking && (() => {
+                  // Determine which rows to import based on platform selection
+                  const cgOnly = platforms.includes('cargurus') && !platforms.includes('marketplace');
+                  const mpOnly = platforms.includes('marketplace') && !platforms.includes('cargurus');
+                  const both = platforms.includes('cargurus') && platforms.includes('marketplace');
+
+                  // Missing required columns for each platform
+                  const cgMissingCols = IMP_CG.filter((c) => c[2] === 'req' && !cols[c[0]]).map((c) => c[1]);
+                  const mpMissingCols = MP_FIELDS.filter(([f]) => !cols[f] && !(f === 'bodyStyle' && cols.vehicleType)).map(([, l]) => l);
+
+                  const needsCg = platforms.includes('cargurus');
+                  const needsMp = platforms.includes('marketplace');
+                  const missingForPlatforms: string[] = [
+                    ...(needsCg ? cgMissingCols : []),
+                    ...(needsMp ? mpMissingCols.filter((l) => !cgMissingCols.includes(l)) : []),
+                  ].filter((v, i, a) => a.indexOf(v) === i);
+
+                  const importDisabled = missingForPlatforms.length > 0 || fT === 0;
+                  const rowsToImport = R.rows.filter((r) => {
+                    if (!keep(r)) return false;
+                    if (cgOnly) return r.ok;
+                    if (mpOnly) return r.mp.length === 0;
+                    if (both) return r.ok && r.mp.length === 0;
+                    return true;
+                  });
+                  const qualifiedCount = rowsToImport.length;
+                  const allCount = R.rows.filter(keep).length;
+
+                  return (
+                    <span className="inline-flex flex-col items-end gap-1">
+                      <Button
+                        disabled={importDisabled || qualifiedCount === 0}
+                        loading={busy === 'platform'}
+                        onClick={() => run(rowsToImport, 'platform')}
+                      >
+                        Import {qualifiedCount} vehicle{qualifiedCount === 1 ? '' : 's'}
+                        {qualifiedCount < allCount && <span className="ml-1 opacity-70 text-xs">of {allCount}</span>}
+                      </Button>
+                      {missingForPlatforms.length > 0 && (
+                        <small className="max-w-[340px] text-right text-[11px] font-semibold text-red-600">
+                          Required columns missing: {missingForPlatforms.join(', ')}
+                        </small>
+                      )}
+                      {missingForPlatforms.length === 0 && qualifiedCount === 0 && allCount > 0 && (
+                        <small className="text-[11px] font-semibold text-amber-600">
+                          No vehicles meet all requirements for the selected platform(s)
+                        </small>
+                      )}
+                    </span>
+                  );
+                })()}
+              </div>
             </div>
           </div>
         );

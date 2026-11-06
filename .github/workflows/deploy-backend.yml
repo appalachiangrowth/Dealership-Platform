@@ -1,0 +1,50 @@
+name: Deploy Backend to Contabo VPS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'deploy/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy Backend Service
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Execute Remote Deployment via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
+          command_timeout: 15m
+          script: |
+            set -e
+            echo "==> Connected to Contabo VPS: $(hostname)"
+            
+            DEPLOY_DIR="/var/www/dealer-platform"
+            
+            # If repo does not exist at target, clone it
+            if [ ! -d "$DEPLOY_DIR/.git" ]; then
+              echo "==> Cloning repository into $DEPLOY_DIR..."
+              mkdir -p "$DEPLOY_DIR"
+              git clone https://github.com/appalachiangrowth/Dealership-Platform.git "$DEPLOY_DIR"
+            fi
+            
+            # Ensure deploy scripts are executable
+            cd "$DEPLOY_DIR"
+            git fetch origin main
+            git reset --hard origin/main
+            chmod +x deploy/*.sh
+            
+            # Execute backend deployment
+            bash deploy/deploy-backend.sh
