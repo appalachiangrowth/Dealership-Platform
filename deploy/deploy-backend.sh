@@ -32,9 +32,9 @@ npm run build
 
 echo "==> Zero-downtime reload with PM2..."
 if pm2 describe dealer-platform-backend > /dev/null 2>&1; then
-  pm2 reload dealer-platform-backend --update-env
+  NODE_ENV=production pm2 reload dealer-platform-backend --update-env
 else
-  pm2 start dist/main.js --name "dealer-platform-backend" --time
+  NODE_ENV=production pm2 start dist/src/main.js --name "dealer-platform-backend" --time
 fi
 
 pm2 save

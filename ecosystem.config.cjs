@@ -8,22 +8,16 @@
 module.exports = {
   apps: [
     {
-      name: 'api',
+      name: 'dealer-platform-backend',
       cwd: './backend',
-      script: 'dist/main.js',
+      script: 'dist/src/main.js',
       node_args: '--max-old-space-size=1024',
       env: { NODE_ENV: 'production' },
-      // the API runs the Facebook Chromes: give it time to close them cleanly (logins stay saved) …
       kill_timeout: 20000,
-      // … and never restart it just because the server is busy; Chrome memory is managed by the API itself
       max_restarts: 50,
       restart_delay: 3000,
       exp_backoff_restart_delay: 2000,
       time: true,
-      // Optional — show Facebook a normal (not headless) Chrome on a virtual screen. Needs: apt install xvfb
-      // and FB_HEADLESS=false in backend/.env. Then use these two lines instead of "script" above:
-      // script: '/usr/bin/xvfb-run',
-      // args: '-a --server-args="-screen 0 1440x1000x24" node dist/main.js',
     },
     {
       name: 'portal',
