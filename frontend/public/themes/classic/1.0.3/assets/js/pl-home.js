@@ -36,6 +36,7 @@
     return "data:image/svg+xml;utf8," + encodeURIComponent(s);
   }
   window.plImgFb = function (el) { el.onerror = null; el.src = fbImg(+el.getAttribute("data-i") || 0); };
+  (window.plImgQ || []).forEach(window.plImgFb); window.plImgQ = [];
   function setBg(v, url, i) {
     root.style.setProperty(v, 'url("' + url + '")');
     var t = new Image(); t.onerror = function () { root.style.setProperty(v, 'url("' + fbImg(i) + '")'); }; t.src = url;

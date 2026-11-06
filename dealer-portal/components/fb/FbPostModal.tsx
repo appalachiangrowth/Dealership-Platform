@@ -16,6 +16,7 @@ import { Button, Input, Modal, cx } from '@/components/ui';
 import { money, vehicleName } from '@/lib/format';
 import { FacebookIcon, fb, getSavedFbPostingConfig, saveFbPostingConfig, type FbItem, type FbJob, type FbPostingConfig } from '@/lib/facebook';
 import { mpMissing, MP_FIX } from '@/lib/marketplace';
+import { announceFbActivity } from './FbActivityBar';
 
 type FbCollection = { id: string; name: string; page: { url?: string; name?: string } | null; includePage: boolean; items: FbItem[] };
 type FbAccountView = { actingAs?: { url?: string; name?: string }; pages?: FbItem[]; groups?: FbItem[] };
@@ -265,6 +266,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
       form.append('delayMax', String(next.delayMax || 90));
       const r = await api<{ runId?: string; job?: FbJob }>('/dealer/facebook/post', { method: 'POST', form });
       setRunId(r?.runId || r?.job?.runId || '');
+      announceFbActivity(); // the bar at the top of every page shows it too
       setLive((l) => ({ job: r?.job || l?.job || null, mp: l?.mp || { active: null, queue: [], running: false } }));
       void poll();
     } catch (e) {
@@ -284,6 +286,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
       if (r.queued) {
         setMpListing(null);
         setMpStarted(true);
+        announceFbActivity();
         void poll();
       } else toast.error(`Marketplace: ${r.rejected?.[0]?.error || 'could not be queued'}`);
     } catch (e) {

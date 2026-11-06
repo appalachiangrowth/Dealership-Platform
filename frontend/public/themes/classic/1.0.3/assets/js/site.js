@@ -213,10 +213,35 @@
       + '<input type="text" name="_honey" tabindex="-1" autocomplete="off" style="display:none">'
       + '<button type="submit" class="btn btn-primary btn-block">' + esc(c.button) + ' ' + IC.arrR + '</button></form>';
   }
+  /* Vehicle specifications: shows every filled-in field from the dashboard. Known fields come first in a sensible order, any extra fields added later are picked up automatically. */
+  function vdSpecList(v){
+    var S=function(x){return x==null?'':String(x).trim();};
+    var N=function(x){var n=Number(String(x==null?'':x).replace(/[^0-9.\-]/g,''));return String(x==null?'':x).trim()!==''&&isFinite(n)?n:null;};
+    var known=[
+      ['Year',['year']],['Make',['make']],['Model',['model']],['Trim',['trim']],
+      ['Mileage',['mileage','miles'],function(x){var n=N(x);return n!==null?n.toLocaleString('en-US')+' mi':S(x);}],
+      ['Condition',['condition']],['Body Style',['body','bodyStyle','body_style']],['Vehicle Type',['type']],
+      ['Exterior Color',['ext','exterior','exteriorColor','exterior_color','color']],['Interior Color',['int','interior','interiorColor','interior_color']],
+      ['Drivetrain',['drivetrain','drive']],['Transmission',['trans','transmission']],['Engine',['engine']],['Cylinders',['cylinders']],
+      ['Horsepower',['hp','horsepower'],function(x){var n=N(x);return n!==null&&/^\s*[0-9.,]+\s*$/.test(String(x))?n+' hp':S(x);}],
+      ['Torque',['torque']],['Fuel Type',['fuel','fuelType','fuel_type']],['Fuel Economy',['mpg']],['Fuel Tank',['tank']],
+      ['Doors',['doors']],['Seats',['seats','seating']],['Owners',['owners']],['Accidents',['accidents']],['Title',['titleStatus','title_status']],
+      ['Stock #',['stock','stockNumber','stock_number']],['VIN',['vin']]
+    ];
+    var skip={id:1,slug:1,title:1,name:1,price:1,status:1,featured:1,images:1,img:1,image:1,photos:1,gallery:1,description:1,desc:1,features:1,feat:1,safety:1,metaTitle:1,metaDescription:1,seed:1,deal:1,loc:1,dataset:1,left:1,replace:1,created:1,updated:1,created_at:1,updated_at:1,createdAt:1,updatedAt:1,sort:1,order:1,position:1,url:1,link:1,video:1,dealer:1,dealer_id:1,dealerId:1,thumbnail:1,thumb:1,msrp:1,sale_price:1,salePrice:1,oldPrice:1,old_price:1,draft:1,visible:1,hidden:1,published:1};
+    var used={},out=[];
+    known.forEach(function(k){for(var i=0;i<k[1].length;i++){var key=k[1][i];if(Object.prototype.hasOwnProperty.call(v,key))used[key]=1;}for(var j=0;j<k[1].length;j++){var val=v[k[1][j]];if(val!=null&&typeof val!=='object'&&S(val)!==''){out.push([k[0],k[2]?k[2](val):S(val)]);return;}}});
+    var human=function(k){return k.replace(/[_-]+/g,' ').replace(/([a-z0-9])([A-Z])/g,'$1 $2').replace(/\s+/g,' ').trim().replace(/\b\w/g,function(c){return c.toUpperCase();});};
+    var addObj=function(o){if(!o)return;if(Array.isArray(o)){o.forEach(function(x){if(x&&typeof x==='object'){var l=S(x.label||x.name||x.key),val=S(x.value!=null?x.value:x.val);if(l&&val)out.push([l,val]);}});return;}if(typeof o==='object')Object.keys(o).forEach(function(k){var val=o[k];if(val!=null&&typeof val!=='object'&&S(val)!=='')out.push([human(k),typeof val==='boolean'?(val?'Yes':'No'):S(val)]);});};
+    Object.keys(v||{}).forEach(function(k){if(used[k]||skip[k])return;var val=v[k];if(val==null)return;if(typeof val==='object'){if(/^(specs|specifications|details|attributes|extra|extras|fields|custom|customFields|custom_fields)$/i.test(k))addObj(val);return;}if(S(val)==='')return;out.push([human(k),typeof val==='boolean'?(val?'Yes':'No'):S(val)]);});
+    return out;
+  }
+  function vdFeatureList(v){var a=[];['features','feat','safety','options','equipment'].forEach(function(k){var x=v&&v[k];if(Array.isArray(x))x.forEach(function(f){f=typeof f==='object'&&f?(f.label||f.name||''):f;f=String(f==null?'':f).trim();if(f&&a.indexOf(f)<0)a.push(f);});else if(typeof x==='string'&&x.trim())x.split(/\s*[,;\n]\s*/).forEach(function(f){if(f&&a.indexOf(f)<0)a.push(f);});});return a;}
   function vehiclePageHTML(v) {
     var g = v.images && v.images.length ? v.images : [""];
     var thumbs = g.map(function (src, i) {return '<button type="button" class="g-thumb' + (i === 0 ? " active" : "") + '" data-action="g-thumb" data-i="' + i + '" aria-label="Photo ' + (i + 1) + '"><img src="' + esc(src) + '" alt="" loading="lazy" onerror="imgFallback(this)"></button>';}).join("");
     var kf = [[IC.speed, "Mileage", miles(v.mileage)], [IC.dt, "Drivetrain", esc(v.drivetrain)], [IC.drop, "Exterior", esc(v.ext)], [IC.eng, "Engine", esc(v.engine)], [IC.fuel, "Fuel Type", esc(v.fuel)], [IC.gear, "Transmission", esc(v.trans)]].map(function (k) {return '<div class="kf"><span class="ic">' + k[0] + '</span><span><b>' + k[1] + '</b><strong>' + k[2] + '</strong></span></div>';}).join("");
+    var specCells = vdSpecList(v).map(function (x) {var isVin = x[0] === "VIN", wide = isVin || String(x[1]).length > 16; return '<div class="vd-cell' + (wide ? " is-wide" : "") + '"><span>' + esc(x[0]) + '</span><b>' + esc(x[1]) + (isVin ? '<button type="button" class="copy-btn" data-action="copy-vin" title="Copy VIN">' + IC.copy + '</button>' : "") + '</b></div>';}).join("");
     var vinRow = '<div class="spec-row"><span>VIN</span><b class="vin-val">' + esc(v.vin || "—") + '<button type="button" class="copy-btn" data-action="copy-vin" title="Copy VIN">' + IC.copy + '</button></b></div>';
     var hist = ['<div class="hist-item">' + IC.check + '<span><b>Clean Title</b><p>No issues reported.</p></span></div>',
     '<div class="hist-item">' + IC.check + '<span><b>' + (Number(v.accidents) === 0 ? "0 Accidents Reported" : esc(v.accidents) + " Accidents Reported") + '</b><p>' + (Number(v.accidents) === 0 ? "No accidents or damage reported." : "See dealer for details.") + '</p></span></div>',
@@ -233,18 +258,14 @@
       + '<button type="button" class="g-act" data-action="share" aria-label="Share vehicle">' + IC.share + '</button></div>'
       + '<button type="button" class="g-btn g-prev" data-action="g-prev" aria-label="Previous photo">' + IC.chevL + '</button>'
       + '<button type="button" class="g-btn g-next" data-action="g-next" aria-label="Next photo">' + IC.chevR + '</button>'
-      + '<span class="g-counter">' + IC.cam + '<span id="gCounter">1 / ' + g.length + '</span></span></div>'
+      + '</div>'
       + '<div class="g-thumbs" id="gThumbs">' + thumbs + '</div>'
-      + '<div class="kf-grid">' + kf + '</div>'
-      + '<section><h2>Overview</h2><div class="spec-grid">' + specRow("Make", esc(v.make)) + specRow("Exterior Color", esc(v.ext)) + specRow("Model", esc(v.model)) + specRow("Interior Color", esc(v.int)) + specRow("Year", esc(v.year)) + specRow("Mileage", miles(v.mileage)) + specRow("Trim", esc(v.trim)) + specRow("Condition", esc(v.condition)) + specRow("Body Type", esc(v.body)) + specRow("Stock Number", esc(v.stock)) + specRow("Doors", esc(v.doors)) + specRow("Seats", esc(v.seats)) + vinRow + '</div></section>'
-      + '<section><h2>Fuel Economy</h2><div class="spec-grid">' + specRow("Fuel Type", esc(v.fuel)) + specRow("Fuel Tank Size", esc(v.tank)) + specRow("MPG (City/Hwy)", esc(v.mpg)) + specRow("Transmission", esc(v.trans)) + '</div></section>'
-      + '<section><h2>Performance</h2><div class="spec-grid">' + specRow("Engine", esc(v.engine)) + specRow("Horsepower", esc(v.hp)) + specRow("Drivetrain", esc(v.drivetrain)) + specRow("Body Style", esc(v.body)) + '</div></section>'
+      + '<section><h2>' + esc(T("v_about")) + '</h2><p class="d-desc">' + esc(v.description) + '</p><p class="d-desc" style="margin-top:12px;font-size:13.5px;color:var(--muted)">' + esc(T("v_note")) + (S.tel ? ' ' + telA() + '.' : "") + '</p></section>'
       + (v.safety && v.safety.length ? '<section><h2>Safety</h2><div class="chips">' + v.safety.map(function (f) {return '<span class="chip">' + esc(f) + '</span>';}).join("") + '</div></section>' : "")
       + (v.features && v.features.length ? '<section><h2>Comfort &amp; Features</h2><div class="chips">' + v.features.map(function (f) {return '<span class="chip">' + esc(f) + '</span>';}).join("") + '</div></section>' : "")
       + '<section><h2>' + esc(T("v_history")) + '</h2>' + hist + '</section>'
-      + '<section><h2>' + esc(T("v_about")) + '</h2><p class="d-desc">' + esc(v.description) + '</p><p class="d-desc" style="margin-top:12px;font-size:13.5px;color:var(--muted)">' + esc(T("v_note")) + (S.tel ? ' ' + telA() + '.' : "") + '</p></section>'
       + '</div>'
-      + '<aside class="d-right"><div class="side-card stick"><div class="d-head"><h1>' + esc(vName(v)) + '</h1>'
+      + '<aside class="d-right"><div class="side-card vd-main-card"><div class="d-head"><h1>' + esc(vName(v)) + '</h1>'
       + '<p class="d-loc">' + IC.pin + ' ' + esc(S.city_state || "") + ' • Stock #' + esc(v.stock || "—") + '</p>'
       + '<div><span class="d-price">' + money(v.price) + '</span></div>'
       + (v.deal ? '<span class="deal-badge">' + IC.down + ' ' + esc(T("v_deal")) + ' • ' + esc(v.deal) + '</span>' : "")
@@ -253,8 +274,8 @@
       + '<div class="contact-row">' + (S.tel ? '<a href="' + esc(S.tel_link) + '">' + esc(T("v_call")) + '</a>' : "")
       + (S.messenger ? '<a href="' + esc(S.messenger) + '" target="_blank" rel="noopener">' + IC.chat + ' ' + esc(T("v_messenger")) + '</a>' : "")
       + (S.facebook ? '<a href="' + esc(S.facebook) + '" target="_blank" rel="noopener"></a>' : "") + '</div>'
-      + leadFormHTML(v)
-      + '</div></aside></div></div>'
+      + '<div class="vd-specs-block"><h3 class="vd-specs-title">Vehicle Specifications</h3><div class="vd-spec-grid">' + specCells + '</div></div>'
+      + '</div><div class="side-card vd-lead-card">' + leadFormHTML(v) + '</div></aside></div></div>'
       + '<div class="container similar-wrap"><div class="section-head"><div><span class="label">' + esc(T("v_similar_label")) + '</span><h2>' + esc(T("v_similar_title")) + '</h2></div><a class="link-arrow" href="#/inventory">' + esc(T("v_view_all")) + ' ' + IC.arrR + '</a></div><div class="v-grid g3">' + similar.map(function (s, i) {return vehicleCard(s, i * 0.08);}).join("") + '</div></div>';
   }
   function recalc() {

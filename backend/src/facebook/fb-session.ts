@@ -2265,8 +2265,8 @@ export function createFbSession(opts) {
   }
 
   // ---------- state for the portal ----------
-  async function state(logAfter = 0) {
-    S.lastSeen = Date.now();
+  async function state(logAfter = 0, peek = false) {
+    if (!peek) S.lastSeen = Date.now();
     const open = !!(browser && page && !page.isClosed());
     const li = open ? await isLoggedIn() : null;
     if (li) S.loginLost = false;

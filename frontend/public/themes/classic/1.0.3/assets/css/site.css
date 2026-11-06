@@ -2899,3 +2899,35 @@ input, select, textarea { max-width: 100%; }
 .pl-card .pl-pr b{font-family:var(--font-heading-home);font-size:21px;font-weight:800;color:var(--home-ink)}
 .pl-card .pl-pr span{color:var(--link);font-size:13px;font-weight:600}
 .pl-card.reveal.in:hover{transform:translateY(-5px)}
+
+/* ---- Vehicle page refresh: specs sit beside the photos, 4 across ---- */
+.g-counter{display:none!important}
+.detail-grid{grid-template-columns:minmax(0,1.08fr) minmax(0,1fr)!important;gap:32px}
+.d-left section:first-of-type{margin-top:22px}
+.d-head h1{font-size:calc(clamp(1.2rem,1.8vw,1.55rem) * var(--scale-heading,1));line-height:1.25}
+.vd-main-card{margin-top:0}
+.vd-specs-block{margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}
+.vd-specs-title{font-size:15px;margin:0 0 12px}
+.vd-spec-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-flow:row dense;gap:8px}
+.vd-cell{min-width:0;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:var(--light,#f4f7fb)}
+.vd-cell.is-wide{grid-column:span 2}
+.vd-cell span{display:block;font-size:11.5px;line-height:1.3;color:var(--muted);margin-bottom:4px}
+.vd-cell b{display:flex;align-items:center;gap:6px;font:600 14.5px/1.3 var(--fh,inherit);color:var(--navy);overflow-wrap:anywhere}
+.vd-cell .copy-btn{flex-shrink:0;width:24px;height:24px}
+.vd-lead-card{margin-top:18px}
+@media(max-width:1180px){.vd-spec-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:980px){.detail-grid{grid-template-columns:minmax(0,1fr)!important}.d-left,.d-right{min-width:0}}
+@media(max-width:560px){.vd-spec-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.vd-lead-card .lead-form{margin-top:0!important;padding-top:0!important;border-top:0!important}
+.mobile-menu .mm-addr{font-size:14px;font-weight:500;opacity:.8}
+.mobile-menu .mm-social{display:flex;gap:10px;padding:6px 0 12px}
+.mobile-menu .mm-social a{display:inline-grid!important;place-items:center;width:42px;height:42px;padding:0!important;border-radius:50%;border:1px solid rgba(255,255,255,.25)!important;color:#fff!important;background:rgba(255,255,255,.06)}
+.mobile-menu .mm-social svg{width:18px;height:18px}
+.pl-tsoc{display:inline-flex;gap:10px;align-items:center}
+@media(max-width:980px){
+  .detail-grid{display:flex!important;flex-direction:column}
+  .detail-grid>.d-left{display:contents}
+  .detail-grid .g-main{order:1}.detail-grid .g-thumbs{order:2}
+  .detail-grid>.d-right{order:3;width:100%}
+  .detail-grid .d-left>section{order:4;width:100%}
+}

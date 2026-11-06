@@ -275,10 +275,10 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
 
   // ───────────────────────── connection & live view ─────────────────────────
 
-  async state(tenantId: string, u: AuthUser, logAfter: number) {
+  async state(tenantId: string, u: AuthUser, logAfter: number, peek = false) {
     const { uk, account } = await this.ctx(tenantId, u);
     const s = this.session(tenantId, uk);
-    const st = await s.state(logAfter);
+    const st = await s.state(logAfter, peek);
     let a = account;
     if (st.loggedIn) {
       const id = await s.fbUserId().catch(() => '');

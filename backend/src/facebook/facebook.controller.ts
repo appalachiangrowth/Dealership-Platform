@@ -24,8 +24,9 @@ export class FacebookController {
 
   /** status, activity log (after ?log=<last seq>), posting progress, connected account */
   @Get('state')
-  state(@TenantId() t: string, @CurrentUser() u: AuthUser, @Query('log') log?: string) {
-    return this.fb.state(t, u, Number(log) || 0);
+  state(@TenantId() t: string, @CurrentUser() u: AuthUser, @Query('log') log?: string, @Query('peek') peek?: string) {
+    // peek=1: the progress bar on every portal page — it must not keep an unused Facebook browser awake
+    return this.fb.state(t, u, Number(log) || 0, peek === '1');
   }
 
   @Post('connect')

@@ -9,6 +9,7 @@ import {
 import { api, auth, mediaUrl, siteUrl, PLATFORM_ADMIN_URL } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { Loading, cx } from './ui';
+import { FbActivityBar } from './fb/FbActivityBar';
 
 export interface DealerTenant {
   id: string;
@@ -228,6 +229,8 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
               <span />
             )}
           </header>
+          {/* Facebook posting / Marketplace progress, on every page until it is done */}
+          <FbActivityBar enabled={tenant.features.facebook !== false && can('inventory')} />
           <main className={cx('mx-auto w-full flex-1 px-4 py-6 sm:px-8', wide ? 'max-w-none sm:py-6' : 'max-w-7xl sm:py-8')}>{children}</main>
         </div>
       </div>
