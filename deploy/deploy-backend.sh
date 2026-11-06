@@ -23,8 +23,9 @@ echo "==> Installing dependencies..."
 npm install --omit=dev --ignore-scripts=false
 echo "==> Generating Prisma client..."
 npx prisma generate
-echo "==> Synchronizing database schema..."
-npx prisma db push --skip-generate
+
+# Note: We do NOT run prisma db push or migrations because production database
+# (e.g. Supabase) already has all tables and live production data.
 
 echo "==> Building backend..."
 npm run build
