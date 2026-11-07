@@ -131,14 +131,13 @@ export class FeedsService {
         }
       }
       const rawPrice = v.price !== null && v.price !== undefined ? Number(v.price) : 0;
-      const combined = rawPrice > 0 ? (fee > 0 ? rawPrice + fee : rawPrice) : 0;
       return {
         vin: v.vin,
         make: v.make,
         model: v.model,
         year: v.year ? String(v.year) : '',
         trim: v.trim,
-        price: combined > 0 ? String(combined) : (v.price !== null ? String(v.price) : ''),
+        price: rawPrice > 0 ? String(rawPrice) : (v.price !== null ? String(v.price) : ''),
         processing_fee: fee > 0 ? String(fee) : '',
         mileage: v.mileage !== null ? String(v.mileage) : '',
         images: v.images.map((u) => this.absUrl(u, site)),
