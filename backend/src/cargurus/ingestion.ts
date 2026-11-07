@@ -385,7 +385,8 @@ function csvCell(v: string) {
 
 /** Additional column names of the records, in the order they first appear (never one of the 20 CarGurus columns). */
 export function extraHeaders(records: CgRecord[]): string[] {
-  const taken = new Set(headerRow().map(norm));
+  const feeKeys = ['processingfee', 'processing_fee', 'profee', 'docfee', 'documentationfee', 'dealerfee', 'adminfee'];
+  const taken = new Set([...headerRow().map(norm), ...feeKeys]);
   const out: string[] = [];
   const seen = new Set<string>();
   for (const r of records)

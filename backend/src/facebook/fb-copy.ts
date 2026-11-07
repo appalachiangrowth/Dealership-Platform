@@ -153,8 +153,19 @@ export function templateCopy(v, s) {
   const title = fill(s.titleTemplate || DEFAULT_SETTINGS.titleTemplate, t).replace(/\s+/g, ' ').slice(0, 100);
   t.title = title;
   // saved settings that still hold one of our earlier default templates get the current plain one
-  const tpl = !s.descriptionTemplate || s.descriptionTemplate === OLD_DESCRIPTION_TEMPLATE || s.descriptionTemplate === ICON_TEMPLATE ? DEFAULT_SETTINGS.descriptionTemplate : s.descriptionTemplate;
-  const description = fill(tpl, t);
+  let tpl = !s.descriptionTemplate || s.descriptionTemplate === OLD_DESCRIPTION_TEMPLATE || s.descriptionTemplate === ICON_TEMPLATE ? DEFAULT_SETTINGS.descriptionTemplate : s.descriptionTemplate;
+  // Ensure processing fee is included in the description template if not already present
+  if (t.processing_fee && !tpl.includes('{processing_fee}')) {
+    if (tpl.includes('{history}')) {
+      tpl = tpl.replace('{history}', 'Processing fee: {processing_fee}\nHistory: {history}');
+    } else {
+      tpl = tpl + '\nProcessing fee: {processing_fee}';
+    }
+  }
+  let description = fill(tpl, t);
+  if (t.processing_fee && !description.toLowerCase().includes('processing fee:')) {
+    description += `\nProcessing fee: ${t.processing_fee}`;
+  }
   const slug = (x) => String(x || '').replace(/[^A-Za-z0-9]/g, '');
   const tags = [s.defaultHashtags, slug(v.make), slug(v.make) + slug(v.model), slug(v.model), v.bodyStyle && slug(v.bodyStyle),
     s.city && slug(s.city) + 'cars', v.year && slug(v.make) && v.year + slug(v.make)].filter(Boolean).join(' ');
@@ -212,7 +223,14 @@ export async function aiCopy(v, s) {
 export function fbDescription(v, s) {
   const parts = [];
   if (v.title) parts.push(v.title);
-  if (v.description) parts.push(v.title && v.description.startsWith(v.title) ? v.description.slice(v.title.length).trim() : v.description);
+  if (v.description) {
+    let desc = v.title && v.description.startsWith(v.title) ? v.description.slice(v.title.length).trim() : v.description;
+    const fee = v.processingFee ? Number(v.processingFee) : 0;
+    if (fee > 0 && !desc.toLowerCase().includes('processing fee:')) {
+      desc += `\nProcessing fee: $${fmtNum(fee)}`;
+    }
+    parts.push(desc);
+  }
   if (v.hashtags) parts.push(cleanTags(v.hashtags));
   if (s.disclaimer) parts.push(s.disclaimer);
   return parts.filter(Boolean).join('\n\n').slice(0, 9000);

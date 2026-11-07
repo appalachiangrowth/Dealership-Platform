@@ -37,7 +37,12 @@ export function vehicleExtra(v: Vehicle): Record<string, string> {
   if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {};
   const out: Record<string, string> = {};
   for (const [h, raw] of Object.entries(stored as Record<string, unknown>)) {
-    const f = EXTRA_FIELD[cg.norm(h)];
+    const nh = cg.norm(h);
+    // Never export processing_fee as an extra column at the end because it's combined into Price
+    if (['processingfee', 'processing_fee', 'profee', 'docfee', 'documentationfee', 'dealerfee', 'adminfee'].includes(nh)) {
+      continue;
+    }
+    const f = EXTRA_FIELD[nh];
     if (!f) {
       out[h] = String(raw ?? '');
       continue;

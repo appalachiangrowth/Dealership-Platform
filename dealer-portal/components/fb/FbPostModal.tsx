@@ -88,8 +88,10 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
 
     const name = vehicleName(v);
     const priceStr = v.price ? money(v.price) : '';
+    const feeNum = Number(v.processingFee || (v.extra && typeof v.extra === 'object' && (v.extra.processingFee || v.extra.processing_fee)) || 0);
+    const feeStr = feeNum > 0 ? money(feeNum) : '';
     const milesStr = v.mileage ? `${(Number(v.mileage) || 0).toLocaleString()} miles` : '';
-    setCaption(`${name}\n${priceStr ? `Price: ${priceStr}\n` : ''}${milesStr ? `Mileage: ${milesStr}\n` : ''}${v.stockNumber ? `Stock number: ${v.stockNumber}\n` : ''}\nCall or visit us today.`);
+    setCaption(`${name}\n${priceStr ? `Price: ${priceStr}\n` : ''}${feeStr ? `Processing fee: ${feeStr}\n` : ''}${milesStr ? `Mileage: ${milesStr}\n` : ''}${v.stockNumber ? `Stock number: ${v.stockNumber}\n` : ''}\nCall or visit us today.`);
     setHashtags(saved?.hashtags || '#carsforsale #usedcars');
     setLoadingText(true);
     fb.post<{ copy: { hashtags: string }; text: string }>(`mp/vehicles/${v.id}/generate`, { ai: false, save: false })
