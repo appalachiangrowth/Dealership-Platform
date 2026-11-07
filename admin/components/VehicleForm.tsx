@@ -79,7 +79,7 @@ export function VehicleForm({ initial }: { initial: Vehicle }) {
   async function save(status?: string) {
     setSaving(true);
     try {
-      const body = { ...v, ...(status ? { status } : {}) };
+      const body: Record<string, any> = { ...v, ...(status ? { status } : {}) };
       delete body.id;
       delete body.tenantId;
       delete body.createdAt;
@@ -124,7 +124,7 @@ export function VehicleForm({ initial }: { initial: Vehicle }) {
     >
       <div className="sticky top-0 z-20 -mx-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-[#f4f6fb]/95 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8">
         <div>
-          <h1 className="font-heading text-xl font-extrabold text-slate-900">{v.id ? vehicleName(v) : 'Add vehicle'}</h1>
+          <h1 className="font-heading text-xl font-extrabold text-slate-900">{v.id ? vehicleName(v as any) : 'Add vehicle'}</h1>
           <div className="text-xs text-slate-500">
             Status: <b>{String(v.status).toLowerCase()}</b>
             {v.id && v.status === 'PUBLISHED' && tenant && (
@@ -278,7 +278,7 @@ export function VehicleForm({ initial }: { initial: Vehicle }) {
           </>
         }
       >
-        {vehicleName(v)} will be removed from your website and feeds. Tip: use “Mark sold” to keep it in your records.
+        {vehicleName(v as any)} will be removed from your website and feeds. Tip: use “Mark sold” to keep it in your records.
       </Modal>
     </form>
   );
