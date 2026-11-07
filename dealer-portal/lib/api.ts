@@ -1,6 +1,17 @@
 'use client';
 
-export const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/+$/, '');
+function getApiUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL;
+  // If running in browser over HTTPS and configured API is HTTP, use relative /api proxy to avoid Mixed Content
+  if (typeof window !== 'undefined') {
+    if (!envUrl || (window.location.protocol === 'https:' && envUrl.startsWith('http://'))) {
+      return '/api';
+    }
+  }
+  return (envUrl || 'http://localhost:4000').replace(/\/+$/, '');
+}
+
+export const API_URL = getApiUrl();
 
 /** Dealership Portal (dealers log in here) and Platform Admin (platform owners) are two separate apps. */
 export const DEALER_PORTAL_URL = (process.env.NEXT_PUBLIC_DEALER_PORTAL_URL || 'http://localhost:3000').replace(/\/+$/, '');
