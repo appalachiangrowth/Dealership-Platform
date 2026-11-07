@@ -57,6 +57,8 @@ export function autoDescription(v: V, features: string[] = [], safety: string[] 
   if (hist.length) out.push(`${list(hist).replace(/^./, (c) => c.toUpperCase())}.`);
 
   let text = out.join(' ');
+  const fee = num(v.processingFee || (v.extra && typeof v.extra === 'object' && (v.extra.processingFee || v.extra.processing_fee)));
+  if (fee) text += ` Processing fee: $${fee.toLocaleString('en-US')}.`;
   const options = [...features, ...safety.filter((x) => !features.includes(x))].map(s).filter(Boolean);
   if (options.length) text += `\n\nInstalled options: ${options.join(', ')}.`;
   const ids = [s(v.stockNumber) && `Stock number ${s(v.stockNumber)}`, s(v.vin) && `VIN ${s(v.vin).toUpperCase()}`].filter(Boolean);

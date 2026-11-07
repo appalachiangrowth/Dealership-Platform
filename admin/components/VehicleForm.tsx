@@ -13,7 +13,7 @@ import { vehicleName } from '@/lib/format';
 export type Vehicle = Record<string, any> & { id?: string; images: string[]; features: string[]; safetyFeatures: string[] };
 
 export const EMPTY_VEHICLE: Vehicle = {
-  year: '', make: '', model: '', trim: '', vehicleType: 'Car', bodyStyle: '', condition: 'Used', certified: false, price: '', msrp: '', mileage: '',
+  year: '', make: '', model: '', trim: '', vehicleType: 'Car', bodyStyle: '', condition: 'Used', certified: false, price: '', processingFee: '', msrp: '', mileage: '',
   stockNumber: '', vin: '', exteriorColor: '', interiorColor: '', engine: '', horsepower: '', drivetrain: '', transmission: '', fuelType: '', mpg: '',
   fuelTank: '', doors: '', seats: '', owners: '', accidents: '', dealLabel: '', description: '', features: [], safetyFeatures: [], images: [],
   status: 'DRAFT', featured: false, title: '', metaTitle: '', metaDescription: '',
@@ -186,6 +186,7 @@ export function VehicleForm({ initial }: { initial: Vehicle }) {
           <Card title="Price & identification">
             <div className="grid gap-4 sm:grid-cols-3">
               {text('price', 'Price ($)', { inputMode: 'decimal' })}
+              {text('processingFee', 'Processing Fee ($)', { inputMode: 'decimal', placeholder: 'e.g. 499' })}
               {text('msrp', 'MSRP ($)', { inputMode: 'decimal' })}
               {text('mileage', 'Mileage', { inputMode: 'numeric' })}
               {text('vin', 'VIN', { maxLength: 17, className: 'font-mono uppercase' })}

@@ -47,6 +47,7 @@ const DETAILED_TEMPLATE =
   'Transmission: {transmission} | Drivetrain: {drivetrain}\n' +
   'Fuel: {fuel} | MPG: {mpg}\n' +
   'Doors: {doors} | Seats: {seats}\n' +
+  'Processing fee: {processing_fee}\n' +
   'History: {history}\n' +
   '{options_block}\n' +
   'Stock number: {stock} | VIN: {vin}\n\n' +
@@ -108,6 +109,7 @@ function tokens(v, s) {
     options_block: features.length + safety.length ? '\nInstalled options: ' + [...features, ...safety].join(', ') + '\n' : '',
     year: v.year || '', make: v.make || '', model: v.model || '', trim: v.trim || '',
     price: v.price ? '$' + fmtNum(v.price) : '', mileage: fmtNum(v.mileage), vin: v.vin || '', stock: v.stock || '',
+    processing_fee: v.processingFee ? '$' + fmtNum(v.processingFee) : '',
     exterior: v.exteriorColor || '', interior: v.interiorColor || '', transmission: v.transmission || '',
     fuel: v.fuelType || '', drivetrain: v.drivetrain || '', engine: v.engine || '', body: v.bodyStyle || '',
     condition: v.condition || '', title: v.title || '',
@@ -161,7 +163,7 @@ export function templateCopy(v, s) {
 
 export async function aiCopy(v, s) {
   const facts = {
-    year: v.year, make: v.make, model: v.model, trim: v.trim, price: v.price, mileage: v.mileage, condition: v.condition,
+    year: v.year, make: v.make, model: v.model, trim: v.trim, price: v.price, processingFee: v.processingFee, mileage: v.mileage, condition: v.condition,
     bodyStyle: v.bodyStyle, exteriorColor: v.exteriorColor, interiorColor: v.interiorColor, transmission: v.transmission,
     fuelType: v.fuelType, drivetrain: v.drivetrain, engine: v.engine, features: v.features, vin: v.vin, stock: v.stock,
     horsepower: v.horsepower, mpg: v.mpg, doors: v.doors, seats: v.seats, owners: v.owners, accidents: v.accidents,

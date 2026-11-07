@@ -37,7 +37,7 @@ export type Vehicle = Record<string, any> & { id?: string; images: string[]; fea
 /** A new vehicle starts like in the old portal. */
 export const EMPTY_VEHICLE: Vehicle = {
   year: new Date().getFullYear() - 3, make: '', model: '', trim: '', vehicleType: 'Car', bodyStyle: 'Sedan', condition: 'Used', certified: false,
-  price: '', msrp: '', mileage: '', stockNumber: '', vin: '', exteriorColor: '', interiorColor: '', engine: '', horsepower: '',
+  price: '', processingFee: '', msrp: '', mileage: '', stockNumber: '', vin: '', exteriorColor: '', interiorColor: '', engine: '', horsepower: '',
   drivetrain: 'Front-Wheel Drive', transmission: '', fuelType: 'Gasoline', mpg: '', fuelTank: '', doors: '4', seats: '5', owners: '1', accidents: '0',
   dealLabel: '', description: '', features: [], safetyFeatures: [], images: [], status: 'PUBLISHED', featured: false,
   slug: '', title: '', metaTitle: '', metaDescription: '',
@@ -631,6 +631,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
       <Section title="Price & identification" collapsible={false}>
         <div className={grid}>
           {text('price', reqStar('price', 'Price ($)'), { type: 'number', min: 0 })}
+          {text('processingFee', 'Processing Fee ($)', { type: 'number', min: 0, placeholder: 'e.g. 499' })}
           {text('mileage', reqStar('mileage', 'Mileage'), { type: 'number', min: 0 })}
           {text('stockNumber', reqStar('stockNumber', 'Stock number'))}
           {text('vin', reqStar('vin', 'VIN'), { placeholder: '17 characters - needed for feeds', maxLength: 17, className: 'font-mono uppercase' })}

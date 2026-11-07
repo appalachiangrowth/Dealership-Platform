@@ -646,9 +646,20 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
   }, l: ReturnType<FacebookService['emptyListing']> | null) {
     const listing = l || this.emptyListing();
     const cond = /new/i.test(v.condition) ? 'new' : v.certified || /cert|cpo/i.test(v.condition) ? 'cpo' : 'used';
+    let fee = 0;
+    const ex = (v as unknown as { extra?: Record<string, unknown> }).extra;
+    if (ex && typeof ex === 'object' && !Array.isArray(ex)) {
+      for (const [k, val] of Object.entries(ex)) {
+        if (['processingfee', 'processing_fee', 'profee', 'docfee', 'documentationfee', 'dealerfee', 'adminfee'].includes(k.toLowerCase().replace(/[^a-z0-9]/g, ''))) {
+          const num = parseFloat(String(val || '').replace(/[^0-9.]/g, ''));
+          if (!isNaN(num) && num > 0) { fee = num; break; }
+        }
+      }
+    }
     return {
       id: v.id, stock: v.stockNumber, vin: v.vin, year: v.year, make: v.make, model: v.model, trim: v.trim,
       price: v.price === null || v.price === undefined ? null : Math.round(Number(v.price)), mileage: v.mileage, condition: cond,
+      processingFee: fee > 0 ? fee : null,
       fbCondition: listing.fbCondition, cleanTitle: listing.cleanTitle, bodyStyle: v.bodyStyle || v.vehicleType,
       exteriorColor: v.exteriorColor, interiorColor: v.interiorColor, transmission: v.transmission, fuelType: v.fuelType,
       drivetrain: v.drivetrain, engine: v.engine, features: v.features,
