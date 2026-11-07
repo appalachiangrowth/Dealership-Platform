@@ -11,6 +11,8 @@ export default function EditVehicle() {
   if (loading) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
-  const v = { ...EMPTY_VEHICLE, ...Object.fromEntries(Object.entries(data).map(([k, x]) => [k, x === null ? '' : x])) };
+  const extraFee = data.extra && typeof data.extra === 'object' ? data.extra.processingFee || data.extra.processing_fee || '' : '';
+  const v = { ...EMPTY_VEHICLE, processingFee: extraFee, ...Object.fromEntries(Object.entries(data).map(([k, x]) => [k, x === null ? '' : x])) };
+  if (extraFee && !v.processingFee) v.processingFee = extraFee;
   return <VehicleForm key={data.id} initial={v as never} />;
 }

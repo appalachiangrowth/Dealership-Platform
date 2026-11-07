@@ -19,7 +19,6 @@ export const COLUMNS: [ColumnKey, string, boolean, 'vehicle' | 'dealer'][] = [
   ['year', 'Year', true, 'vehicle'],
   ['trim', 'Trim', true, 'vehicle'],
   ['price', 'Price', true, 'vehicle'],
-  ['processing_fee', 'Processing Fee', false, 'vehicle'],
   ['mileage', 'Mileage', true, 'vehicle'],
   ['images', 'Image URLs', true, 'vehicle'],
   ['ext', 'Exterior Color', true, 'vehicle'],
@@ -344,7 +343,18 @@ export function profile(m: DealerMeta) {
 }
 
 export function exportValues(r: CgRecord, m: DealerMeta): string[] {
-  const price = Number(r.price);
+  let price = Number(r.price);
+  const ex = r._extra || {};
+  const feeKeys = ['processingfee', 'processing_fee', 'profee', 'docfee', 'documentationfee', 'dealerfee', 'adminfee'];
+  for (const [k, v] of Object.entries(ex)) {
+    if (feeKeys.includes(norm(k))) {
+      const f = parseFloat(String(v || '').replace(/[^0-9.]/g, ''));
+      if (!isNaN(f) && f > 0) {
+        price += f;
+        break;
+      }
+    }
+  }
   return [
     r.vin,
     r.make,
