@@ -1,17 +1,17 @@
 'use client';
 
 function getApiUrl(): string {
-  const envUrl = process.env.NEXT_PUBLIC_API_URL;
-  // If running in browser over HTTPS and configured API is HTTP, use relative /api proxy to avoid Mixed Content
+  // In client browser, ALWAYS route through Next.js rewrite proxy relative path
   if (typeof window !== 'undefined') {
-    if (!envUrl || (window.location.protocol === 'https:' && envUrl.startsWith('http://'))) {
-      return '/api';
-    }
+    return '/api';
   }
-  return (envUrl || 'http://localhost:4000').replace(/\/+$/, '');
+  const raw = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://5.183.35.10:4000';
+  // Sanitize any accidental brackets, parentheses, or trailing slashes
+  return raw.replace(/[<>[\]()]/g, '').trim().replace(/\/+$/, '');
 }
 
 export const API_URL = getApiUrl();
+export const API_BASE_URL = API_URL;
 
 /** Dealership Portal (dealers log in here) and Platform Admin (platform owners) are two separate apps. */
 export const DEALER_PORTAL_URL = (process.env.NEXT_PUBLIC_DEALER_PORTAL_URL || 'http://localhost:3000').replace(/\/+$/, '');
