@@ -91,10 +91,11 @@ export function cleanVehicleInput(b: Record<string, unknown>): Prisma.VehicleUnc
   if ('safetyFeatures' in b) d.safetyFeatures = strArray(b.safetyFeatures, 150, 120);
   if ('images' in b) d.images = cleanImageList(b.images);
   if ('extra' in b && b.extra && typeof b.extra === 'object') d.extra = b.extra;
-  if ('processingFee' in b) {
-    const feeNum = num(b.processingFee);
+  if ('processingFee' in b || 'processing_fee' in b) {
+    const rawVal = b.processingFee !== undefined ? b.processingFee : b.processing_fee;
+    const feeNum = num(rawVal);
     const prevExtra = (d.extra && typeof d.extra === 'object' ? d.extra : b.extra && typeof b.extra === 'object' ? b.extra : {}) as Record<string, unknown>;
-    d.extra = { ...prevExtra, ...(feeNum !== null && feeNum !== undefined ? { processingFee: feeNum } : { processingFee: '' }) };
+    d.extra = { ...prevExtra, ...(feeNum !== null && feeNum !== undefined && feeNum > 0 ? { processingFee: feeNum } : { processingFee: 0 }) };
   }
   if ('status' in b) {
     const s = String(b.status).toUpperCase() as VehicleStatus;

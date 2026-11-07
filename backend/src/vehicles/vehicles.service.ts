@@ -56,8 +56,11 @@ export class VehiclesService {
 
   private serialize(v: Vehicle) {
     let processingFee: number | null = null;
-    const ex = v.extra && typeof v.extra === 'object' ? (v.extra as Record<string, unknown>) : null;
-    if (ex) {
+    let ex: any = v.extra;
+    if (typeof ex === 'string') {
+      try { ex = JSON.parse(ex); } catch {}
+    }
+    if (ex && typeof ex === 'object') {
       const feeKeys = ['processingfee', 'processing_fee', 'profee', 'docfee', 'documentationfee', 'dealerfee', 'adminfee'];
       for (const [k, val] of Object.entries(ex)) {
         if (feeKeys.includes(k.toLowerCase().replace(/[^a-z0-9]/g, ''))) {
