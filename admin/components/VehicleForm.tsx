@@ -90,7 +90,7 @@ export function VehicleForm({ initial }: { initial: Vehicle }) {
       const out = v.id ? await api(`/dealer/vehicles/${v.id}`, { method: 'PATCH', body }) : await api('/dealer/vehicles', { body });
       toast.ok(v.id ? 'Vehicle saved' : 'Vehicle added');
       if (!v.id) router.replace(`/dealer/vehicles/${out.id}`);
-      else setV(out);
+      else setV({ ...EMPTY_VEHICLE, ...out, processingFee: out.processingFee ?? v.processingFee });
     } catch (e) {
       toast.error((e as Error).message);
     } finally {

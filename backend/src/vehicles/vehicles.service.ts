@@ -5,7 +5,7 @@ import { TenantsService } from '../tenants/tenants.service.js';
 import { clean, slugify } from '../common/util.js';
 import { CARGURUS_RULES, cleanVehicleInput, DEFAULT_RULES, publishProblems, RULE_FIELDS, vehicleName } from './vehicle.fields.js';
 import { CargurusService } from '../cargurus/cargurus.service.js';
-import type { Prisma, VehicleStatus } from '../generated/prisma/client.js';
+import type { Prisma, Vehicle, VehicleStatus } from '../generated/prisma/client.js';
 import type { AuthUser } from '../common/auth.types.js';
 
 /** Additional file columns sent by the import: { header: value }, at most 60 columns. */
@@ -54,6 +54,24 @@ export class VehiclesService {
     return this.cargurus.afterInventoryChange(tenantId, user.login);
   }
 
+  private serialize(v: Vehicle) {
+    let processingFee: number | null = null;
+    const ex = v.extra && typeof v.extra === 'object' ? (v.extra as Record<string, unknown>) : null;
+    if (ex) {
+      const feeKeys = ['processingfee', 'processing_fee', 'profee', 'docfee', 'documentationfee', 'dealerfee', 'adminfee'];
+      for (const [k, val] of Object.entries(ex)) {
+        if (feeKeys.includes(k.toLowerCase().replace(/[^a-z0-9]/g, ''))) {
+          const num = parseFloat(String(val || '').replace(/[^0-9.]/g, ''));
+          if (!isNaN(num) && num > 0) {
+            processingFee = num;
+            break;
+          }
+        }
+      }
+    }
+    return { ...v, processingFee };
+  }
+
   async list(tenantId: string, q: VehicleQuery) {
     const page = Math.max(1, parseInt(q.page || '1', 10) || 1);
     const pageSize = Math.min(500, Math.max(1, parseInt(q.pageSize || '50', 10) || 50));
@@ -90,14 +108,14 @@ export class VehiclesService {
       this.prisma.vehicle.groupBy({ by: ['status'], where: { tenantId }, _count: true }),
     ]);
     const byStatus = Object.fromEntries(counts.map((c) => [c.status, c._count]));
-    const items = rows.map((v) => ({ ...v, cargurus: cargurusOn && v.status === 'PUBLISHED' ? { issues: ready.get(v.id) ?? [] } : null }));
+    const items = rows.map((v) => ({ ...this.serialize(v), cargurus: cargurusOn && v.status === 'PUBLISHED' ? { issues: ready.get(v.id) ?? [] } : null }));
     return { items, total, page, pageSize, cargurusOn, counts: { PUBLISHED: 0, DRAFT: 0, SOLD: 0, ...byStatus, cgReady, cgExcluded } };
   }
 
   async get(tenantId: string, id: string) {
     const v = await this.prisma.vehicle.findFirst({ where: { id, tenantId } });
     if (!v) throw new NotFoundException('Vehicle not found');
-    return v;
+    return this.serialize(v);
   }
 
   async rules(tenantId: string) {
@@ -143,7 +161,7 @@ export class VehiclesService {
     await this.audit.record('vehicle.create', { tenantId, actor: user.login, detail: { id: v.id, name: vehicleName(v) } });
     if (v.status === 'PUBLISHED') await this.tenants.setOnboarding(tenantId, 'first_vehicle');
     await this.changed(tenantId, user);
-    return v;
+    return this.serialize(v);
   }
 
   async update(tenantId: string, id: string, body: Record<string, unknown>, user: AuthUser) {
@@ -156,7 +174,7 @@ export class VehiclesService {
     await this.audit.record('vehicle.update', { tenantId, actor: user.login, detail: { id, name: vehicleName(v), fields: Object.keys(data) } });
     if (v.status === 'PUBLISHED') await this.tenants.setOnboarding(tenantId, 'first_vehicle');
     await this.changed(tenantId, user);
-    return v;
+    return this.serialize(v);
   }
 
   async remove(tenantId: string, id: string, user: AuthUser) {
