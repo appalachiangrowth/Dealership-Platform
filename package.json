@@ -4,11 +4,12 @@
   "private": true,
   "description": "Multi-dealership website platform — dealer-portal :3000, admin (platform) :3001, frontend (websites) :3002, backend (NestJS + Prisma + PostgreSQL) :4000",
   "scripts": {
+    "build": "cd dealer-portal && npm install && npm run build",
+    "start": "cd dealer-portal && npm run start",
     "install:all": "npm --prefix backend install && npm --prefix dealer-portal install && npm --prefix admin install && npm --prefix frontend install",
     "dev:backend": "npm --prefix backend run start:dev",
     "dev:dealer": "npm --prefix dealer-portal run dev",
     "dev:platform": "npm --prefix admin run dev",
-    "dev:frontend": "npm --prefix frontend run dev",
-    "build": "npm --prefix backend run build && npm --prefix dealer-portal run build && npm --prefix admin run build && npm --prefix frontend run build"
+    "dev:frontend": "npm --prefix frontend run dev"
   }
 }
