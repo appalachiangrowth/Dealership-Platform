@@ -6,6 +6,30 @@ import { FeedsService } from '../feeds/feeds.service.js';
 import { CurrentUser, Perms, PlatformOnly, TenantId } from '../common/decorators.js';
 import type { AuthUser } from '../common/auth.types.js';
 
+@Controller('api/cargurus')
+export class ApiCargurusController {
+  constructor(private readonly cg: CargurusService) {}
+
+  @Post('test-connection')
+  testConnection(
+    @Body() b: { tenantId?: string; host?: string; port?: number; username?: string; password?: string; passphrase?: string; privateKey?: string },
+    @TenantId() t?: string,
+  ) {
+    const tenant = b?.tenantId || t || undefined;
+    return this.cg.testConnection(tenant, b);
+  }
+
+  @Post('dry-run')
+  dryRun(
+    @Body() b: { tenantId?: string; submissionId?: string },
+    @TenantId() t?: string,
+  ) {
+    const tenant = b?.tenantId || t;
+    if (!tenant) throw new BadRequestException('tenantId is required for dry-run validation');
+    return this.cg.dryRun(tenant, b?.submissionId);
+  }
+}
+
 /** Dealership Portal › CarGurus feed (+ feed downloads) */
 @Controller('dealer/feeds')
 @Perms('inventory')
@@ -113,5 +137,21 @@ export class PlatformCargurusController {
   @Post(':tenantId/resend')
   resend(@Param('tenantId') t: string, @CurrentUser() u: AuthUser) {
     return this.cg.resend(t, u);
+  }
+
+  @Post(':tenantId/test-connection')
+  testConnectionPlatform(
+    @Param('tenantId') t: string,
+    @Body() b: { host?: string; port?: number; username?: string; password?: string; passphrase?: string; privateKey?: string },
+  ) {
+    return this.cg.testConnection(t, b);
+  }
+
+  @Post(':tenantId/:id/dry-run')
+  dryRunPlatform(
+    @Param('tenantId') t: string,
+    @Param('id') id: string,
+  ) {
+    return this.cg.dryRun(t, id);
   }
 }
