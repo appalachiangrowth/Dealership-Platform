@@ -310,7 +310,7 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
         name: [r.year || '', r.make, r.model, r.trim].join(' ').replace(/\s+/g, ' ').trim(),
         vin: r.vin,
         stock: r.stock,
-        price: v.price !== null ? Number(v.price) : null,
+        price: r.price !== null && r.price !== undefined ? Number(r.price) : (v.price !== null ? Number(v.price) : null),
         mileage: v.mileage,
         photos: v.images.length,
         image: v.images[0] || '',
