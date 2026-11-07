@@ -30,6 +30,7 @@ const IMP_FIELDS: [string, string, string[]][] = [
   ['model', 'Model', ['model', 'modelname']],
   ['trim', 'Trim', ['trim', 'series', 'trimlevel', 'submodel']],
   ['price', 'Price', ['price', 'saleprice', 'internetprice', 'sellingprice', 'askingprice', 'listprice', 'retailprice', 'ourprice']],
+  ['processingFee', 'Processing Fee', ['processingfee', 'processing_fee', 'profee', 'docfee', 'documentationfee', 'dealerfee', 'adminfee']],
   ['mileage', 'Mileage', ['mileage', 'miles', 'odometer', 'km', 'kilometers']],
   ['vin', 'VIN', ['vin', 'vinnumber']],
   ['stockNumber', 'Stock number', ['stock', 'stocknumber', 'stockno', 'stocknum', 'stockid', 'stock#']],
@@ -189,7 +190,7 @@ function impVehicle(rec: Rec, map: Record<string, string>): V {
     raw = String(raw).trim();
     if (f === 'images') imgs = imgs.concat(impList(raw, true));
     else if (f === 'features' || f === 'safetyFeatures') v[f] = (v[f] || []).concat(impList(raw));
-    else if (f === 'price' || f === 'msrp') v[f] = impNum(raw);
+    else if (f === 'price' || f === 'msrp' || f === 'processingFee') v[f] = impNum(raw);
     else if (f === 'mileage') {
       const m = impNum(raw);
       v.mileage = m === '' ? '' : Math.round(m);
@@ -203,6 +204,9 @@ function impVehicle(rec: Rec, map: Record<string, string>): V {
     else v[f] = raw;
   }
   if (imgs.length) v.images = imgs.filter((u, i, a) => a.indexOf(u) === i);
+  if (typeof v.processingFee === 'number' && v.processingFee > 0 && typeof v.price === 'number') {
+    v.price = Math.round((v.price + v.processingFee) * 100) / 100;
+  }
   return v;
 }
 

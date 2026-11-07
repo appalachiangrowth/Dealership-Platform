@@ -9,7 +9,7 @@
  */
 
 export type ColumnKey =
-  | 'vin' | 'make' | 'model' | 'year' | 'trim' | 'price' | 'mileage' | 'images' | 'ext' | 'comments' | 'stock' | 'trans' | 'options'
+  | 'vin' | 'make' | 'model' | 'year' | 'trim' | 'price' | 'mileage' | 'images' | 'ext' | 'comments' | 'stock' | 'trans' | 'options' | 'processing_fee'
   | 'dealer_id' | 'dealer_name' | 'dealer_street' | 'dealer_city' | 'dealer_state' | 'dealer_zip' | 'dealer_crm_email';
 
 export const COLUMNS: [ColumnKey, string, boolean, 'vehicle' | 'dealer'][] = [
@@ -19,6 +19,7 @@ export const COLUMNS: [ColumnKey, string, boolean, 'vehicle' | 'dealer'][] = [
   ['year', 'Year', true, 'vehicle'],
   ['trim', 'Trim', true, 'vehicle'],
   ['price', 'Price', true, 'vehicle'],
+  ['processing_fee', 'Processing Fee', false, 'vehicle'],
   ['mileage', 'Mileage', true, 'vehicle'],
   ['images', 'Image URLs', true, 'vehicle'],
   ['ext', 'Exterior Color', true, 'vehicle'],
@@ -38,7 +39,7 @@ export const COLUMNS: [ColumnKey, string, boolean, 'vehicle' | 'dealer'][] = [
 const LABEL = Object.fromEntries(COLUMNS.map((c) => [c[0], c[1]])) as Record<ColumnKey, string>;
 export const label = (k: ColumnKey) => LABEL[k];
 
-type VehicleKey = 'vin' | 'make' | 'model' | 'year' | 'trim' | 'price' | 'mileage' | 'images' | 'ext' | 'comments' | 'stock' | 'trans' | 'options';
+type VehicleKey = 'vin' | 'make' | 'model' | 'year' | 'trim' | 'price' | 'mileage' | 'images' | 'ext' | 'comments' | 'stock' | 'trans' | 'options' | 'processing_fee';
 
 export const ALIASES: Record<VehicleKey, string[]> = {
   vin: ['vin', 'vinnumber', 'vehiclevin'],
@@ -47,6 +48,7 @@ export const ALIASES: Record<VehicleKey, string[]> = {
   year: ['year', 'modelyear'],
   trim: ['trim', 'trimlevel', 'series'],
   price: ['price', 'sellingprice', 'saleprice', 'internetprice', 'askingprice', 'listprice'],
+  processing_fee: ['processingfee', 'processing_fee', 'profee', 'docfee', 'documentationfee', 'dealerfee', 'adminfee'],
   mileage: ['mileage', 'miles', 'odometer'],
   images: ['imageurls', 'imageurl', 'images', 'photourls', 'photos', 'pictures'],
   ext: ['exteriorcolor', 'extcolor', 'exteriorcolour', 'color', 'colour'],
@@ -237,9 +239,14 @@ export function ingestRows(headers: string[] | null, rows: (string[] | Record<st
     if (y === '') add('year', 'Missing Year');
     else if (!/^\d{4}$/.test(y) || +y < 1980 || +y > maxYear) add('year', `Invalid Year "${y}": use a 4-digit year between 1980 and ${maxYear}`);
 
-    const p = raw.price.replace(/,/g, '').replace(/[^0-9.]/g, '');
+    const pRaw = raw.price.replace(/,/g, '').replace(/[^0-9.]/g, '');
+    const feeRaw = (raw.processing_fee || '').replace(/,/g, '').replace(/[^0-9.]/g, '');
+    const basePrice = pRaw !== '' && !isNaN(+pRaw) ? +pRaw : 0;
+    const fee = feeRaw !== '' && !isNaN(+feeRaw) ? +feeRaw : 0;
+    const combinedPrice = basePrice + fee;
+
     if (raw.price === '') add('price', 'Missing Price');
-    else if (p === '' || isNaN(+p) || +p <= 0) add('price', `Invalid Price "${raw.price}": must be a number greater than 0`);
+    else if (pRaw === '' || isNaN(+pRaw) || combinedPrice <= 0) add('price', `Invalid Price "${raw.price}": must be a number greater than 0`);
 
     const mRaw = raw.mileage;
     const m = mRaw.replace(/\s*(mi|miles|km)\.?$/i, '').replace(/,/g, '').replace(/[^0-9.]/g, '');
@@ -287,7 +294,7 @@ export function ingestRows(headers: string[] | null, rows: (string[] | Record<st
       model,
       year: /^\d{4}$/.test(y) ? +y : 0,
       trim: raw.trim.replace(/\s+/g, ' '),
-      price: p !== '' && !isNaN(+p) ? Math.round(+p * 100) / 100 : 0,
+      price: combinedPrice > 0 ? Math.round(combinedPrice * 100) / 100 : 0,
       mileage: m !== '' && !isNaN(+m) ? Math.trunc(+m) : 0,
       images: imgs,
       ext: raw.ext.replace(/\s+/g, ' '),

@@ -110,21 +110,38 @@ export class FeedsService {
    * to the last 8 characters of the VIN).
    */
   inventoryRows(vehicles: Vehicle[], site: string) {
-    return vehicles.map((v) => ({
-      vin: v.vin,
-      make: v.make,
-      model: v.model,
-      year: v.year ? String(v.year) : '',
-      trim: v.trim,
-      price: v.price !== null ? String(v.price) : '',
-      mileage: v.mileage !== null ? String(v.mileage) : '',
-      images: v.images.map((u) => this.absUrl(u, site)),
-      ext: v.exteriorColor,
-      comments: v.description,
-      stock: v.stockNumber,
-      trans: v.transmission,
-      options: [...v.features, ...v.safetyFeatures],
-    }));
+    const feeKeys = ['processingfee', 'processing_fee', 'profee', 'docfee', 'documentationfee', 'dealerfee', 'adminfee'];
+    return vehicles.map((v) => {
+      let fee = 0;
+      const ex = (v as unknown as { extra?: Record<string, unknown> }).extra;
+      if (ex && typeof ex === 'object' && !Array.isArray(ex)) {
+        for (const [k, val] of Object.entries(ex)) {
+          if (feeKeys.includes(cg.norm(k))) {
+            const num = parseFloat(String(val || '').replace(/[^0-9.]/g, ''));
+            if (!isNaN(num) && num > 0) {
+              fee = num;
+              break;
+            }
+          }
+        }
+      }
+      return {
+        vin: v.vin,
+        make: v.make,
+        model: v.model,
+        year: v.year ? String(v.year) : '',
+        trim: v.trim,
+        price: v.price !== null ? String(v.price) : '',
+        processing_fee: fee > 0 ? String(fee) : '',
+        mileage: v.mileage !== null ? String(v.mileage) : '',
+        images: v.images.map((u) => this.absUrl(u, site)),
+        ext: v.exteriorColor,
+        comments: v.description,
+        stock: v.stockNumber,
+        trans: v.transmission,
+        options: [...v.features, ...v.safetyFeatures],
+      };
+    });
   }
 
   async xml(tenantId: string) {

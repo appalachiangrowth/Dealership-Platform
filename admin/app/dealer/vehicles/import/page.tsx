@@ -16,6 +16,7 @@ const FIELDS: Record<string, string[]> = {
   model: ['model', 'modelname'],
   trim: ['trim', 'trimlevel', 'series'],
   price: ['price', 'sellingprice', 'saleprice', 'internetprice', 'askingprice', 'listprice'],
+  processingFee: ['processingfee', 'processing_fee', 'profee', 'docfee', 'documentationfee', 'dealerfee', 'adminfee'],
   msrp: ['msrp'],
   mileage: ['mileage', 'miles', 'odometer'],
   exteriorColor: ['exteriorcolor', 'extcolor', 'color', 'colour', 'ext'],
@@ -132,6 +133,11 @@ export default function ImportPage() {
         else if (k === 'condition') v.condition = /^(new|y|yes|true)$/i.test(val) ? 'New' : 'Used';
         else v[k] = val;
       });
+      if (v.processingFee && v.price) {
+        const p = parseFloat(String(v.price).replace(/[^0-9.]/g, '')) || 0;
+        const fee = parseFloat(String(v.processingFee).replace(/[^0-9.]/g, '')) || 0;
+        if (p > 0 && fee > 0) v.price = String(p + fee);
+      }
       return v;
     });
   }
