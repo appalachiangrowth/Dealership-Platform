@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Facebook progress at the top of EVERY Dealer Portal page: shown while a group / Page post or a Marketplace listing
+ * Facebook progress at the top of EVERY Dealer Portal page: shown while a profile post or a Marketplace listing
  * runs on the server (also after the "Post to Facebook" popup was closed), then a short "Done" summary.
  * It asks the server every 2 s while something runs and every 20 s otherwise ("peek": it never keeps an idle
  * Facebook browser awake). The popup announces a new post with the "fb-activity" event so the bar shows at once.
@@ -136,14 +136,20 @@ export function FbActivityBar({ enabled }: { enabled: boolean }) {
           {running ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#1877F2]" /> : failN ? <XCircle className="h-4 w-4 shrink-0 text-amber-600" /> : <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />}
           <b className="text-slate-900">
             {waitingForMp
-              ? 'Waiting for the Marketplace listing, then posting to the groups…'
+              ? 'Waiting for the Marketplace listing, then posting to your profile…'
               : running
-                ? `Posting to Facebook… ${okN} of ${total} posted`
+                ? total > 1
+                  ? `Posting to Facebook… ${okN} of ${total} posted`
+                  : 'Posting on your Facebook profile…'
                 : shown.cancelled
-                  ? `Posting stopped · ${okN} of ${total} posted`
-                  : `Facebook posting done · ${okN} of ${total} posted${failN ? ` · ${failN} not posted` : ''}`}
+                  ? 'Facebook posting stopped'
+                  : total > 1
+                    ? `Facebook posting done · ${okN} of ${total} posted${failN ? ` · ${failN} not posted` : ''}`
+                    : okN
+                      ? 'Posted on your Facebook profile'
+                      : 'Profile post was not posted — see FB Poster for details'}
           </b>
-          {running && current && <span className="min-w-0 truncate text-xs text-slate-500">now: {current.name || current.url}</span>}
+          {running && current && total > 1 && <span className="min-w-0 truncate text-xs text-slate-500">now: {current.name || current.url}</span>}
           {running && !current && nextIn > 0 && <span className="text-xs text-slate-500">next in {nextIn}s</span>}
           <span className="ml-auto flex items-center gap-2">
             <Link href="/dealer/facebook" className="text-xs font-semibold text-blue-700 hover:underline">

@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Res, StreamableFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Put, Query, Res, StreamableFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -97,53 +97,12 @@ export class FacebookController {
     return new StreamableFile(this.fb.debugFile(t, file), { type: 'image/png', disposition: 'inline' });
   }
 
-  // ───────── Pages, groups, collections, posting ─────────
+  // ───────── posting (your profile) ─────────
 
-  @Post('pages/load')
-  loadPages(@TenantId() t: string, @CurrentUser() u: AuthUser) {
-    return this.fb.loadPages(t, u);
-  }
-
-  /** act as a Page: { url, name } */
-  @Post('pages/switch')
-  switchPage(@TenantId() t: string, @CurrentUser() u: AuthUser, @Body() b: { url?: string; name?: string }) {
-    return this.fb.switchToPage(t, u, b);
-  }
-
-  @Post('pages/personal')
-  personal(@TenantId() t: string, @CurrentUser() u: AuthUser) {
-    return this.fb.clearActingAs(t, u);
-  }
-
-  @Post('groups/load')
-  loadGroups(@TenantId() t: string, @CurrentUser() u: AuthUser) {
-    return this.fb.loadGroups(t, u);
-  }
-
-  /** save the Pages / groups lists (links added or removed by hand) */
-  @Put('targets')
-  targets(@TenantId() t: string, @CurrentUser() u: AuthUser, @Body() b: { pages?: unknown; groups?: unknown }) {
-    return this.fb.saveTargets(t, u, b);
-  }
-
-  @Get('collections')
-  collections(@TenantId() t: string, @CurrentUser() u: AuthUser) {
-    return this.fb.collections(t, u);
-  }
-
-  @Post('collections')
-  createCollection(@TenantId() t: string, @CurrentUser() u: AuthUser, @Body() b: Record<string, unknown>) {
-    return this.fb.saveCollection(t, u, null, b);
-  }
-
-  @Put('collections/:id')
-  updateCollection(@TenantId() t: string, @CurrentUser() u: AuthUser, @Param('id') id: string, @Body() b: Record<string, unknown>) {
-    return this.fb.saveCollection(t, u, id, b);
-  }
-
-  @Delete('collections/:id')
-  deleteCollection(@TenantId() t: string, @CurrentUser() u: AuthUser, @Param('id') id: string) {
-    return this.fb.deleteCollection(t, u, id);
+  /** start the Facebook browser with the saved login in the background (the popup / FB Poster calls it on open) */
+  @Post('warm')
+  warm(@TenantId() t: string, @CurrentUser() u: AuthUser) {
+    return this.fb.warm(t, u);
   }
 
   @Get('quick-config')
@@ -156,7 +115,7 @@ export class FacebookController {
     return this.fb.saveQuickConfig(t, u, b);
   }
 
-  /** multipart: media files + targets, names, caption, hashtags, order, delayMin, delayMax */
+  /** multipart: media files + caption, hashtags, order — posted on your own Facebook profile */
   @Post('post')
   @UseInterceptors(
     AnyFilesInterceptor({

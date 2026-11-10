@@ -32,6 +32,11 @@ export function FbHeader() {
     }
   };
 
+  // speed: start Facebook on the server (saved login) as soon as FB Poster opens, not when Post is pressed
+  useEffect(() => {
+    void fb.post('warm').catch(() => {});
+  }, []);
+
   const connect = () =>
     act('connect', async () => {
       setViewOpen(true);
@@ -53,7 +58,7 @@ export function FbHeader() {
           : { color: 'slate', text: 'Not connected' };
 
   const tabs = [
-    { href: '/dealer/facebook', label: 'Groups & Pages', icon: Megaphone },
+    { href: '/dealer/facebook', label: 'Post', icon: Megaphone },
     { href: '/dealer/facebook/marketplace', label: 'Marketplace', icon: Store },
   ];
 
@@ -63,7 +68,7 @@ export function FbHeader() {
         <div>
           <h1 className="font-heading text-2xl font-extrabold tracking-tight text-slate-900">FB Poster</h1>
           <p className="mt-1 max-w-3xl text-sm text-slate-500">
-            Post your cars to Facebook groups, your Pages and Marketplace. Your Facebook login runs safely on our server, so nothing needs to be installed on this
+            Post your cars on your Facebook profile and on Marketplace. Your Facebook login runs safely on our server, so nothing needs to be installed on this
             computer, and posting carries on even when you close this page.
           </p>
         </div>
@@ -181,7 +186,7 @@ export function FbHeader() {
         }
       >
         <p className="text-sm text-slate-600">
-          The saved Facebook login is deleted from the server and the browser is closed. Your groups, collections and Marketplace links stay. You will need to log in again
+          The saved Facebook login is deleted from the server and the browser is closed. Your post history and Marketplace links stay. You will need to log in again
           to post.
         </p>
       </Modal>

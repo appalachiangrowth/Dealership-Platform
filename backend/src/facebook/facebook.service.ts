@@ -46,6 +46,8 @@ const RECYCLE_HOURS = Math.max(1, Number(process.env.FB_RECYCLE_HOURS) || 6);
 const VIEW_IDLE_MS = 60_000;
 
 const FB_URL = /^https:\/\/(www\.|m\.|web\.)?facebook\.com\/.+/i;
+/** "Post to my profile": your own timeline */
+const PROFILE_URL = 'https://www.facebook.com/me';
 const MAX_MEDIA = 20;
 
 type Session = ReturnType<typeof createFbSession>;
@@ -301,6 +303,24 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
     return { ...st, account: this.accountView(a), screen: { width: VIEW_W, height: VIEW_H } };
   }
 
+  /**
+   * Speed: called when the "Post to Facebook" popup or FB Poster opens. Starts Chrome with the saved login in the
+   * background, so pressing Post does not have to wait for it. Never starts anything for a login that was never made.
+   */
+  async warm(tenantId: string, u: AuthUser) {
+    const { uk, account } = await this.ctx(tenantId, u);
+    if (!account.fbUserId) return { ok: false, reason: 'not connected' };
+    const k = this.key(tenantId, uk);
+    const s = this.session(tenantId, uk);
+    s.S.lastSeen = Date.now();
+    if (s.isOpen()) return { ok: true, ready: true };
+    // in the background: making room for a new Chrome can take a moment on a busy server
+    void this.makeRoom(k)
+      .then(() => s.warm())
+      .catch(() => undefined);
+    return { ok: true, starting: true };
+  }
+
   async connect(tenantId: string, u: AuthUser) {
     const { s } = await this.live(tenantId, u);
     await this.wrap(s.viewStart());
@@ -519,11 +539,11 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
           return d;
         }
       };
-      const targets = [...new Set(parse<string[]>(b.targets, []).map(String))].filter((x) => FB_URL.test(x)).slice(0, 300);
-      const names = parse<Record<string, string>>(b.names, {});
+      // Posting goes to your own Facebook profile only (groups, Pages and collections were removed)
+      const targets = [PROFILE_URL];
+      const names: Record<string, string> = { [PROFILE_URL]: account.fbName ? `${account.fbName} · your profile` : 'Your Facebook profile' };
       const tags = cleanTags(b.hashtags || '');
       const caption = [String(b.caption || '').trim(), tags].filter(Boolean).join('\n\n').slice(0, 60000);
-      if (!targets.length) throw new BadRequestException('Select at least one group or Page.');
 
       const order = parse<string[]>(b.order, files.map((_, i) => `f:${i}`)).slice(0, MAX_MEDIA);
       const mediaPaths: string[] = [];
@@ -556,8 +576,7 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
       });
       const job = await this.wrap(s.startPost({
           targets, names, mediaPaths, tempFiles, caption, delayMin, delayMax, runId: run.id,
-          // the Page chosen in FB Poster ("Post as"): groups are posted as that Page, otherwise as the personal profile
-          actAs: (account.actingAs || {}) as { url?: string; name?: string },
+          actAs: {}, // always as the personal profile
         })).catch(async (e) => {
         await this.prisma.fbPostRun.delete({ where: { id: run.id } }).catch(() => undefined);
         throw e;

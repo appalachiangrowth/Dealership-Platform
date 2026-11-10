@@ -565,7 +565,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
                   <b className="block">
                     Facebook Marketplace: {mpMiss.size} of {MP_FIELDS.length} details missing
                   </b>
-                  <span className="text-sm">It can still go on your website and in your Facebook groups; Marketplace needs these too.</span>
+                  <span className="text-sm">It can still go on your website and on your Facebook profile; Marketplace needs these too.</span>
                 </>
               )}
             </span>

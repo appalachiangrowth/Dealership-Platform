@@ -8,7 +8,8 @@ export function hostOf(req: Request): string {
   if (tenantParam) return `${tenantParam}.localhost`;
   let host = (req.headers.get('x-forwarded-host') || req.headers.get('host') || '').split(',')[0].trim().toLowerCase();
   host = host.replace(/:\d+$/, '');
-  if ((host === 'localhost' || host === '127.0.0.1') && process.env.DEFAULT_TENANT) host = `${process.env.DEFAULT_TENANT}.localhost`;
+  const isDirectIpOrLocal = host === 'localhost' || host === '127.0.0.1' || /^(\d{1,3}\.){3}\d{1,3}$/.test(host);
+  if (isDirectIpOrLocal && process.env.DEFAULT_TENANT) host = `${process.env.DEFAULT_TENANT}.localhost`;
   return host;
 }
 

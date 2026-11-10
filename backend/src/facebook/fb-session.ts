@@ -364,6 +364,21 @@ export function createFbSession(opts) {
     } else await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
   }
 
+  /**
+   * Speed: start Chrome with the saved login BEFORE the dealer presses Post (the popup / FB Poster page calls this
+   * when it opens), so the post itself does not wait for Chrome and Facebook to load.
+   */
+  async function warm() {
+    S.lastSeen = Date.now();
+    if (busy) return { ok: true, busy: true };
+    const wasOpen = !!(browser && page && !page.isClosed());
+    await ensureBrowser();
+    if (!wasOpen && !busy && page && !/facebook\.com/i.test(page.url())) {
+      await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' }).catch(() => {});
+    }
+    return { ok: true, loggedIn: await isLoggedIn() };
+  }
+
   // ---------- connect / disconnect / switch account ----------
   async function connect() {
     await ensureBrowser();
@@ -1012,7 +1027,10 @@ export function createFbSession(opts) {
   }
 
   async function postToTarget(targetUrl, mediaPaths, caption, uploadMs) {
-    log(`Opening ${targetUrl}`);
+    // your own profile (facebook.com/me): always posted as YOU — leave a Page first, if the browser acts as one
+    const isProfile = /facebook\.com\/me\/?(\?|$)/i.test(targetUrl);
+    if (isProfile && (await actingPageId())) await useProfile();
+    log(isProfile ? 'Opening your Facebook profile...' : `Opening ${targetUrl}`);
     try { await page.bringToFront(); } catch (e) {}
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('[role="main"], #email, input[name="email"]', { timeout: 15000 }).catch(() => {});
@@ -1030,7 +1048,9 @@ export function createFbSession(opts) {
       await page.waitForSelector('[role="main"]', { timeout: 15000 }).catch(() => {});
       await sleep(1200);
     };
-    if (!isGroup) {
+    if (isProfile) {
+      // nothing to switch: the post goes on your own timeline
+    } else if (!isGroup) {
       // "Switch now" on a Page = you are looking at it as your profile: become the Page first
       // (already acting as this Page: its id is in the "i_user" cookie — nothing to do)
       const urlId = (targetUrl.match(/[?&]id=(\d+)/) || [])[1] || '';
@@ -1427,7 +1447,7 @@ export function createFbSession(opts) {
       : 'No media selected: text-only post.');
     (async () => {
       // a Marketplace listing is being filled in: post to the groups right after it (one Chrome, one task at a time)
-      if (busy) log(`Waiting for the ${busyWhat || 'current task'} to finish, then posting to the groups...`);
+      if (busy) log(`Waiting for the ${busyWhat || 'current task'} to finish, then posting to your profile...`);
       while (busy && !cancelFlag) await sleep(1000);
       if (cancelFlag) {
         for (const r of myJob.results) r.status = 'cancelled';
@@ -2291,7 +2311,7 @@ export function createFbSession(opts) {
     S, log, state, idle,
     isOpen: () => !!browser,
     healthy, viewOn: () => view.on,
-    ensureBrowser, isLoggedIn, fbUserId, fetchName, connect, close, switchAccount, forget,
+    ensureBrowser, warm, isLoggedIn, fbUserId, fetchName, connect, close, switchAccount, forget,
     viewStart, viewStop, frame, input, nav,
     loadPages, loadGroups, switchToPage, startPost, stopPosting,
     mpEnqueue, mpStop, mpQueued: () => queue.map((q) => q.id),
