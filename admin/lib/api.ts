@@ -103,9 +103,9 @@ export function siteUrl(t: { id: string; domains?: string[]; siteUrl?: string })
   if (pp && (pp === port(DEALER_PORTAL_URL) || pp === port(PLATFORM_ADMIN_URL))) pattern = 'http://{id}.localhost:3002';
   // On this computer always open the local website app, never the live domain / old address saved in Business details
   if (isLocalAdmin()) return pattern.replace('{id}', t.id);
-  if (t.siteUrl) return t.siteUrl;
   const d = t.domains?.[0];
   if (d && !d.endsWith('localhost')) return `https://${d}`;
+  if (t.siteUrl && !t.siteUrl.includes('appalachiangrowthsolutions.com')) return t.siteUrl;
   return pattern.replace('{id}', t.id);
 }
 

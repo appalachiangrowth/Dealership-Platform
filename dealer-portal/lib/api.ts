@@ -102,9 +102,9 @@ export function siteUrl(t: { id: string; domains?: string[]; siteUrl?: string })
   const pattern = process.env.NEXT_PUBLIC_SITE_PATTERN || 'http://{id}.localhost:3002';
   // On this computer always open the local website app, never the live domain / old address saved in Business details
   if (isLocalAdmin()) return pattern.replace('{id}', t.id).replace(/\/+$/, '');
-  if (t.siteUrl) return t.siteUrl.replace(/\/+$/, '');
   const d = t.domains?.[0];
   if (d && !d.endsWith('localhost')) return `https://${d}`.replace(/\/+$/, '');
+  if (t.siteUrl && !t.siteUrl.includes('appalachiangrowthsolutions.com')) return t.siteUrl.replace(/\/+$/, '');
   return pattern.replace('{id}', t.id).replace(/\/+$/, '');
 }
 
