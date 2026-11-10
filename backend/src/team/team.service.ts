@@ -6,6 +6,7 @@ import { clean, isEmail } from '../common/util.js';
 import { cleanPerms, DealerRoleId, permsFor, ROLES } from '../common/permissions.js';
 import type { DealerRole, DealerUser } from '../generated/prisma/client.js';
 import type { AuthUser } from '../common/auth.types.js';
+import { forgetAuthCache } from '../common/auth.guard.js';
 
 export function publicUser(u: DealerUser) {
   const { passwordHash: _p, ...rest } = u;
@@ -86,6 +87,7 @@ export class TeamService {
       throw new BadRequestException('At least one active Dealership admin must remain');
     }
     const out = await this.prisma.dealerUser.update({ where: { id }, data });
+    forgetAuthCache(); // a new role / a disabled login applies at once
     await this.audit.record('user.update', { tenantId, actor: me.login, detail: { login: u.login, fields: Object.keys(data).filter((k) => k !== 'passwordHash').concat(b.password ? ['password'] : []) } });
     return publicUser(out);
   }
@@ -98,6 +100,7 @@ export class TeamService {
       throw new BadRequestException('At least one active Dealership admin must remain');
     }
     await this.prisma.dealerUser.delete({ where: { id } });
+    forgetAuthCache();
     await this.audit.record('user.delete', { tenantId, actor: me.login, detail: { login: u.login } });
     return { ok: true };
   }

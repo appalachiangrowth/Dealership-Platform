@@ -5,6 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { mkdirSync } from 'fs';
+import compression from 'compression';
 import { AppModule } from './app.module.js';
 import { assertJwtSecret } from './common/jwt.js';
 
@@ -20,13 +21,34 @@ async function bootstrap() {
   app.set('trust proxy', process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal');
   app.disable('x-powered-by');
 
+  // Speed: gzip every JSON answer (inventory lists shrink ~8x). Images are already compressed and are skipped.
+  app.use(compression({ threshold: 1024 }));
+
+  // Speed: every answer carries its own server time (X-Response-Time / Server-Timing, visible in the browser's
+  // Network tab), and slow ones are logged — `pm2 logs | grep SLOW` lists the slowest endpoints.
+  const SLOW_MS = Number(process.env.SLOW_REQUEST_MS) || 800;
+  app.use((req: any, res: any, next: () => void) => {
+    const t0 = process.hrtime.bigint();
+    const writeHead = res.writeHead;
+    res.writeHead = function (...args: any[]) {
+      const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+      if (!res.headersSent) {
+        res.setHeader('X-Response-Time', `${ms.toFixed(1)}ms`);
+        res.setHeader('Server-Timing', `app;dur=${ms.toFixed(1)}`);
+      }
+      if (ms >= SLOW_MS) console.warn(`[SLOW] ${ms.toFixed(0)}ms ${req.method} ${String(req.originalUrl || req.url).split('?')[0]} -> ${res.statusCode}`);
+      return writeHead.apply(this, args);
+    };
+    next();
+  });
+
   app.enableCors({
     // Dealer websites live on many domains, so any origin may call the API.
     // Admin calls use a Bearer token (no cookies), so this is safe.
     origin: (origin, cb) => cb(null, true),
     credentials: false,
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Id', 'X-Site-Host'],
-    exposedHeaders: ['Content-Disposition', 'X-Frame-Seq'],
+    exposedHeaders: ['Content-Disposition', 'X-Frame-Seq', 'X-Response-Time', 'Server-Timing'],
   });
 
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));

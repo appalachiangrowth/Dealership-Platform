@@ -15,6 +15,28 @@ import { verifyToken } from './jwt.js';
  *  - @AnyUser()       → any login
  * Endpoints without any of these default to platform-only, so nothing is accidentally open.
  */
+/** token → user, dealership id → status: kept for a few seconds so most requests need no database trip at all */
+const USER_TTL = 20_000;
+const userCache = new Map<string, { at: number; user: AuthUser | null; tenantStatus?: string }>();
+const tenantCache = new Map<string, { at: number; status: string | null }>();
+function fresh<T extends { at: number }>(m: Map<string, T>, k: string, ttl: number): T | undefined {
+  const v = m.get(k);
+  if (v && Date.now() - v.at < ttl) return v;
+  if (v) m.delete(k);
+  return undefined;
+}
+// keep the caches small
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of userCache) if (now - v.at > USER_TTL) userCache.delete(k);
+  for (const [k, v] of tenantCache) if (now - v.at > USER_TTL) tenantCache.delete(k);
+}, 60_000).unref();
+/** call when a login is disabled / a dealership suspended, to apply it at once (otherwise within 20 s) */
+export function forgetAuthCache() {
+  userCache.clear();
+  tenantCache.clear();
+}
+
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(private readonly reflector: Reflector, private readonly prisma: PrismaService) {}
@@ -58,19 +80,26 @@ export class AuthGuard implements CanActivate {
     return true;
   }
 
+  private async tenantStatus(id: string): Promise<string | null> {
+    const hit = fresh(tenantCache, id, USER_TTL);
+    if (hit) return hit.status;
+    const t = await this.prisma.tenant.findUnique({ where: { id }, select: { status: true } });
+    tenantCache.set(id, { at: Date.now(), status: t ? t.status : null });
+    return t ? t.status : null;
+  }
+
   private async resolveTenant(req: AuthedRequest): Promise<string> {
     const auth = req.auth!;
     if (auth.kind === 'dealer') {
-      const t = await this.prisma.tenant.findUnique({ where: { id: auth.tenantId! }, select: { status: true } });
-      if (!t) throw new UnauthorizedException('Dealership not found');
-      if (t.status === 'SUSPENDED') throw new ForbiddenException('This dealership is suspended. Please contact support.');
+      const status = await this.tenantStatus(auth.tenantId!);
+      if (!status) throw new UnauthorizedException('Dealership not found');
+      if (status === 'SUSPENDED') throw new ForbiddenException('This dealership is suspended. Please contact support.');
       return auth.tenantId!;
     }
     const h = req.headers['x-tenant-id'];
     const id = (Array.isArray(h) ? h[0] : h || '').trim();
     if (!id) throw new ForbiddenException('Choose a dealership first (X-Tenant-Id header)');
-    const t = await this.prisma.tenant.findUnique({ where: { id }, select: { id: true } });
-    if (!t) throw new ForbiddenException('Dealership not found');
+    if (!(await this.tenantStatus(id))) throw new ForbiddenException('Dealership not found');
     auth.support = true;
     return id;
   }
@@ -78,13 +107,24 @@ export class AuthGuard implements CanActivate {
   private async loadUser(token: string): Promise<AuthUser | null> {
     const p = verifyToken(token);
     if (!p) return null;
+    const hit = fresh(userCache, token, USER_TTL);
+    // a copy: the request adds tenantId / support to it
+    if (hit) return hit.user ? { ...hit.user, perms: [...hit.user.perms] } : null;
+    const user = await this.lookupUser(p);
+    userCache.set(token, { at: Date.now(), user });
+    return user ? { ...user, perms: [...user.perms] } : null;
+  }
+
+  private async lookupUser(p: NonNullable<ReturnType<typeof verifyToken>>): Promise<AuthUser | null> {
     if (p.kind === 'owner') {
       const o = await this.prisma.platformOwner.findUnique({ where: { id: p.sub } });
       if (!o || o.disabled) return null;
       return { kind: 'owner', id: o.id, login: o.login, name: o.name, email: o.email, role: 'OWNER', perms: [...ALL_PERMISSIONS] };
     }
-    const u = await this.prisma.dealerUser.findUnique({ where: { id: p.sub } });
+    // the user and the dealership status in ONE database trip
+    const u = await this.prisma.dealerUser.findUnique({ where: { id: p.sub }, include: { tenant: { select: { status: true } } } });
     if (!u || u.disabled || u.tenantId !== p.tenantId) return null;
+    if (u.tenant) tenantCache.set(u.tenantId, { at: Date.now(), status: u.tenant.status });
     return {
       kind: 'dealer',
       id: u.id,

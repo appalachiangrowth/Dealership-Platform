@@ -429,6 +429,7 @@ model Vehicle {
   @@index([tenantId, status])
   @@index([tenantId, vin])
   @@index([tenantId, featured])
+  @@index([tenantId, createdAt]) // inventory list "newest first"
 }
 
 /// Which vehicle fields are required (Inventory > Field rules)

@@ -16,6 +16,7 @@ import { clean, rateLimit } from '../common/util.js';
 import { PERMISSIONS, ROLES, CUSTOM_ALLOWED } from '../common/permissions.js';
 import type { AuthUser } from '../common/auth.types.js';
 import type { ChangePasswordDto, LoginDto, SetupDto, SignupDto } from './auth.dto.js';
+import { forgetAuthCache } from '../common/auth.guard.js';
 
 @Injectable()
 export class AuthService {
@@ -110,6 +111,7 @@ export class AuthService {
       if (!(await checkPassword(dto.current, u.passwordHash))) throw new BadRequestException('Your current password is not correct');
       await this.prisma.dealerUser.update({ where: { id: u.id }, data: { passwordHash: await hashPassword(dto.password) } });
     }
+    forgetAuthCache();
     await this.audit.record('account.password', { tenantId: user.tenantId, actor: user.login });
     return { ok: true };
   }

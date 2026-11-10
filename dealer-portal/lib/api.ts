@@ -1,9 +1,13 @@
 'use client';
 
 function getApiUrl(): string {
-  // In client browser, ALWAYS route through Next.js rewrite proxy relative path
+  // Speed: once the API has its own HTTPS address (e.g. https://api.appalachiangrowthsolutions.com,
+  // set as NEXT_PUBLIC_API_URL before `npm run build`), the browser calls it directly instead of
+  // going through this website's /api proxy — one network hop less on every request.
+  // Without an https:// address everything keeps going through /api as before.
+  const direct = (process.env.NEXT_PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
   if (typeof window !== 'undefined') {
-    return '/api';
+    return direct.startsWith('https://') ? direct : '/api';
   }
   const raw = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://5.183.35.10:4000';
   // Sanitize any accidental brackets, parentheses, or trailing slashes

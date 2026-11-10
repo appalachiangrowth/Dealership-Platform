@@ -8,6 +8,8 @@ import { CargurusService } from '../cargurus/cargurus.service.js';
 import type { Prisma, Vehicle, VehicleStatus } from '../generated/prisma/client.js';
 import type { AuthUser } from '../common/auth.types.js';
 
+type CgReady = Awaited<ReturnType<CargurusService['readiness']>>;
+
 /** Additional file columns sent by the import: { header: value }, at most 60 columns. */
 function cleanExtra(v: unknown): Record<string, string> | null {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
@@ -94,22 +96,37 @@ export class VehiclesService {
         ...(Number.isFinite(n) && n > 1900 && n < 2100 ? [{ year: n }] : []),
       ];
     }
-    // CarGurus readiness of every vehicle for sale (same checks as the CarGurus feed)
-    const cargurusOn = await this.cargurus.cargurusOn(tenantId);
-    const ready = cargurusOn ? await this.cargurus.readiness(tenantId) : new Map();
-    let cgReady = 0;
-    let cgExcluded = 0;
-    for (const iss of ready.values()) iss.length ? cgExcluded++ : cgReady++;
-    if (cargurusOn && (q.cg === 'ready' || q.cg === 'bad')) {
-      const ids = [...ready.entries()].filter(([, iss]) => (q.cg === 'bad') === iss.length > 0).map(([id]) => id);
-      where.status = 'PUBLISHED';
-      where.id = { in: ids };
-    }
-    const [rows, total, counts] = await Promise.all([
+    // CarGurus readiness of every vehicle for sale (same checks as the CarGurus feed).
+    // Speed: when the list is not filtered by CarGurus status, the readiness check and the
+    // page queries run at the same time instead of one after the other.
+    const cgFilter = q.cg === 'ready' || q.cg === 'bad';
+    const readyP = this.cargurus.cargurusOn(tenantId).then(async (on) => ({ on, ready: on ? await this.cargurus.readiness(tenantId) : (new Map() as CgReady) }));
+    const pageQueries = () => Promise.all([
       this.prisma.vehicle.findMany({ where, orderBy: SORTS[q.sort || 'newest'] ?? SORTS.newest, skip: (page - 1) * pageSize, take: pageSize }),
       this.prisma.vehicle.count({ where }),
       this.prisma.vehicle.groupBy({ by: ['status'], where: { tenantId }, _count: true }),
     ]);
+    let cargurusOn: boolean;
+    let ready: CgReady;
+    let rows: Awaited<ReturnType<typeof pageQueries>>[0];
+    let total: number;
+    let counts: Awaited<ReturnType<typeof pageQueries>>[2];
+    if (cgFilter) {
+      ({ on: cargurusOn, ready } = await readyP);
+      if (cargurusOn) {
+        const ids = [...ready.entries()].filter(([, iss]) => (q.cg === 'bad') === iss.length > 0).map(([id]) => id);
+        where.status = 'PUBLISHED';
+        where.id = { in: ids };
+      }
+      [rows, total, counts] = await pageQueries();
+    } else {
+      const [r, p] = await Promise.all([readyP, pageQueries()]);
+      ({ on: cargurusOn, ready } = r);
+      [rows, total, counts] = p;
+    }
+    let cgReady = 0;
+    let cgExcluded = 0;
+    for (const iss of ready.values()) iss.length ? cgExcluded++ : cgReady++;
     const byStatus = Object.fromEntries(counts.map((c) => [c.status, c._count]));
     const items = rows.map((v) => ({ ...this.serialize(v), cargurus: cargurusOn && v.status === 'PUBLISHED' ? { issues: ready.get(v.id) ?? [] } : null }));
     return { items, total, page, pageSize, cargurusOn, counts: { PUBLISHED: 0, DRAFT: 0, SOLD: 0, ...byStatus, cgReady, cgExcluded } };

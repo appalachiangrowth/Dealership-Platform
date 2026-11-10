@@ -6,6 +6,7 @@ import { clean, isEmail, normDomain, VALID_TENANT_ID } from '../common/util.js';
 import { publicUser } from '../team/team.service.js';
 import type { Prisma, ReleaseChannel, TenantStatus } from '../generated/prisma/client.js';
 import type { AuthUser } from '../common/auth.types.js';
+import { forgetAuthCache } from '../common/auth.guard.js';
 
 const page = (p?: string, size = 50) => {
   const n = Math.max(1, parseInt(p || '1', 10) || 1);
@@ -204,6 +205,7 @@ export class PlatformService {
       ]);
     }
     await this.prisma.tenant.update({ where: { id }, data });
+    forgetAuthCache(); // e.g. a suspended dealership is locked out at once
     await this.audit.record('tenant.update', { tenantId: id, actor: user.login, detail: { fields: Object.keys(b) } });
     return this.inspect(id);
   }
@@ -301,6 +303,7 @@ export class PlatformService {
       data.passwordHash = await hashPassword(b.password);
     }
     await this.prisma.dealerUser.update({ where: { id }, data });
+    forgetAuthCache();
     await this.audit.record('account.update', { tenantId: u.tenantId, actor: user.login, detail: { login: u.login, disabled: b.disabled, password: !!b.password } });
     return this.account(id);
   }
@@ -340,6 +343,7 @@ export class PlatformService {
       data.disabled = b.disabled;
     }
     await this.prisma.platformOwner.update({ where: { id }, data });
+    forgetAuthCache();
     await this.audit.record('owner.update', { actor: user.login, detail: { login: o.login } });
     return this.owners();
   }
@@ -348,6 +352,7 @@ export class PlatformService {
     if (id === user.id) throw new ForbiddenException('You cannot delete yourself');
     if ((await this.prisma.platformOwner.count({ where: { disabled: false } })) <= 1) throw new BadRequestException('At least one owner must remain');
     await this.prisma.platformOwner.delete({ where: { id } });
+    forgetAuthCache();
     await this.audit.record('owner.delete', { actor: user.login, detail: { id } });
     return this.owners();
   }
