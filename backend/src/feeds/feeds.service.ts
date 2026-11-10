@@ -33,8 +33,15 @@ const EXTRA_FIELD: Record<string, keyof Vehicle & string> = {
 
 /** A vehicle's additional file columns with up-to-date values (header → text). */
 export function vehicleExtra(v: Vehicle): Record<string, string> {
-  const stored = (v as unknown as { extra?: unknown }).extra;
-  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {};
+  let stored = (v as unknown as { extra?: unknown }).extra;
+  if (typeof stored === 'string') {
+    try {
+      stored = JSON.parse(stored);
+    } catch {
+      stored = null;
+    }
+  }
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) stored = {};
   const out: Record<string, string> = {};
   for (const [h, raw] of Object.entries(stored as Record<string, unknown>)) {
     const nh = cg.norm(h);
@@ -59,8 +66,37 @@ export function vehicleExtra(v: Vehicle): Record<string, string> {
               ? String(cur).toLowerCase()
               : String(cur);
   }
+  // Vehicle details entered in the editor (Horsepower, Engine, Body Style …) are added too, even when the dealer's
+  // file never had that column — so the CarGurus audit page and master CSV always show the vehicle's full details.
+  const covered = new Set<string>(Object.keys(out).map((h) => EXTRA_FIELD[cg.norm(h)] || cg.norm(h)));
+  for (const [label, f] of STANDARD_EXTRA) {
+    if (covered.has(f) || covered.has(cg.norm(label))) continue;
+    const cur = (v as unknown as Record<string, unknown>)[f];
+    if (cur === null || cur === undefined || cur === '') continue;
+    out[label] = typeof cur === 'boolean' ? (cur ? 'Yes' : 'No') : String(cur);
+  }
   return out;
 }
+
+/** Vehicle fields that are not one of the 20 CarGurus columns, shown after them (in this order) when filled in. */
+const STANDARD_EXTRA: [string, keyof Vehicle & string][] = [
+  ['Vehicle Type', 'vehicleType'],
+  ['Body Style', 'bodyStyle'],
+  ['Condition', 'condition'],
+  ['Certified', 'certified'],
+  ['MSRP', 'msrp'],
+  ['Interior Color', 'interiorColor'],
+  ['Engine', 'engine'],
+  ['Horsepower', 'horsepower'],
+  ['Drivetrain', 'drivetrain'],
+  ['Fuel Type', 'fuelType'],
+  ['MPG', 'mpg'],
+  ['Fuel Tank Size', 'fuelTank'],
+  ['Doors', 'doors'],
+  ['Seats', 'seats'],
+  ['Owners', 'owners'],
+  ['Accidents', 'accidents'],
+];
 
 /**
  * Inventory feeds per dealership, built live from the database:

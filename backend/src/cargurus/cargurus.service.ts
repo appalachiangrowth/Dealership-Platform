@@ -95,8 +95,9 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
    */
   private async recordsWithExtra(tenantId: string, sub: CargurusSubmission): Promise<cg.CgRecord[]> {
     const records = sub.records as unknown as cg.CgRecord[];
-    const has = (r: cg.CgRecord) => !!r._extra && Object.keys(r._extra).length > 0;
-    if (sub.source === 'upload' || records.every(has)) return records;
+    if (sub.source === 'upload') return records;
+    // Website / inventory batches: every vehicle also gets its details from the editor (Horsepower, Engine …)
+    // and its additional inventory columns, matched by VIN, then stock number. Values already in the batch win.
     const vehicles = await this.prisma.vehicle.findMany({ where: { tenantId } });
     const byVin = new Map<string, Record<string, string>>();
     const byStock = new Map<string, Record<string, string>>();
@@ -108,9 +109,12 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
     }
     if (!byVin.size && !byStock.size) return records;
     return records.map((r) => {
-      if (has(r)) return r;
-      const ex = (r.vin && byVin.get(r.vin.toUpperCase())) || (r.stock && byStock.get(r.stock.toLowerCase())) || undefined;
-      return ex ? { ...r, _extra: ex } : r;
+      const cur = (r.vin && byVin.get(r.vin.toUpperCase())) || (r.stock && byStock.get(r.stock.toLowerCase())) || undefined;
+      if (!cur) return r;
+      const merged: Record<string, string> = { ...(r._extra || {}) };
+      const have = new Set(Object.keys(merged).map((k) => cg.norm(k)));
+      for (const [k, val] of Object.entries(cur)) if (!have.has(cg.norm(k))) merged[k] = val;
+      return { ...r, _extra: merged };
     });
   }
 
