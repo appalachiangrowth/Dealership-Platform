@@ -3,13 +3,13 @@
 /**
  * "Post to Facebook" popup for one vehicle — used by the Inventory table (FB button) and the vehicle editor
  * (right after "Publish vehicle").
- *  · ticks: "Post on my Facebook profile", each of your Pages, and "List on Facebook Marketplace" (when every Marketplace field is filled in)
+ *  · ticks: each of your Pages and "List on Facebook Marketplace" (it needs every Marketplace field filled in)
  *  · ONE button posts to whatever is ticked (both = both)
  *  · after "Post", the popup stays open and shows the live progress at the top (also shown in the bar on every page)
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, ExternalLink, Flag, ImageIcon, Loader2, RefreshCw, Store, User, XCircle } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Flag, ImageIcon, Loader2, RefreshCw, Store, XCircle } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
 import { useToast } from '@/components/toast';
 import { Button, Modal, cx } from '@/components/ui';
@@ -61,7 +61,8 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
   const [caption, setCaption] = useState('');
   const [hashtags, setHashtags] = useState('');
   const [loadingText, setLoadingText] = useState(false);
-  const [toProfile, setToProfile] = useState(true);
+  // posting goes to the Pages you tick and to Marketplace (no personal-profile posts)
+  const toProfile = false;
   const [toMp, setToMp] = useState(true);
   const [posting, setPosting] = useState(false);
   // your Facebook Pages (loaded once in FB Poster or here) and the ticked ones
@@ -87,7 +88,6 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
     // speed: Chrome + Facebook start in the background while the dealer looks at the popup
     void fb.post('warm').catch(() => {});
     const saved = loadChoice();
-    setToProfile(saved.profile);
     setToMp(saved.mp);
     setSelPages(new Set(saved.pages || []));
     setMpCopy('');
@@ -123,6 +123,8 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
         setPages(list);
         // ticked Pages that are no longer in the list are dropped
         setSelPages((cur) => new Set([...cur].filter((u) => list.some((p) => p.url === u))));
+        // no Pages saved yet: read them from Facebook straight away
+        if (!list.length && q?.connection?.connected) void loadPages(true);
       })
       .catch(() => {});
     // what Marketplace will show: the saved listing text, else the text written from the vehicle
@@ -178,20 +180,20 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
   const disconnected = needLogin || (!!conn && !conn.connected);
   const missing = mpMissing(v);
   const mpReady = !!v && !missing.length;
-  const wantMp = toMp && mpReady;
+  const wantMp = toMp;
   const pageList = pages.filter((p) => selPages.has(p.url));
   const count = (toProfile ? 1 : 0) + pageList.length + (wantMp ? 1 : 0);
   const postsAnywhere = toProfile || pageList.length > 0;
 
-  async function loadPages() {
+  async function loadPages(silent = false) {
     setLoadingPages(true);
     try {
       const r = await fb.post<{ pages: FbItem[] }>('pages/load');
       setPages(r.pages || []);
-      toast.ok(r.pages?.length ? `${r.pages.length} Page${r.pages.length === 1 ? '' : 's'} found.` : 'No Pages found for this Facebook account.');
+      if (!silent || !r.pages?.length) toast.ok(r.pages?.length ? `${r.pages.length} Page${r.pages.length === 1 ? '' : 's'} found.` : 'No Pages found for this Facebook account.');
     } catch (e) {
       if (NEEDS_LOGIN.test((e as Error).message)) setNeedLogin(true);
-      toast.error((e as Error).message);
+      if (!silent) toast.error((e as Error).message);
     } finally {
       setLoadingPages(false);
     }
@@ -207,6 +209,10 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
   /* ───── the one button: profile and/or Marketplace ───── */
   async function postNow() {
     if (!v || !count) return;
+    if (toMp && !mpReady) {
+      toast.error(`Marketplace needs: ${missing.join(', ')}. Click a missing item to fill it in, or untick Marketplace.`);
+      return;
+    }
     if (!(v.images || []).length) {
       toast.error('Add at least one photo to this vehicle first.');
       return;
@@ -219,7 +225,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
       if (postsAnywhere) {
         try {
           const form = new FormData();
-          form.append('profile', toProfile ? '1' : '0');
+          form.append('profile', '0');
           form.append('pages', JSON.stringify(pageList));
           form.append('order', JSON.stringify((v.images || []).map((u: string) => `v:${u}`)));
           form.append('caption', caption || vehicleName(v));
@@ -407,7 +413,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
                 onClick={postNow}
               >
                 <FacebookIcon className="mr-1.5 h-3.5 w-3.5" />
-                {count > 1 ? `Post to ${count} places` : wantMp ? 'Post to Marketplace' : pageList.length ? 'Post to Page' : 'Post to profile'}
+                {count > 1 ? `Post to ${count} places` : wantMp ? 'Post to Marketplace' : 'Post to Page'}
               </Button>
             )}
           </div>
@@ -460,21 +466,12 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
           {/* where to post: profile, your Pages, Marketplace */}
           {!started && (
             <div className="space-y-2">
-              <label className={cx('flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2.5 text-xs transition', toProfile ? 'border-[#1877F2] bg-blue-50/50' : 'border-slate-200')}>
-                <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#1877F2]" checked={toProfile} onChange={(e) => setToProfile(e.target.checked)} />
-                <User className="mt-0.5 h-4 w-4 shrink-0 text-[#1877F2]" />
-                <span className="min-w-0 flex-1">
-                  <b className="block text-sm text-slate-900">Post on my Facebook profile</b>
-                  <span className="text-slate-500">A normal post with the photos and the text below.</span>
-                </span>
-              </label>
-
               {/* your Pages */}
               <div className={cx('rounded-xl border px-3 py-2.5 text-xs', pageList.length ? 'border-[#1877F2] bg-blue-50/50' : 'border-slate-200')}>
                 <div className="flex items-center gap-2.5">
                   <Flag className="h-4 w-4 shrink-0 text-[#1877F2]" />
                   <b className="flex-1 text-sm text-slate-900">Post on my Pages</b>
-                  <button type="button" disabled={loadingPages || disconnected} onClick={loadPages} className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:underline disabled:opacity-50">
+                  <button type="button" disabled={loadingPages || disconnected} onClick={() => loadPages()} className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:underline disabled:opacity-50">
                     {loadingPages ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                     {pages.length ? 'Refresh' : 'Load my Pages'}
                   </button>
@@ -493,33 +490,40 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
                 )}
               </div>
 
-              {mpReady ? (
-                <label className={cx('flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2.5 text-xs transition', toMp ? 'border-emerald-500 bg-emerald-50/60' : 'border-slate-200')}>
-                  <input type="checkbox" className="mt-0.5 h-4 w-4 accent-emerald-600" checked={toMp} onChange={(e) => setToMp(e.target.checked)} />
-                  <Store className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
-                  <span className="min-w-0 flex-1">
-                    <b className="block text-sm text-slate-900">List on Facebook Marketplace</b>
+              <label
+                className={cx(
+                  'flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2.5 text-xs transition',
+                  toMp ? (mpReady ? 'border-emerald-500 bg-emerald-50/60' : 'border-amber-400 bg-amber-50/60') : 'border-slate-200',
+                )}
+              >
+                <input type="checkbox" className="mt-0.5 h-4 w-4 accent-emerald-600" checked={toMp} onChange={(e) => setToMp(e.target.checked)} />
+                <Store className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
+                <span className="min-w-0 flex-1">
+                  <b className="block text-sm text-slate-900">List on Facebook Marketplace</b>
+                  {mpReady ? (
                     <span className="text-slate-500">Every Marketplace field is filled in — it is listed automatically.</span>
-                  </span>
-                </label>
-              ) : (
-                <div className="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs">
-                  <input type="checkbox" className="mt-0.5 h-4 w-4" disabled checked={false} readOnly />
-                  <Store className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                  <span className="min-w-0 flex-1">
-                    <b className="block text-sm text-slate-700">Facebook Marketplace — not ready</b>
-                    <span className="text-slate-500">Missing: </span>
-                    {missing.map((m, i) => (
-                      <span key={m}>
-                        {i > 0 && ', '}
-                        <button type="button" className="font-semibold text-blue-700 hover:underline" onClick={() => goEdit(MP_FIX[m])}>
-                          {m}
-                        </button>
-                      </span>
-                    ))}
-                  </span>
-                </div>
-              )}
+                  ) : (
+                    <span className="text-amber-800">
+                      Still needed:{' '}
+                      {missing.map((m, i) => (
+                        <span key={m}>
+                          {i > 0 && ', '}
+                          <button
+                            type="button"
+                            className="font-semibold text-blue-700 hover:underline"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              goEdit(MP_FIX[m]);
+                            }}
+                          >
+                            {m}
+                          </button>
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </span>
+              </label>
             </div>
           )}
 

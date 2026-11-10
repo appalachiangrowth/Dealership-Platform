@@ -68,7 +68,7 @@ export function FbHeader() {
         <div>
           <h1 className="font-heading text-2xl font-extrabold tracking-tight text-slate-900">FB Poster</h1>
           <p className="mt-1 max-w-3xl text-sm text-slate-500">
-            Post your cars on your Facebook profile, your Pages and Marketplace. Your Facebook login runs safely on our server, so nothing needs to be installed on this
+            Post your cars on your Facebook Pages and on Marketplace. Your Facebook login runs safely on our server, so nothing needs to be installed on this
             computer, and posting carries on even when you close this page.
           </p>
         </div>

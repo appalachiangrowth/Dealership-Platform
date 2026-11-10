@@ -539,8 +539,8 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
           return d;
         }
       };
-      // your own profile and/or your Pages (groups and collections were removed)
-      const wantProfile = b.profile !== '0';
+      // your Pages (and your own profile only when asked: profile=1)
+      const wantProfile = b.profile === '1';
       const pages = parse<{ url?: string; name?: string }[]>(b.pages, [])
         .map((p) => ({ url: String(p?.url || '').trim(), name: String(p?.name || '').trim() }))
         .filter((p) => FB_URL.test(p.url) && !/facebook\.com\/groups\//i.test(p.url))
@@ -548,7 +548,7 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
       const targets = [...new Set([...(wantProfile ? [PROFILE_URL] : []), ...pages.map((p) => p.url)])];
       const names: Record<string, string> = { [PROFILE_URL]: account.fbName ? `${account.fbName} · your profile` : 'Your Facebook profile' };
       for (const p of pages) names[p.url] = p.name ? `${p.name} · Page` : p.url;
-      if (!targets.length) throw new BadRequestException('Tick your profile or at least one Page.');
+      if (!targets.length) throw new BadRequestException('Tick at least one Page.');
       const tags = cleanTags(b.hashtags || '');
       const caption = [String(b.caption || '').trim(), tags].filter(Boolean).join('\n\n').slice(0, 60000);
 

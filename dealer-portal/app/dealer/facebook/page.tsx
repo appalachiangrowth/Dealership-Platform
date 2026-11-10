@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, CheckCircle2, Clock, Film, Flag, Loader2, Play, RefreshCw, Square, Star, Store, Trash2, Upload, User, XCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Clock, Film, Flag, Loader2, Play, RefreshCw, Square, Star, Store, Trash2, Upload, XCircle } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { fb, useFb, type FbItem, type FbResult } from '@/lib/facebook';
@@ -28,7 +28,7 @@ const RESULT: Record<string, { color: string; text: string }> = {
   'not posted': { color: 'slate', text: 'Not posted' },
 };
 
-/** FB Poster › Post: your own Facebook profile, your Pages and/or Marketplace — one button. */
+/** FB Poster › Post: your Facebook Pages and/or Marketplace — one button. */
 export default function FbPostPage() {
   const { state, refresh } = useFb();
   const toast = useToast();
@@ -37,7 +37,8 @@ export default function FbPostPage() {
   const vehicles = useApi<{ vehicles: MpVehicle[] }>('/dealer/facebook/mp/vehicles');
 
   const [loading, setLoading] = useState('');
-  const [toProfile, setToProfile] = useState(true);
+  // posting goes to the Pages you tick and to Marketplace (no personal-profile posts)
+  const toProfile = false;
   const [toMp, setToMp] = useState(true);
   const [media, setMedia] = useState<Media[]>([]);
   const [caption, setCaption] = useState('');
@@ -55,7 +56,7 @@ export default function FbPostPage() {
   const running = job?.status === 'running';
   const vehicle = (vehicles.data?.vehicles || []).find((v) => v.id === vehicleId) || null;
   const mpReady = !!vehicle && !vehicle.missing?.length;
-  const wantMp = toMp && mpReady;
+  const wantMp = toMp;
   const pages: FbItem[] = account?.pages || [];
   const pageList = pages.filter((p) => selPages.has(p.url));
   const postsAnywhere = toProfile || pageList.length > 0;
@@ -73,7 +74,6 @@ export default function FbPostPage() {
     try {
       const c = JSON.parse(localStorage.getItem(CHOICE_KEY) || 'null');
       if (c) {
-        setToProfile(c.profile !== false);
         setToMp(c.mp !== false);
         if (Array.isArray(c.pages)) setSelPages(new Set(c.pages));
         if (c.hashtags) setHashtags(c.hashtags);
@@ -162,7 +162,9 @@ export default function FbPostPage() {
   /** the one button: profile and/or Marketplace */
   const postNow = () =>
     run('post', async () => {
-      if (!count) throw new Error('Tick your profile, a Page and/or "Facebook Marketplace".');
+      if (!count) throw new Error('Tick a Page and/or "Facebook Marketplace".');
+      if (wantMp && !vehicle) throw new Error('Choose the vehicle to list on Marketplace.');
+      if (wantMp && vehicle && !mpReady) throw new Error(`Marketplace needs: ${vehicle.missing.join(', ')}. Fill these in on the vehicle first.`);
       if (postsAnywhere && !caption.trim() && !hashtags.trim() && !media.length) throw new Error('Add a photo/video or write a description.');
       try {
         localStorage.setItem(CHOICE_KEY, JSON.stringify({ profile: toProfile, mp: toMp, pages: [...selPages], hashtags }));
@@ -172,7 +174,7 @@ export default function FbPostPage() {
       if (postsAnywhere) {
         try {
           const form = new FormData();
-          form.append('profile', toProfile ? '1' : '0');
+          form.append('profile', '0');
           form.append('pages', JSON.stringify(pageList));
           const order: string[] = [];
           let n = 0;
@@ -186,12 +188,12 @@ export default function FbPostPage() {
           form.append('caption', caption);
           form.append('hashtags', hashtags);
           await api('/dealer/facebook/post', { method: 'POST', form });
-          done.push([toProfile && 'your profile', pageList.length && `${pageList.length} Page${pageList.length === 1 ? '' : 's'}`].filter(Boolean).join(' and '));
+          done.push(`${pageList.length} Page${pageList.length === 1 ? '' : 's'}`);
         } catch (e) {
           errors.push(`Facebook post: ${(e as Error).message}`);
         }
       }
-      if (wantMp && vehicle) {
+      if (wantMp && vehicle && mpReady) {
         try {
           const r = await fb.post<{ queued: number; rejected: { id: string; error: string }[] }>('mp/publish', { ids: [vehicle.id] });
           if (r.queued) {
@@ -221,7 +223,7 @@ export default function FbPostPage() {
     <div className="space-y-6">
       {!connected && state && (
         <div className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-900">
-          <b>Step 1:</b> click <b>Connect Facebook</b> above and log in once. <b>Step 2:</b> choose a vehicle (or add photos), tick where to post and press <b>Post</b>.
+          <b>Step 1:</b> click <b>Connect Facebook</b> above and log in once. <b>Step 2:</b> load your Pages, choose a vehicle, tick where to post and press <b>Post</b>.
         </div>
       )}
 
@@ -230,17 +232,6 @@ export default function FbPostPage() {
         <div className="space-y-6">
           <Card title="Where to post">
             <div className="space-y-2.5 text-sm">
-              <label className={cx('flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-3 transition', toProfile ? 'border-[#1877F2] bg-blue-50/50' : 'border-slate-200')}>
-                <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#1877F2]" checked={toProfile} onChange={(e) => setToProfile(e.target.checked)} />
-                <User className="mt-0.5 h-4 w-4 shrink-0 text-[#1877F2]" />
-                <span className="min-w-0 flex-1">
-                  <b className="block text-slate-900">My Facebook profile</b>
-                  <span className="text-xs text-slate-500">
-                    A normal post on {account?.fbName ? <b className="text-slate-700">{account.fbName}</b> : 'your profile'} with the photos and text on the right.
-                  </span>
-                </span>
-              </label>
-
               <div className={cx('rounded-xl border px-3.5 py-3 transition', pageList.length ? 'border-[#1877F2] bg-blue-50/50' : 'border-slate-200')}>
                 <div className="flex items-center gap-3">
                   <Flag className="h-4 w-4 shrink-0 text-[#1877F2]" />
@@ -285,20 +276,20 @@ export default function FbPostPage() {
               <label
                 className={cx(
                   'flex items-start gap-3 rounded-xl border px-3.5 py-3 transition',
-                  mpReady ? 'cursor-pointer' : 'cursor-not-allowed bg-slate-50',
-                  wantMp ? 'border-emerald-500 bg-emerald-50/60' : 'border-slate-200',
+                  'cursor-pointer',
+                  wantMp ? (vehicle && !mpReady ? 'border-amber-400 bg-amber-50/60' : 'border-emerald-500 bg-emerald-50/60') : 'border-slate-200',
                 )}
               >
-                <input type="checkbox" className="mt-0.5 h-4 w-4 accent-emerald-600" disabled={!mpReady} checked={wantMp} onChange={(e) => setToMp(e.target.checked)} />
-                <Store className={cx('mt-0.5 h-4 w-4 shrink-0', mpReady ? 'text-emerald-700' : 'text-slate-400')} />
+                <input type="checkbox" className="mt-0.5 h-4 w-4 accent-emerald-600" checked={wantMp} onChange={(e) => setToMp(e.target.checked)} />
+                <Store className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
                 <span className="min-w-0 flex-1">
                   <b className="block text-slate-900">Facebook Marketplace</b>
                   <span className="text-xs text-slate-500">
                     {!vehicle
-                      ? 'Choose a vehicle on the right: it is listed with its own photos and details.'
+                      ? 'Choose the vehicle on the right: it is listed with its own photos and details.'
                       : mpReady
                         ? 'This vehicle is Marketplace ready: it is listed automatically with its own photos and details.'
-                        : `Not ready — missing: ${vehicle.missing.join(', ')}. Fill these in on the vehicle first.`}
+                        : `This vehicle still needs: ${vehicle.missing.join(', ')}. Fill these in on the vehicle, then post.`}
                   </span>
                 </span>
               </label>
@@ -443,11 +434,11 @@ export default function FbPostPage() {
                   onClick={postNow}
                 >
                   <Play className="h-4 w-4" />
-                  {count > 1 ? `Post to ${count} places` : wantMp ? 'Post to Marketplace' : pageList.length ? 'Post to Page' : 'Post to profile'}
+                  {count > 1 ? `Post to ${count} places` : wantMp ? 'Post to Marketplace' : 'Post to Page'}
                 </Button>
               )}
               <span className="text-sm text-slate-500">
-                {!count ? 'Nothing ticked yet' : postsAnywhere && wantMp ? 'Profile / Pages first, then the Marketplace listing' : ''}
+                {!count ? 'Nothing ticked yet' : postsAnywhere && wantMp ? 'Pages first, then the Marketplace listing' : ''}
                 {state?.busy && !running && !mpBusy ? ` · busy: ${state.busyWhat}` : ''}
               </span>
             </div>
