@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  LayoutDashboard, Building2, Palette, Type, Car, Newspaper, Inbox, Users, Settings2, ExternalLink, LogOut, Menu, Plus, KeyRound, Rss, LifeBuoy, ShieldAlert, X, Megaphone,
+  House, Store, Palette, FileText, Car, Newspaper, Mail, Users, ExternalLink, LogOut, Menu, Plus, KeyRound, Rss, ShieldAlert, X, Send, Check, Search, Bell,
 } from 'lucide-react';
 import { api, auth, mediaUrl, siteUrl, PLATFORM_ADMIN_URL } from '@/lib/api';
 import { useSession } from '@/lib/session';
@@ -24,7 +24,7 @@ export interface DealerTenant {
 const TenantCtx = createContext<{ tenant: DealerTenant | null; support: boolean; refreshTenant: () => void }>({ tenant: null, support: false, refreshTenant: () => {} });
 export const useTenant = () => useContext(TenantCtx);
 
-type Item = { href: string; label: string; icon: React.ElementType; perm: string[]; step?: number; feature?: string; badge?: number };
+type Item = { href: string; label: string; icon: React.ElementType; perm: string[]; feature?: string; badge?: number; done?: boolean };
 
 export function DealerShell({ children }: { children: React.ReactNode }) {
   const { me, loading, logout, can } = useSession();
@@ -33,6 +33,10 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
   const [tenant, setTenant] = useState<DealerTenant | null>(null);
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
+  // setup ticks next to "Your website" and the number of vehicles for sale (from the Overview numbers)
+  const [setup, setSetup] = useState<{ done: Set<string>; forSale: number } | null>(null);
+  const [q, setQ] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
   const support = me?.user.kind === 'owner';
 
   const loadTenant = async () => {
@@ -73,33 +77,52 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => setOpen(false), [pathname]);
 
+  const onOverview = pathname === '/dealer';
+  useEffect(() => {
+    if (!tenant || !can('dashboard')) return;
+    api('/dealer/dashboard')
+      .then((d) => setSetup({ done: new Set((d.checklist || []).filter((c: { done: boolean }) => c.done).map((c: { id: string }) => c.id)), forSale: d.vehicles?.published ?? 0 }))
+      .catch(() => {});
+  }, [tenant, onOverview, can]);
+
+  // Ctrl/Cmd + K: jump to the search box
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   if (loading || !me || !tenant) return <Loading />;
 
+  const done = (...ids: string[]) => !!setup && ids.every((id) => setup.done.has(id));
   const groups: { title?: string; items: Item[] }[] = [
-    { items: [{ href: '/dealer', label: 'Overview', icon: LayoutDashboard, perm: ['dashboard'] }] },
+    { items: [{ href: '/dealer', label: 'Overview', icon: House, perm: ['dashboard'] }] },
     {
       title: 'Your website',
       items: [
-        { href: '/dealer/business', label: 'Business details', icon: Building2, perm: ['business'], step: 1 },
-        { href: '/dealer/design', label: 'Design & colours', icon: Palette, perm: ['design'], step: 2 },
-        { href: '/dealer/content', label: 'Website content', icon: Type, perm: ['content'], step: 3 },
+        { href: '/dealer/business', label: 'Business details', icon: Store, perm: ['business'], done: done('business', 'logo', 'hours') },
+        { href: '/dealer/design', label: 'Design & colours', icon: Palette, perm: ['design'], done: done('design') },
+        { href: '/dealer/content', label: 'Website content', icon: FileText, perm: ['content'], done: done('content') },
       ],
     },
     {
-      title: 'Inventory',
+      title: 'Inventory & marketing',
       items: [
-        { href: '/dealer/inventory', label: 'Inventory', icon: Car, perm: ['inventory'] },
+        { href: '/dealer/inventory', label: 'Inventory', icon: Car, perm: ['inventory'], badge: setup?.forSale },
         { href: '/dealer/cargurus', label: 'CarGurus feed', icon: Rss, perm: ['inventory'], feature: 'cargurus' },
-        { href: '/dealer/facebook', label: 'FB Poster', icon: Megaphone, perm: ['inventory'], feature: 'facebook' },
+        { href: '/dealer/facebook', label: 'FB Poster', icon: Send, perm: ['inventory'], feature: 'facebook' },
         { href: '/dealer/blog', label: 'Blog & news', icon: Newspaper, perm: ['blog'], feature: 'blog' },
       ],
     },
-    { title: 'Customers', items: [{ href: '/dealer/leads', label: 'Leads & inquiries', icon: Inbox, perm: ['leads'], badge: unread }] },
+    { title: 'Customers', items: [{ href: '/dealer/leads', label: 'Leads & inquiries', icon: Mail, perm: ['leads'], badge: unread }] },
     {
       title: 'Settings',
-      items: [
-        { href: '/dealer/team', label: 'Team & permissions', icon: Users, perm: ['users'] },
-      ],
+      items: [{ href: '/dealer/team', label: 'Team & permissions', icon: Users, perm: ['users'] }],
     },
   ];
   const visible = groups
@@ -116,76 +139,91 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
     window.location.href = `${PLATFORM_ADMIN_URL}/platform/dealers/${tenant.id}`;
   };
 
+  const search = (e: React.FormEvent) => {
+    e.preventDefault();
+    const term = q.trim();
+    router.push(`/dealer/inventory${term ? `?q=${encodeURIComponent(term)}` : ''}`);
+    // the Inventory page may already be open: tell it about the new search
+    setTimeout(() => window.dispatchEvent(new Event('dealer-search')), 50);
+  };
+
   const sidebar = (
-    <aside className="flex h-full w-64 flex-col bg-[#0b2340] text-slate-200">
-      <div className="flex items-center gap-3 px-5 py-5">
+    <aside className="flex h-full w-64 flex-col gap-5 border-r border-[#1E293B] bg-[#0F172A] px-3.5 py-5 text-[#CBD5E1]">
+      <div className="flex items-center gap-3 px-1.5">
         {tenant.logo ? (
-          <img src={mediaUrl(tenant.logo)} alt="" className="h-10 w-10 rounded-lg bg-white object-contain p-1" />
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={mediaUrl(tenant.logo)} alt="" className="h-10 w-10 shrink-0 rounded-[10px] bg-white object-contain p-1" />
         ) : (
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 font-heading text-sm font-extrabold">{tenant.name.slice(0, 2).toUpperCase()}</div>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-[#2563EB] text-white">
+            <Car className="h-[22px] w-[22px]" />
+          </div>
         )}
-        <div className="min-w-0">
-          <div className="truncate font-heading text-sm font-bold text-white">{tenant.name}</div>
-          <div className="text-[11px] text-slate-400">Dealership Portal</div>
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate text-base font-bold text-white">{tenant.name}</span>
+          <span className="text-xs text-[#94A3B8]">Dealer Portal</span>
         </div>
       </div>
+
       {can('inventory') && (
-        <div className="px-4 pb-3">
-          <Link href="/dealer/inventory/new" className="flex items-center justify-center gap-2 rounded-lg bg-emerald-500 py-2.5 text-sm font-bold text-white hover:bg-emerald-600">
-            <Plus className="h-4 w-4" /> Add vehicle
-          </Link>
-        </div>
+        <Link
+          href="/dealer/inventory/new"
+          className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#2563EB] px-4 text-sm font-semibold text-white transition hover:brightness-110"
+        >
+          <Plus className="h-[18px] w-[18px]" /> Add vehicle
+        </Link>
       )}
-      <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
+
+      <nav aria-label="Main" className="-mx-1 flex flex-1 flex-col gap-[18px] overflow-y-auto px-1">
         {visible.map((g, gi) => (
-          <div key={gi}>
-            {g.title && <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">{g.title}</div>}
-            {g.items.map((i) => (
-              <Link
-                key={i.href}
-                href={i.href}
-                className={cx(
-                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition',
-                  isActive(i.href) ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/5 hover:text-white',
-                )}
-              >
-                {i.step ? (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[10px] font-bold">{i.step}</span>
-                ) : (
-                  <i.icon className="h-4 w-4" />
-                )}
-                <span className="flex-1">{i.label}</span>
-                {!!i.badge && <span className="rounded-full bg-blue-500 px-1.5 text-[10px] font-bold text-white">{i.badge}</span>}
-              </Link>
-            ))}
+          <div key={gi} className="flex flex-col gap-0.5">
+            {g.title && <span className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#94A3B8]">{g.title}</span>}
+            {g.items.map((i) => {
+              const active = isActive(i.href);
+              return (
+                <Link
+                  key={i.href}
+                  href={i.href}
+                  aria-current={active ? 'page' : undefined}
+                  className={cx(
+                    'flex items-center gap-3 rounded-lg px-3 py-[9px] text-sm transition',
+                    active ? 'bg-[#1E3A8A] font-semibold text-white' : 'font-medium text-[#CBD5E1] hover:bg-[#1E293B]',
+                  )}
+                >
+                  <i.icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.8} />
+                  <span className="flex-1 truncate">{i.label}</span>
+                  {i.done && <Check className="h-4 w-4 text-[#22C55E]" strokeWidth={2.4} aria-label="Complete" />}
+                  {!!i.badge && <span className="rounded-full bg-[#1E293B] px-2 py-px text-xs font-semibold text-[#CBD5E1]">{i.badge}</span>}
+                </Link>
+              );
+            })}
           </div>
         ))}
       </nav>
-      <div className="space-y-2 border-t border-white/10 p-4">
-        <a href={siteUrl(tenant)} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/5">
-          <ExternalLink className="h-3.5 w-3.5" /> View your website
-        </a>
-        {(me.support.email || me.support.phone) && (
-          <div className="flex items-start gap-2 px-2 text-[11px] text-slate-400">
-            <LifeBuoy className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>
-              Need help? {me.support.phone} {me.support.email}
-            </span>
+
+      <div className="flex flex-col gap-3.5">
+        <div className="flex flex-col gap-2 rounded-xl border border-[#1E293B] bg-[#131D33] p-3.5">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-[#22C55E]" />
+            <span className="text-[13px] font-semibold text-white">Website is live</span>
           </div>
-        )}
-        <div className="flex items-center gap-2 pt-1">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">{initials}</div>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-xs font-semibold text-white">{me.user.name || me.user.login}</div>
-            <div className="truncate text-[10px] text-slate-400">{support ? 'Platform owner' : me.catalog.roles[me.user.role]?.label || me.user.role}</div>
+          <span className="text-xs text-[#94A3B8]">Visitors can see your published vehicles right now.</span>
+          <a href={siteUrl(tenant)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#93C5FD] hover:underline">
+            View website <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
+        <div className="flex items-center gap-2.5 border-t border-[#1E293B] px-1.5 pt-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#2563EB] text-sm font-bold text-white">{initials}</span>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-sm font-semibold text-white">{me.user.name || me.user.login}</span>
+            <span className="truncate text-xs text-[#94A3B8]">{support ? 'Platform owner' : me.catalog.roles[me.user.role]?.label || me.user.role}</span>
           </div>
           {!support && (
-            <Link href="/dealer/account" title="Password" className="rounded p-1 text-slate-400 hover:text-white">
-              <KeyRound className="h-4 w-4" />
+            <Link href="/dealer/account" title="Password" aria-label="Account settings" className="flex h-9 w-9 items-center justify-center rounded-lg text-[#94A3B8] hover:bg-[#1E293B] hover:text-white">
+              <KeyRound className="h-[18px] w-[18px]" />
             </Link>
           )}
-          <button onClick={logout} title="Log out" className="rounded p-1 text-slate-400 hover:text-white">
-            <LogOut className="h-4 w-4" />
+          <button onClick={logout} title="Log out" aria-label="Log out" className="flex h-9 w-9 items-center justify-center rounded-lg text-[#94A3B8] hover:bg-[#1E293B] hover:text-white">
+            <LogOut className="h-[18px] w-[18px]" />
           </button>
         </div>
       </div>
@@ -229,9 +267,41 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
               <span />
             )}
           </header>
+          {/* desktop top bar: search + new inquiries */}
+          <header className="hidden flex-wrap items-center gap-4 border-b border-[#E5E9F0] bg-white px-7 py-3.5 lg:flex">
+            <form onSubmit={search} className="flex min-h-[42px] max-w-[520px] flex-[1_1_280px] items-center gap-2.5 rounded-[10px] border border-[#E5E9F0] bg-[#F4F6FA] px-3 text-[#526077]">
+              <Search className="h-[18px] w-[18px] shrink-0" />
+              <label htmlFor="dealer-search" className="sr-only">
+                Search
+              </label>
+              <input
+                id="dealer-search"
+                ref={searchRef}
+                type="search"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search vehicles by make, model, VIN or stock number…"
+                className="min-w-0 flex-1 border-0 bg-transparent text-sm text-[#0F172A] outline-none placeholder:text-[#526077]"
+              />
+              <span className="rounded-[5px] border border-[#CBD5E1] px-1.5 py-0.5 text-[11px] font-semibold text-[#526077]">Ctrl K</span>
+            </form>
+            <div className="ml-auto flex items-center gap-2">
+              {can('leads') && (
+                <Link
+                  href="/dealer/leads"
+                  aria-label={unread ? `Inquiries, ${unread} new` : 'Inquiries'}
+                  title={unread ? `${unread} new ${unread === 1 ? 'inquiry' : 'inquiries'}` : 'Inquiries'}
+                  className="relative flex h-11 w-11 items-center justify-center rounded-[10px] border border-[#E5E9F0] bg-white text-[#0F172A] hover:bg-[#F8FAFC]"
+                >
+                  <Bell className="h-5 w-5" strokeWidth={1.8} />
+                  {!!unread && <span className="absolute right-2.5 top-2 h-2 w-2 rounded-full border-2 border-white bg-[#2563EB]" />}
+                </Link>
+              )}
+            </div>
+          </header>
           {/* Facebook posting / Marketplace progress, on every page until it is done */}
           <FbActivityBar enabled={tenant.features.facebook !== false && can('inventory')} />
-          <main className={cx('mx-auto w-full flex-1 px-4 py-6 sm:px-8', wide ? 'max-w-none sm:py-6' : 'max-w-7xl sm:py-8')}>{children}</main>
+          <main className={cx('w-full flex-1 px-4 py-6 sm:px-7', wide ? 'max-w-none sm:py-6' : 'max-w-[1240px] sm:py-7')}>{children}</main>
         </div>
       </div>
     </TenantCtx.Provider>

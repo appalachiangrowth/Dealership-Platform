@@ -1567,7 +1567,7 @@ export function createFbSession(opts) {
         await page().keyboard.down(mod); await page().keyboard.press('KeyA'); await page().keyboard.up(mod);
         await page().keyboard.press('Backspace');
         const text = String(value);
-        if (!multiline) { await page().keyboard.type(text, { delay: 5 }); return; }
+        if (!multiline) { await page().keyboard.type(text, { delay: 0 }); return; }
         const lines = text.replace(/\r\n?/g, '\n').split('\n');
         for (let i = 0; i < lines.length; i++) {
           if (i > 0) await page().keyboard.press('Enter');

@@ -3,18 +3,18 @@
 /**
  * "Post to Facebook" popup for one vehicle — used by the Inventory table (FB button) and the vehicle editor
  * (right after "Publish vehicle").
- *  · two ticks: "Post on my Facebook profile" and "List on Facebook Marketplace" (when every Marketplace field is filled in)
+ *  · ticks: "Post on my Facebook profile", each of your Pages, and "List on Facebook Marketplace" (when every Marketplace field is filled in)
  *  · ONE button posts to whatever is ticked (both = both)
  *  · after "Post", the popup stays open and shows the live progress at the top (also shown in the bar on every page)
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, ExternalLink, ImageIcon, Loader2, Store, User, XCircle } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Flag, ImageIcon, Loader2, RefreshCw, Store, User, XCircle } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
 import { useToast } from '@/components/toast';
 import { Button, Modal, cx } from '@/components/ui';
 import { money, vehicleName } from '@/lib/format';
-import { FacebookIcon, fb, type FbJob } from '@/lib/facebook';
+import { FacebookIcon, fb, type FbItem, type FbJob } from '@/lib/facebook';
 import { mpMissing, MP_FIX } from '@/lib/marketplace';
 import { announceFbActivity } from './FbActivityBar';
 
@@ -29,11 +29,11 @@ const NEEDS_LOGIN = /not connected|log ?in|logged out|checkpoint/i;
 
 /** the last choice of the two ticks, remembered on this browser */
 const CHOICE_KEY = 'fb_post_choice';
-type Choice = { profile: boolean; mp: boolean; hashtags?: string };
+type Choice = { profile: boolean; mp: boolean; pages?: string[]; hashtags?: string };
 function loadChoice(): Choice {
   try {
     const c = JSON.parse(localStorage.getItem(CHOICE_KEY) || 'null');
-    if (c && typeof c === 'object') return { profile: c.profile !== false, mp: c.mp !== false, hashtags: c.hashtags };
+    if (c && typeof c === 'object') return { profile: c.profile !== false, mp: c.mp !== false, pages: Array.isArray(c.pages) ? c.pages : [], hashtags: c.hashtags };
   } catch {}
   return { profile: true, mp: true };
 }
@@ -64,6 +64,12 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
   const [toProfile, setToProfile] = useState(true);
   const [toMp, setToMp] = useState(true);
   const [posting, setPosting] = useState(false);
+  // your Facebook Pages (loaded once in FB Poster or here) and the ticked ones
+  const [pages, setPages] = useState<FbItem[]>([]);
+  const [selPages, setSelPages] = useState<Set<string>>(new Set());
+  const [loadingPages, setLoadingPages] = useState(false);
+  // the text that goes into the Marketplace listing's Description box
+  const [mpCopy, setMpCopy] = useState('');
 
   // live progress (popup stays open while it runs)
   const [runId, setRunId] = useState<string | null>(null); // '' = started, id not known yet
@@ -83,6 +89,8 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
     const saved = loadChoice();
     setToProfile(saved.profile);
     setToMp(saved.mp);
+    setSelPages(new Set(saved.pages || []));
+    setMpCopy('');
     setRunId(null);
     setMpStarted(false);
     setLive(null);
@@ -108,9 +116,20 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
       .catch(() => {})
       .finally(() => setLoadingText(false));
 
-    fb.get<{ connection?: Connection }>('quick-config')
-      .then((q) => q?.connection && setConn(q.connection))
+    fb.get<{ connection?: Connection; account?: { pages?: FbItem[] } }>('quick-config')
+      .then((q) => {
+        if (q?.connection) setConn(q.connection);
+        const list = (q?.account?.pages || []).filter((p) => p?.url);
+        setPages(list);
+        // ticked Pages that are no longer in the list are dropped
+        setSelPages((cur) => new Set([...cur].filter((u) => list.some((p) => p.url === u))));
+      })
       .catch(() => {});
+    // what Marketplace will show: the saved listing text, else the text written from the vehicle
+    Promise.all([
+      fb.get<{ text: string }>(`mp/vehicles/${v.id}/preview`).catch(() => null),
+      fb.post<{ text: string }>(`mp/vehicles/${v.id}/generate`, { ai: false, save: false }).catch(() => null),
+    ]).then(([p, g]) => setMpCopy((p?.text || '').trim() || (g?.text || '').trim()));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [v?.id]);
 
@@ -160,7 +179,30 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
   const missing = mpMissing(v);
   const mpReady = !!v && !missing.length;
   const wantMp = toMp && mpReady;
-  const count = (toProfile ? 1 : 0) + (wantMp ? 1 : 0);
+  const pageList = pages.filter((p) => selPages.has(p.url));
+  const count = (toProfile ? 1 : 0) + pageList.length + (wantMp ? 1 : 0);
+  const postsAnywhere = toProfile || pageList.length > 0;
+
+  async function loadPages() {
+    setLoadingPages(true);
+    try {
+      const r = await fb.post<{ pages: FbItem[] }>('pages/load');
+      setPages(r.pages || []);
+      toast.ok(r.pages?.length ? `${r.pages.length} Page${r.pages.length === 1 ? '' : 's'} found.` : 'No Pages found for this Facebook account.');
+    } catch (e) {
+      if (NEEDS_LOGIN.test((e as Error).message)) setNeedLogin(true);
+      toast.error((e as Error).message);
+    } finally {
+      setLoadingPages(false);
+    }
+  }
+  const togglePage = (url: string) =>
+    setSelPages((s) => {
+      const n = new Set(s);
+      if (n.has(url)) n.delete(url);
+      else n.add(url);
+      return n;
+    });
 
   /* ───── the one button: profile and/or Marketplace ───── */
   async function postNow() {
@@ -169,14 +211,16 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
       toast.error('Add at least one photo to this vehicle first.');
       return;
     }
-    saveChoice({ profile: toProfile, mp: toMp, hashtags });
+    saveChoice({ profile: toProfile, mp: toMp, pages: [...selPages], hashtags });
     setPosting(true);
     const errors: string[] = [];
     try {
-      // profile first: it is quick; the Marketplace form is filled in right after it (one Facebook browser, one task at a time)
-      if (toProfile) {
+      // profile / Pages first: they are quick; the Marketplace form is filled in right after (one Facebook browser, one task at a time)
+      if (postsAnywhere) {
         try {
           const form = new FormData();
+          form.append('profile', toProfile ? '1' : '0');
+          form.append('pages', JSON.stringify(pageList));
           form.append('order', JSON.stringify((v.images || []).map((u: string) => `v:${u}`)));
           form.append('caption', caption || vehicleName(v));
           form.append('hashtags', hashtags || '');
@@ -184,7 +228,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
           setRunId(r?.runId || r?.job?.runId || '');
           setLive((l) => ({ job: r?.job || l?.job || null, mp: l?.mp || { active: null, queue: [], running: false } }));
         } catch (e) {
-          errors.push(`Profile: ${(e as Error).message}`);
+          errors.push(`Facebook post: ${(e as Error).message}`);
         }
       }
       if (wantMp) {
@@ -226,38 +270,72 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
   const mpQueuePos = live?.mp.queue.findIndex((q) => q.id === v?.id) ?? -1;
   const mpActive = live?.mp.active?.vehicleId === v?.id;
   const mpBusy = mpStarted && !mpListing;
-  const mpText = mpListing ? MP_STATUS[mpListing.status] || `Marketplace: ${mpListing.status}` : mpActive ? 'Filling in the Marketplace form…' : mpQueuePos >= 0 ? 'Starts right after your profile post…' : 'Starting…';
+  const mpText = mpListing ? MP_STATUS[mpListing.status] || `Marketplace: ${mpListing.status}` : mpActive ? 'Filling in the Marketplace form…' : mpQueuePos >= 0 ? 'Starts right after your Facebook post…' : 'Starting…';
   const busy = jobRunning || mpBusy;
   const started = runId !== null || mpStarted;
 
-  const profileText = !job
+  const okN = job ? job.results.filter((x) => x.status === 'done').length : 0;
+  const total = job?.total || 0;
+  const one = total <= 1;
+  const postText = !job
     ? 'Starting Facebook…'
     : jobRunning
       ? result?.status === 'waiting' && live?.mp.active
         ? 'Waiting for the Marketplace listing, then posting…'
-        : result?.status === 'retry'
-          ? 'Trying again…'
-          : 'Posting on your profile…'
+        : one
+          ? result?.status === 'retry'
+            ? 'Trying again…'
+            : 'Posting…'
+          : `Posting… ${okN} of ${total} done`
       : job.cancelled
         ? 'Stopped'
-        : result?.status === 'done'
-          ? result.note && result.note !== 'posted'
-            ? `Posted (${result.note})`
-            : 'Posted on your profile'
-          : `Not posted${result?.error ? `: ${result.error}` : ''}`;
+        : one
+          ? result?.status === 'done'
+            ? result.note && result.note !== 'posted'
+              ? `Posted (${result.note})`
+              : 'Posted'
+            : `Not posted${result?.error ? `: ${result.error}` : ''}`
+          : `Done · ${okN} of ${total} posted${job.failed ? ` · ${job.failed} failed` : ''}`;
+  const allOk = !!job && !jobRunning && okN === total && total > 0;
 
   const progress = started && (
     <div className="space-y-2">
       {runId !== null && (
-        <div className={cx('flex items-start gap-2 rounded-xl border p-3 text-sm', jobRunning ? 'border-blue-200 bg-blue-50/70' : result?.status === 'done' ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50')}>
-          {jobRunning ? (
-            <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-[#1877F2]" />
-          ) : result?.status === 'done' ? (
-            <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
-          ) : (
-            <XCircle className="mt-0.5 h-4 w-4 text-amber-600" />
+        <div className={cx('rounded-xl border p-3 text-sm', jobRunning ? 'border-blue-200 bg-blue-50/70' : allOk ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50')}>
+          <div className="flex items-start gap-2">
+            {jobRunning ? (
+              <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-[#1877F2]" />
+            ) : allOk ? (
+              <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
+            ) : (
+              <XCircle className="mt-0.5 h-4 w-4 text-amber-600" />
+            )}
+            <b className="min-w-0 flex-1 text-slate-900">
+              {one ? `${result?.name?.includes('· Page') ? 'Page' : 'Profile'}: ` : 'Facebook: '}
+              {postText}
+            </b>
+          </div>
+          {!one && job && (
+            <ul className="mt-2 space-y-1 pl-6">
+              {job.results.map((x) => (
+                <li key={x.url} className="flex items-center gap-2 text-xs">
+                  {x.status === 'done' ? (
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                  ) : x.status === 'failed' || x.status === 'skipped' ? (
+                    <XCircle className="h-3.5 w-3.5 shrink-0 text-red-600" />
+                  ) : x.status === 'running' || x.status === 'retry' ? (
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[#1877F2]" />
+                  ) : (
+                    <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-slate-300" />
+                  )}
+                  <span className={cx('min-w-0 flex-1 truncate', x.status === 'waiting' ? 'text-slate-400' : 'text-slate-700')}>{x.name || x.url}</span>
+                  <span className={cx('max-w-[45%] shrink-0 truncate text-[11px]', x.status === 'failed' ? 'text-red-600' : 'text-slate-500')} title={x.error || ''}>
+                    {x.status === 'done' ? 'posted' : x.status === 'running' ? 'posting…' : x.status === 'retry' ? 'retrying…' : x.status === 'waiting' ? 'waiting' : x.error || x.status}
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
-          <b className="min-w-0 flex-1 text-slate-900">Profile: {profileText}</b>
         </div>
       )}
       {mpStarted && (
@@ -329,7 +407,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
                 onClick={postNow}
               >
                 <FacebookIcon className="mr-1.5 h-3.5 w-3.5" />
-                {toProfile && wantMp ? 'Post to profile + Marketplace' : wantMp ? 'Post to Marketplace' : 'Post to profile'}
+                {count > 1 ? `Post to ${count} places` : wantMp ? 'Post to Marketplace' : pageList.length ? 'Post to Page' : 'Post to profile'}
               </Button>
             )}
           </div>
@@ -379,7 +457,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
             </div>
           </div>
 
-          {/* where to post: the two ticks */}
+          {/* where to post: profile, your Pages, Marketplace */}
           {!started && (
             <div className="space-y-2">
               <label className={cx('flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2.5 text-xs transition', toProfile ? 'border-[#1877F2] bg-blue-50/50' : 'border-slate-200')}>
@@ -390,6 +468,30 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
                   <span className="text-slate-500">A normal post with the photos and the text below.</span>
                 </span>
               </label>
+
+              {/* your Pages */}
+              <div className={cx('rounded-xl border px-3 py-2.5 text-xs', pageList.length ? 'border-[#1877F2] bg-blue-50/50' : 'border-slate-200')}>
+                <div className="flex items-center gap-2.5">
+                  <Flag className="h-4 w-4 shrink-0 text-[#1877F2]" />
+                  <b className="flex-1 text-sm text-slate-900">Post on my Pages</b>
+                  <button type="button" disabled={loadingPages || disconnected} onClick={loadPages} className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:underline disabled:opacity-50">
+                    {loadingPages ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    {pages.length ? 'Refresh' : 'Load my Pages'}
+                  </button>
+                </div>
+                {pages.length ? (
+                  <div className="mt-2 max-h-32 space-y-1 overflow-y-auto pl-[26px]">
+                    {pages.map((p) => (
+                      <label key={p.url} className="flex cursor-pointer items-center gap-2.5 py-0.5" title={p.url}>
+                        <input type="checkbox" className="h-3.5 w-3.5 accent-[#1877F2]" checked={selPages.has(p.url)} onChange={() => togglePage(p.url)} />
+                        <span className="min-w-0 flex-1 truncate text-slate-700">{p.name || p.url}</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-1 pl-[26px] text-slate-500">{loadingPages ? 'Reading your Pages from Facebook…' : 'No Pages loaded yet. Press “Load my Pages” (takes a few seconds).'}</p>
+                )}
+              </div>
 
               {mpReady ? (
                 <label className={cx('flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2.5 text-xs transition', toMp ? 'border-emerald-500 bg-emerald-50/60' : 'border-slate-200')}>
@@ -421,17 +523,31 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
             </div>
           )}
 
-          {/* the post text (profile post) */}
-          {!started && toProfile && (
+          {/* the post text (profile / Pages) */}
+          {!started && postsAnywhere && (
             <div>
               <div className="mb-1 flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-600">Post text</span>
+                <span className="font-semibold text-slate-600">Post text · description and hashtags</span>
                 {loadingText && <span className="text-slate-400">Loading…</span>}
               </div>
               <div className="max-h-28 overflow-y-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-2.5 font-mono text-[11px] leading-relaxed text-slate-700">
                 {caption}
                 {hashtags ? `\n\n${hashtags}` : ''}
               </div>
+            </div>
+          )}
+
+          {/* the Marketplace listing text: exactly what goes into its Description box */}
+          {!started && wantMp && (
+            <div>
+              <div className="mb-1 flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-600">Marketplace listing · description and hashtags</span>
+                {!mpCopy && <span className="text-slate-400">Loading…</span>}
+              </div>
+              <div className="max-h-28 overflow-y-auto whitespace-pre-wrap rounded-lg border border-emerald-100 bg-emerald-50/40 p-2.5 font-mono text-[11px] leading-relaxed text-slate-700">
+                {mpCopy || '…'}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">Change this text in FB Poster › Marketplace.</p>
             </div>
           )}
         </div>

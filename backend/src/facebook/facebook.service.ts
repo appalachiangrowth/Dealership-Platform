@@ -539,9 +539,16 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
           return d;
         }
       };
-      // Posting goes to your own Facebook profile only (groups, Pages and collections were removed)
-      const targets = [PROFILE_URL];
+      // your own profile and/or your Pages (groups and collections were removed)
+      const wantProfile = b.profile !== '0';
+      const pages = parse<{ url?: string; name?: string }[]>(b.pages, [])
+        .map((p) => ({ url: String(p?.url || '').trim(), name: String(p?.name || '').trim() }))
+        .filter((p) => FB_URL.test(p.url) && !/facebook\.com\/groups\//i.test(p.url))
+        .slice(0, 20);
+      const targets = [...new Set([...(wantProfile ? [PROFILE_URL] : []), ...pages.map((p) => p.url)])];
       const names: Record<string, string> = { [PROFILE_URL]: account.fbName ? `${account.fbName} · your profile` : 'Your Facebook profile' };
+      for (const p of pages) names[p.url] = p.name ? `${p.name} · Page` : p.url;
+      if (!targets.length) throw new BadRequestException('Tick your profile or at least one Page.');
       const tags = cleanTags(b.hashtags || '');
       const caption = [String(b.caption || '').trim(), tags].filter(Boolean).join('\n\n').slice(0, 60000);
 
@@ -565,8 +572,9 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
         const n = Number(v);
         return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d;
       };
-      const delayMin = clamp(b.delayMin, 20, 600, 45) * 1000;
-      const delayMax = Math.max(delayMin + 1000, clamp(b.delayMax, 20, 900, 90) * 1000);
+      // a short pause between your profile and your Pages (no long group pauses any more)
+      const delayMin = clamp(b.delayMin, 5, 600, 8) * 1000;
+      const delayMax = Math.max(delayMin + 1000, clamp(b.delayMax, 6, 900, 15) * 1000);
 
       const run = await this.prisma.fbPostRun.create({
         data: {

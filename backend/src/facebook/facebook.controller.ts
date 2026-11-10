@@ -97,7 +97,19 @@ export class FacebookController {
     return new StreamableFile(this.fb.debugFile(t, file), { type: 'image/png', disposition: 'inline' });
   }
 
-  // ───────── posting (your profile) ─────────
+  // ───────── posting (your profile and your Pages) ─────────
+
+  /** read your Pages from Facebook (saved with the account) */
+  @Post('pages/load')
+  loadPages(@TenantId() t: string, @CurrentUser() u: AuthUser) {
+    return this.fb.loadPages(t, u);
+  }
+
+  /** save the Pages list (a Page link added or removed by hand): { pages } */
+  @Put('targets')
+  targets(@TenantId() t: string, @CurrentUser() u: AuthUser, @Body() b: { pages?: unknown }) {
+    return this.fb.saveTargets(t, u, { pages: b.pages });
+  }
 
   /** start the Facebook browser with the saved login in the background (the popup / FB Poster calls it on open) */
   @Post('warm')
@@ -115,7 +127,7 @@ export class FacebookController {
     return this.fb.saveQuickConfig(t, u, b);
   }
 
-  /** multipart: media files + caption, hashtags, order — posted on your own Facebook profile */
+  /** multipart: media files + caption, hashtags, order, profile (1/0), pages ([{url,name}]) */
   @Post('post')
   @UseInterceptors(
     AnyFilesInterceptor({

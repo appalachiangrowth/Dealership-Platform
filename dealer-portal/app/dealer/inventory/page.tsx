@@ -65,6 +65,20 @@ export default function InventoryPage() {
   const [delVehicle, setDelVehicle] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // search from the top bar of the portal: /dealer/inventory?q=…
+  useEffect(() => {
+    const read = () => {
+      const term = new URLSearchParams(window.location.search).get('q');
+      if (term !== null) {
+        setQ(term);
+        setPage(1);
+      }
+    };
+    read();
+    window.addEventListener('dealer-search', read);
+    return () => window.removeEventListener('dealer-search', read);
+  }, []);
+
   // photos that still need the branding bands are done in the background (progress pill at the bottom)
   useEffect(() => {
     void brandRun();

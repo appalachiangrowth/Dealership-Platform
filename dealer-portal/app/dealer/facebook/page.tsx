@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, CheckCircle2, Clock, Film, Loader2, Play, Square, Star, Store, Trash2, Upload, User, XCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Clock, Film, Flag, Loader2, Play, RefreshCw, Square, Star, Store, Trash2, Upload, User, XCircle } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
-import { fb, useFb, type FbResult } from '@/lib/facebook';
+import { fb, useFb, type FbItem, type FbResult } from '@/lib/facebook';
 import { Badge, Button, Card, Field, Input, Select, Textarea, cx } from '@/components/ui';
 import { useToast } from '@/components/toast';
 import { FbActivity } from '@/components/fb/FbChrome';
@@ -28,7 +28,7 @@ const RESULT: Record<string, { color: string; text: string }> = {
   'not posted': { color: 'slate', text: 'Not posted' },
 };
 
-/** FB Poster › Post: your own Facebook profile and/or Marketplace — one button. */
+/** FB Poster › Post: your own Facebook profile, your Pages and/or Marketplace — one button. */
 export default function FbPostPage() {
   const { state, refresh } = useFb();
   const toast = useToast();
@@ -44,6 +44,10 @@ export default function FbPostPage() {
   const [hashtags, setHashtags] = useState('');
   const [vehicleId, setVehicleId] = useState('');
   const [mpSent, setMpSent] = useState('');
+  const [selPages, setSelPages] = useState<Set<string>>(new Set());
+  const [pageLink, setPageLink] = useState('');
+  // the text that goes into the Marketplace listing (description + hashtags)
+  const [mpCopy, setMpCopy] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const captionRef = useRef<HTMLTextAreaElement>(null);
 
@@ -52,7 +56,17 @@ export default function FbPostPage() {
   const vehicle = (vehicles.data?.vehicles || []).find((v) => v.id === vehicleId) || null;
   const mpReady = !!vehicle && !vehicle.missing?.length;
   const wantMp = toMp && mpReady;
-  const count = (toProfile ? 1 : 0) + (wantMp ? 1 : 0);
+  const pages: FbItem[] = account?.pages || [];
+  const pageList = pages.filter((p) => selPages.has(p.url));
+  const postsAnywhere = toProfile || pageList.length > 0;
+  const count = (toProfile ? 1 : 0) + pageList.length + (wantMp ? 1 : 0);
+  const togglePage = (url: string) =>
+    setSelPages((s) => {
+      const n = new Set(s);
+      if (n.has(url)) n.delete(url);
+      else n.add(url);
+      return n;
+    });
 
   // the last choice of the two ticks (same as the popup in Inventory)
   useEffect(() => {
@@ -61,6 +75,7 @@ export default function FbPostPage() {
       if (c) {
         setToProfile(c.profile !== false);
         setToMp(c.mp !== false);
+        if (Array.isArray(c.pages)) setSelPages(new Set(c.pages));
         if (c.hashtags) setHashtags(c.hashtags);
       }
     } catch {}
@@ -116,9 +131,15 @@ export default function FbPostPage() {
     run('vehicle', async () => {
       setVehicleId(id);
       setMpSent('');
+      setMpCopy('');
       if (!id) return;
+      void fb
+        .get<{ text: string }>(`mp/vehicles/${id}/preview`)
+        .then((p) => p?.text && setMpCopy(p.text.trim()))
+        .catch(() => {});
       const r = await fb.post<{ copy: { hashtags: string }; text: string; photos: string[] }>(`mp/vehicles/${id}/generate`, { ai: false, save: false });
       setCaption(r.text.replace(r.copy.hashtags, '').replace(/\n{3,}/g, '\n\n').trim());
+      setMpCopy((cur) => cur || r.text.trim());
       setHashtags(r.copy.hashtags);
       setMedia((m) => [
         ...r.photos.slice(0, 10).map((u, i) => ({ key: `v${i}${u}`, kind: 'vehicle' as const, url: u, preview: mediaUrl(u), video: false })),
@@ -141,16 +162,18 @@ export default function FbPostPage() {
   /** the one button: profile and/or Marketplace */
   const postNow = () =>
     run('post', async () => {
-      if (!count) throw new Error('Tick "My Facebook profile" and/or "Facebook Marketplace".');
-      if (toProfile && !caption.trim() && !hashtags.trim() && !media.length) throw new Error('Add a photo/video or write a description.');
+      if (!count) throw new Error('Tick your profile, a Page and/or "Facebook Marketplace".');
+      if (postsAnywhere && !caption.trim() && !hashtags.trim() && !media.length) throw new Error('Add a photo/video or write a description.');
       try {
-        localStorage.setItem(CHOICE_KEY, JSON.stringify({ profile: toProfile, mp: toMp, hashtags }));
+        localStorage.setItem(CHOICE_KEY, JSON.stringify({ profile: toProfile, mp: toMp, pages: [...selPages], hashtags }));
       } catch {}
       const done: string[] = [];
       const errors: string[] = [];
-      if (toProfile) {
+      if (postsAnywhere) {
         try {
           const form = new FormData();
+          form.append('profile', toProfile ? '1' : '0');
+          form.append('pages', JSON.stringify(pageList));
           const order: string[] = [];
           let n = 0;
           for (const m of media) {
@@ -163,9 +186,9 @@ export default function FbPostPage() {
           form.append('caption', caption);
           form.append('hashtags', hashtags);
           await api('/dealer/facebook/post', { method: 'POST', form });
-          done.push('your profile');
+          done.push([toProfile && 'your profile', pageList.length && `${pageList.length} Page${pageList.length === 1 ? '' : 's'}`].filter(Boolean).join(' and '));
         } catch (e) {
-          errors.push(`Profile: ${(e as Error).message}`);
+          errors.push(`Facebook post: ${(e as Error).message}`);
         }
       }
       if (wantMp && vehicle) {
@@ -218,6 +241,47 @@ export default function FbPostPage() {
                 </span>
               </label>
 
+              <div className={cx('rounded-xl border px-3.5 py-3 transition', pageList.length ? 'border-[#1877F2] bg-blue-50/50' : 'border-slate-200')}>
+                <div className="flex items-center gap-3">
+                  <Flag className="h-4 w-4 shrink-0 text-[#1877F2]" />
+                  <b className="flex-1 text-slate-900">My Pages</b>
+                  <Button size="sm" variant="secondary" loading={loading === 'pages'} disabled={!connected} onClick={() => run('pages', () => fb.post('pages/load'))}>
+                    <RefreshCw className="h-3.5 w-3.5" /> {pages.length ? 'Refresh' : 'Load my Pages'}
+                  </Button>
+                </div>
+                {pages.length ? (
+                  <div className="mt-2 max-h-48 space-y-1 overflow-y-auto pl-7">
+                    {pages.map((p) => (
+                      <label key={p.url} className="flex cursor-pointer items-center gap-2.5 py-0.5 text-sm" title={p.url}>
+                        <input type="checkbox" className="h-4 w-4 accent-[#1877F2]" checked={selPages.has(p.url)} onChange={() => togglePage(p.url)} />
+                        <span className="min-w-0 flex-1 truncate">{p.name || p.url}</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-1 pl-7 text-xs text-slate-500">No Pages yet. Press “Load my Pages”, or paste a Page link below.</p>
+                )}
+                <div className="mt-2 flex gap-2 pl-7">
+                  <Input value={pageLink} onChange={(e) => setPageLink(e.target.value)} placeholder="https://www.facebook.com/YourPage" className="h-8 text-xs" />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!/^https:\/\/(www\.|m\.|web\.)?facebook\.com\/.+/i.test(pageLink.trim())}
+                    onClick={() =>
+                      run('pages', async () => {
+                        const url = pageLink.trim();
+                        if (!pages.some((p) => p.url === url)) await fb.put('targets', { pages: [...pages, { name: url.replace(/^https:\/\/(www\.)?facebook\.com\//, '').replace(/\/$/, ''), url }] });
+                        setSelPages((s) => new Set(s).add(url));
+                        setPageLink('');
+                      })
+                    }
+                  >
+                    Add
+                  </Button>
+                </div>
+                <p className="mt-1.5 pl-7 text-[11px] text-slate-400">Posted as the Page itself (your account must be an admin of it).</p>
+              </div>
+
               <label
                 className={cx(
                   'flex items-start gap-3 rounded-xl border px-3.5 py-3 transition',
@@ -241,9 +305,16 @@ export default function FbPostPage() {
             </div>
           </Card>
 
+          {wantMp && (
+            <Card title="Marketplace listing text">
+              <p className="mb-2 text-xs text-slate-500">Exactly what goes into the listing’s Description box (description and hashtags). Change it on the Marketplace tab.</p>
+              <div className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-lg border border-emerald-100 bg-emerald-50/40 p-3 font-mono text-xs leading-relaxed text-slate-700">{mpCopy || 'Loading…'}</div>
+            </Card>
+          )}
+
           {job && (
             <Card
-              title={running ? 'Posting on your profile…' : job.ok ? 'Last post: on your profile' : job.cancelled ? 'Last post: stopped' : 'Last post: not posted'}
+              title={running ? `Posting… ${job.results.filter((r) => r.status === 'done').length} of ${job.total} done` : job.cancelled ? 'Last post: stopped' : `Last post: ${job.ok} of ${job.total} posted`}
               pad={false}
             >
               <ResultList results={job.results} />
@@ -281,7 +352,7 @@ export default function FbPostPage() {
               </div>
             </Field>
 
-            {toProfile && (
+            {postsAnywhere && (
               <>
                 <div>
                   <div className="mb-1.5 flex items-center justify-between">
@@ -372,11 +443,11 @@ export default function FbPostPage() {
                   onClick={postNow}
                 >
                   <Play className="h-4 w-4" />
-                  {toProfile && wantMp ? 'Post to profile + Marketplace' : wantMp ? 'Post to Marketplace' : 'Post to profile'}
+                  {count > 1 ? `Post to ${count} places` : wantMp ? 'Post to Marketplace' : pageList.length ? 'Post to Page' : 'Post to profile'}
                 </Button>
               )}
               <span className="text-sm text-slate-500">
-                {!count ? 'Nothing ticked yet' : toProfile && wantMp ? 'Profile first, then the Marketplace listing' : ''}
+                {!count ? 'Nothing ticked yet' : postsAnywhere && wantMp ? 'Profile / Pages first, then the Marketplace listing' : ''}
                 {state?.busy && !running && !mpBusy ? ` · busy: ${state.busyWhat}` : ''}
               </span>
             </div>
@@ -386,7 +457,7 @@ export default function FbPostPage() {
 
       <div className="grid gap-6 xl:grid-cols-2">
         <FbActivity />
-        <Card title="Recent profile posts" pad={false}>
+        <Card title="Recent posts" pad={false}>
           <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto">
             {!history.data?.runs.length && <div className="px-5 py-8 text-center text-sm text-slate-400">No posts yet.</div>}
             {history.data?.runs.map((r) => (
@@ -424,7 +495,7 @@ function ResultList({ results, compact }: { results: FbResult[]; compact?: boole
           <li key={r.url + i} className="flex items-start gap-3 px-5 py-2 text-sm">
             <Icon className={cx('mt-0.5 h-4 w-4 shrink-0', r.status === 'done' ? 'text-emerald-600' : r.status === 'failed' ? 'text-red-600' : 'text-slate-400', r.status === 'running' && 'animate-spin')} />
             <div className="min-w-0 flex-1">
-              <span className="block truncate font-medium text-slate-800">{/facebook\.com\/me\/?$/.test(r.url) ? r.name || 'Your Facebook profile' : r.name || r.url}</span>
+              <span className="block truncate font-medium text-slate-800">{r.name || (/facebook\.com\/me\/?$/.test(r.url) ? 'Your Facebook profile' : r.url)}</span>
               {(r.error || (r.note && r.note !== 'posted')) && <div className={cx('text-xs', r.error ? 'text-red-600' : 'text-slate-500')}>{r.error || r.note}</div>}
             </div>
             <Badge color={s.color}>{s.text}</Badge>
