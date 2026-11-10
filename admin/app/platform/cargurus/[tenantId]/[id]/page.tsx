@@ -143,7 +143,7 @@ export default function CargurusAudit() {
       const vehicleIssues = Object.keys(r.issues).some((k) => !k.startsWith('dealer_'));
       if (filter === 'issues' && !vehicleIssues) return false;
       if (filter === 'ready' && vehicleIssues) return false;
-      return !q || r.values.join(' ').toLowerCase().includes(q.toLowerCase());
+      return !q || [...r.values, ...(r.extra || [])].join(' ').toLowerCase().includes(q.toLowerCase());
     });
   }, [data, filter, q]);
 
@@ -536,6 +536,11 @@ export default function CargurusAudit() {
                     {c.label} {c.source === 'dealer' && <Badge color="violet">Auto-enriched</Badge>}
                   </th>
                 ))}
+                {(data.extraColumns || []).map((h: string) => (
+                  <th key={'x:' + h} className="whitespace-nowrap bg-sky-50 px-3 py-2 text-sky-800" title="Additional column from the dealer's inventory (added at the end of the master CSV)">
+                    {h} <Badge color="blue">Extra</Badge>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -554,6 +559,11 @@ export default function CargurusAudit() {
                       </td>
                     );
                   })}
+                  {(data.extraColumns || []).map((h: string, i: number) => (
+                    <td key={'x:' + h} title={r.extra?.[i] || ''} className="max-w-[180px] truncate bg-sky-50/40 px-3 py-2">
+                      {r.extra?.[i] || ''}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -591,6 +601,15 @@ export default function CargurusAudit() {
                       </div>
                     ))}
                   </td>
+                </tr>
+              ))}
+              {(data.extraColumns || []).map((h: string, i: number) => (
+                <tr key={'x:' + h} className="bg-sky-50/40">
+                  <td className="py-2 pr-3 font-semibold">
+                    {h} <Badge color="blue">Extra</Badge>
+                  </td>
+                  <td className="py-2 pr-3 text-slate-500">{row.extra?.[i] || ''}</td>
+                  <td className="py-2">{row.extra?.[i] || ''}</td>
                 </tr>
               ))}
             </tbody>

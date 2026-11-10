@@ -4,7 +4,7 @@ import { Client as FtpClient } from 'basic-ftp';
 import { Readable } from 'stream';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
-import { FeedsService } from '../feeds/feeds.service.js';
+import { FeedsService, vehicleExtra } from '../feeds/feeds.service.js';
 import { TenantsService } from '../tenants/tenants.service.js';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service.js';
 import * as cg from './ingestion.js';
@@ -86,6 +86,32 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
       issues: sum?.issues ?? 0,
       ready: !!sum?.ready,
     };
+  }
+
+  /**
+   * The batch's vehicles with the dealer's additional inventory columns (header → value).
+   * Website / inventory batches made before those columns were added (or without them) get them from the
+   * matching vehicle (VIN, then stock number), so the audit page and the master CSV always show them.
+   */
+  private async recordsWithExtra(tenantId: string, sub: CargurusSubmission): Promise<cg.CgRecord[]> {
+    const records = sub.records as unknown as cg.CgRecord[];
+    const has = (r: cg.CgRecord) => !!r._extra && Object.keys(r._extra).length > 0;
+    if (sub.source === 'upload' || records.every(has)) return records;
+    const vehicles = await this.prisma.vehicle.findMany({ where: { tenantId } });
+    const byVin = new Map<string, Record<string, string>>();
+    const byStock = new Map<string, Record<string, string>>();
+    for (const v of vehicles) {
+      const ex = vehicleExtra(v);
+      if (!Object.keys(ex).length) continue;
+      if (v.vin) byVin.set(v.vin.toUpperCase(), ex);
+      if (v.stockNumber) byStock.set(v.stockNumber.toLowerCase(), ex);
+    }
+    if (!byVin.size && !byStock.size) return records;
+    return records.map((r) => {
+      if (has(r)) return r;
+      const ex = (r.vin && byVin.get(r.vin.toUpperCase())) || (r.stock && byStock.get(r.stock.toLowerCase())) || undefined;
+      return ex ? { ...r, _extra: ex } : r;
+    });
   }
 
   private async log2(tenantId: string, event: string, detail: unknown) {
@@ -463,13 +489,16 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
     const sub = await this.prisma.cargurusSubmission.findFirst({ where: { id, tenantId }, include: { tenant: { select: { name: true, dealerCode: true } } } });
     if (!sub) throw new NotFoundException('Submission not found');
     const meta = await this.meta(tenantId);
-    const records = sub.records as unknown as cg.CgRecord[];
+    const records = await this.recordsWithExtra(tenantId, sub);
+    const extraColumns = cg.extraHeaders(records);
     const dealerIssues = cg.dealerIssues(meta);
     const s = await this.prisma.tenantSettings.findUnique({ where: { tenantId } });
     return {
       submission: { ...this.summaryOf(sub), tenantName: sub.tenant.name, dealerCode: sub.tenant.dealerCode },
       summary: cg.audit(records, meta),
       columns: cg.columnsInfo(),
+      /** the dealer's additional inventory columns, shown after the 20 CarGurus columns (same order as the master CSV) */
+      extraColumns,
       dealer: meta,
       dealerIssues,
       sftpSettings: {
@@ -484,6 +513,12 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
         row: r._row,
         valid: cg.recordValid(r),
         values: cg.exportValues(r, meta),
+        extra: extraColumns.map((h) => {
+          const ex = r._extra || {};
+          if (ex[h] !== undefined) return String(ex[h] ?? '');
+          const hit = Object.entries(ex).find(([k]) => cg.norm(k) === cg.norm(h));
+          return hit ? String(hit[1] ?? '') : '';
+        }),
         raw: r._raw,
         issues: { ...r._issues, ...dealerIssues },
         warnings: r._warn,
@@ -495,7 +530,7 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
     const sub = await this.prisma.cargurusSubmission.findFirst({ where: { id, tenantId } });
     if (!sub) throw new NotFoundException('Submission not found');
     // the 20 CarGurus columns + every additional column of the dealer's file, at the end
-    return cg.csv(sub.records as unknown as cg.CgRecord[], await this.meta(tenantId), false, true);
+    return cg.csv(await this.recordsWithExtra(tenantId, sub), await this.meta(tenantId), false, true);
   }
 
   async approve(tenantId: string, id: string, b: { includeInvalid?: boolean; note?: string }, user: AuthUser) {
