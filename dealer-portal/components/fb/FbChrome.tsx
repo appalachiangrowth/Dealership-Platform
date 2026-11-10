@@ -3,9 +3,9 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { Megaphone, Store, Monitor, Power, LogOut, Shield, Trash2, ImageIcon, Loader2 } from 'lucide-react';
-import { fb, fbFetch, screenshotIn, useFb } from '@/lib/facebook';
-import { Badge, Button, Card, Field, Input, Modal, cx } from '../ui';
+import { Store, Monitor, Power, LogOut, Shield, Trash2, ImageIcon, Loader2, Info, RefreshCw, ExternalLink } from 'lucide-react';
+import { FacebookIcon, fb, fbFetch, screenshotIn, useFb } from '@/lib/facebook';
+import { Button, Card, Field, Input, Modal, cx } from '../ui';
 import { useToast } from '../toast';
 import { LiveBrowser } from './LiveBrowser';
 
@@ -48,109 +48,155 @@ export function FbHeader() {
   const loggedIn = state?.loggedIn;
   const known = !!a?.fbUserId;
   const status = !state
-    ? { color: 'slate', text: 'Checking…' }
+    ? { tone: 'mute', text: 'Checking…', line: 'Checking your Facebook connection…' }
     : loggedIn
-      ? { color: 'green', text: 'Connected' }
+      ? { tone: 'ok', text: 'Connected', line: 'Facebook is open on our server and ready to post.' }
       : known && !state.browserOpen
-        ? { color: 'blue', text: 'Connected (browser asleep)' }
+        ? { tone: 'ok', text: 'Connected', line: 'Facebook is resting to save resources. It wakes up by itself when you post, so the first post may take a few extra seconds.' }
         : state.browserOpen
-          ? { color: 'amber', text: 'Waiting for you to log in' }
-          : { color: 'slate', text: 'Not connected' };
+          ? { tone: 'warn', text: 'Waiting for you to log in', line: 'Log in to Facebook in the browser below. You only need to do this once.' }
+          : { tone: 'mute', text: 'Not connected', line: 'Click Connect Facebook and log in once with your Facebook account. The login is saved on our server for your user only.' };
 
   const tabs = [
-    { href: '/dealer/facebook', label: 'Post', icon: Megaphone },
+    { href: '/dealer/facebook', label: 'Create a post' },
+    { href: '/dealer/facebook/history', label: 'Posting history' },
     { href: '/dealer/facebook/marketplace', label: 'Marketplace', icon: Store },
   ];
+  const BTN_S =
+    'inline-flex min-h-[42px] items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-[#CBD5E1] bg-white px-4 text-sm font-semibold text-[#0F172A] transition hover:bg-[#F8FAFC] disabled:opacity-60';
+  const ICON_B = 'inline-flex h-10 w-10 items-center justify-center rounded-lg text-[#526077] transition hover:bg-[#F1F5F9] hover:text-[#0F172A]';
 
   return (
-    <div className="mb-6 space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-slate-900">FB Poster</h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500">
-            Post your cars on your Facebook Pages and on Marketplace. Your Facebook login runs safely on our server, so nothing needs to be installed on this
-            computer, and posting carries on even when you close this page.
-          </p>
+    <div className="mb-6 space-y-5">
+      {/* page header with the tabs */}
+      <header className="-mx-4 -mt-6 border-b border-[#E5E9F0] bg-white px-4 pt-5 sm:-mx-7 sm:-mt-7 sm:px-7">
+        <div className="flex flex-col gap-1">
+          <h1 className="m-0 text-[26px] font-bold tracking-[-0.02em] text-[#0F172A]">FB Poster</h1>
+          <p className="m-0 text-sm text-[#526077]">Share your vehicles on your Facebook Pages and on Marketplace, without copying and pasting.</p>
         </div>
-        <div className="flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-          {tabs.map((t) => (
-            <Link
-              key={t.href}
-              href={t.href}
-              className={cx(
-                'inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold transition',
-                path === t.href ? 'bg-blue-700 text-white' : 'text-slate-600 hover:bg-slate-100',
-              )}
-            >
-              <t.icon className="h-4 w-4" /> {t.label}
-            </Link>
-          ))}
-        </div>
-      </div>
+        <nav aria-label="FB Poster sections" className="mt-3.5 flex gap-6 overflow-x-auto">
+          {tabs.map((t) => {
+            const on = path === t.href;
+            return (
+              <Link
+                key={t.href}
+                href={t.href}
+                aria-current={on ? 'page' : undefined}
+                className={cx(
+                  'inline-flex min-h-11 items-center gap-2 whitespace-nowrap border-b-2 px-0.5 text-sm font-semibold transition',
+                  on ? 'border-[#2563EB] text-[#1D4ED8]' : 'border-transparent text-[#526077] hover:text-[#0F172A]',
+                )}
+              >
+                {t.icon && <t.icon className="h-4 w-4" />}
+                {t.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </header>
 
-      <Card pad={false}>
+      {/* connection */}
+      <div className="rounded-[14px] border border-[#E5E9F0] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
         <div className="flex flex-wrap items-center gap-4 px-5 py-4">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#1877F2] text-lg font-black text-white">f</div>
-          <div className="min-w-0 flex-1">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#1877F2] text-white">
+            <FacebookIcon className="h-[22px] w-[22px]" />
+          </span>
+          <div className="flex min-w-[260px] flex-1 flex-col gap-[3px]">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-bold text-slate-900">{a?.fbName || (known ? 'Facebook account' : 'Facebook')}</span>
-              <Badge color={status.color}>{status.text}</Badge>
-              {a?.actingAs?.name && <Badge color="violet">Posting as Page: {a.actingAs.name}</Badge>}
-              {a?.proxy && <Badge color="slate">Proxy {a.proxy}</Badge>}
+              <span className="text-[15px] font-bold text-[#0F172A]">{known || loggedIn ? `Connected as ${a?.fbName || 'your Facebook account'}` : 'Facebook'}</span>
+              <span
+                className={cx(
+                  'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-[3px] text-xs font-semibold',
+                  status.tone === 'ok' ? 'bg-[#E8F7EE] text-[#15803D]' : status.tone === 'warn' ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#F1F5F9] text-[#475569]',
+                )}
+              >
+                <span className={cx('h-1.5 w-1.5 rounded-full', status.tone === 'ok' ? 'bg-[#16A34A]' : status.tone === 'warn' ? 'bg-[#D97706]' : 'bg-[#94A3B8]')} />
+                {status.text}
+              </span>
+              {a?.proxy && <span className="rounded-full bg-[#F1F5F9] px-2.5 py-[3px] text-xs font-semibold text-[#475569]">Proxy {a.proxy}</span>}
+              <span className="group relative inline-flex">
+                <button type="button" aria-label="About the Facebook connection" className="inline-flex h-6 w-6 cursor-help items-center justify-center rounded-full text-[#64748B] hover:bg-[#EAF1FF] hover:text-[#1D4ED8]">
+                  <Info className="h-[15px] w-[15px]" />
+                </button>
+                <span role="tooltip" className="pointer-events-none absolute bottom-[calc(100%+8px)] left-[-10px] z-40 hidden w-[260px] rounded-lg bg-[#0F172A] px-3 py-2.5 text-[12.5px] font-normal leading-normal text-[#F1F5F9] shadow-[0_8px_24px_rgba(15,23,42,0.25)] group-focus-within:block group-hover:block">
+                  Your Facebook login is stored securely on our server for your user only. Each team member connects their own Facebook account. You only need to log in once.
+                </span>
+              </span>
             </div>
-            <div className="mt-0.5 text-xs text-slate-500">
-              {loggedIn || known
-                ? 'Your login is saved on the server for your user only. Each team member connects their own Facebook.'
-                : 'Click Connect Facebook and log in with your personal Facebook profile (Pages cannot list cars on Marketplace).'}
-              {error && <span className="ml-2 text-red-600">{error}</span>}
-            </div>
+            <span className="text-[13px] text-[#526077]">
+              {status.line}
+              {error && <span className="ml-2 text-[#B91C1C]">{error}</span>}
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {!loggedIn && (
+            {!loggedIn && !known ? (
               <Button onClick={connect} loading={busy === 'connect'}>
-                {known ? 'Open Facebook' : 'Connect Facebook'}
+                Connect Facebook
               </Button>
+            ) : (
+              <button type="button" className={BTN_S} disabled={busy === 'connect'} onClick={() => (viewOpen ? setViewOpen(false) : connect())}>
+                {busy === 'connect' ? <Loader2 className="h-4 w-4 animate-spin" /> : viewOpen ? <Monitor className="h-4 w-4" /> : <ExternalLink className="h-4 w-4" />}
+                {viewOpen ? 'Hide Facebook' : 'Open Facebook'}
+              </button>
             )}
-            <Button variant="secondary" onClick={() => (viewOpen ? setViewOpen(false) : connect())}>
-              <Monitor className="h-4 w-4" /> {viewOpen ? 'Hide browser' : 'Show browser'}
-            </Button>
             {(loggedIn || known) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                loading={busy === 'switch'}
-                onClick={() => act('switch', async () => {
-                  setViewOpen(true);
-                  await fb.post('switch-account');
-                }, 'Logged out. Log in with the other account in the browser.')}
+              <button
+                type="button"
+                className={BTN_S}
+                disabled={busy === 'switch'}
+                onClick={() =>
+                  act(
+                    'switch',
+                    async () => {
+                      setViewOpen(true);
+                      await fb.post('switch-account');
+                    },
+                    'Logged out. Log in with the other account in the browser.',
+                  )
+                }
               >
-                <LogOut className="h-4 w-4" /> Switch account
-              </Button>
+                {busy === 'switch' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Switch account
+              </button>
             )}
             {state?.browserOpen && (
-              <Button variant="ghost" size="sm" loading={busy === 'close'} onClick={() => act('close', async () => {
-                setViewOpen(false);
-                await fb.post('disconnect');
-              }, 'Browser closed. Your login is kept.')}>
-                <Power className="h-4 w-4" /> Close browser
-              </Button>
+              <button
+                type="button"
+                className={ICON_B}
+                title="Close the Facebook browser (your login is kept)"
+                aria-label="Close the Facebook browser"
+                onClick={() =>
+                  act(
+                    'close',
+                    async () => {
+                      setViewOpen(false);
+                      await fb.post('disconnect');
+                    },
+                    'Browser closed. Your login is kept.',
+                  )
+                }
+              >
+                {busy === 'close' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}
+              </button>
             )}
-            <Button variant="ghost" size="sm" onClick={() => setProxyOpen(true)} title="Proxy">
+            <button type="button" className={ICON_B} onClick={() => setProxyOpen(true)} title="Proxy" aria-label="Proxy settings">
               <Shield className="h-4 w-4" />
-            </Button>
+            </button>
             {(loggedIn || known) && (
-              <Button variant="ghost" size="sm" onClick={() => setConfirmForget(true)} title="Remove this Facebook login from the server">
+              <button type="button" className={ICON_B} onClick={() => setConfirmForget(true)} title="Remove this Facebook login from the server" aria-label="Remove this Facebook login">
                 <Trash2 className="h-4 w-4" />
-              </Button>
+              </button>
             )}
           </div>
         </div>
         {state?.browserOpen && loggedIn === false && !viewOpen && (
-          <div className="border-t border-amber-200 bg-amber-50 px-5 py-2.5 text-sm text-amber-900">
-            Facebook is waiting for you to log in. <button className="font-semibold underline" onClick={() => setViewOpen(true)}>Show browser</button>
+          <div className="flex items-center gap-2 border-t border-[#FDE68A] bg-[#FFFBEB] px-5 py-2.5 text-[13px] text-[#78350F]">
+            <LogOut className="h-4 w-4" /> Facebook is waiting for you to log in.
+            <button className="font-semibold text-[#1D4ED8] hover:underline" onClick={() => setViewOpen(true)}>
+              Show Facebook
+            </button>
           </div>
         )}
-      </Card>
+      </div>
 
       {viewOpen && (
         <div className="space-y-2">
@@ -256,14 +302,14 @@ export function FbActivity({ className }: { className?: string }) {
   };
 
   return (
-    <Card title="Activity" className={className} pad={false}>
+    <Card title="Activity log" className={className} pad={false}>
       <div
         ref={boxRef}
         onScroll={(e) => {
           const b = e.currentTarget;
           stick.current = b.scrollHeight - b.scrollTop - b.clientHeight < 40;
         }}
-        className="max-h-72 overflow-y-auto px-5 py-3 font-mono text-[12px] leading-5 text-slate-700"
+        className="max-h-[420px] overflow-y-auto px-5 py-3 font-mono text-[12px] leading-5 text-slate-700"
       >
         {!logs.length && <div className="py-6 text-center font-sans text-sm text-slate-400">Nothing yet.</div>}
         {logs.map((l) => {

@@ -9,10 +9,10 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, ExternalLink, Flag, ImageIcon, Loader2, RefreshCw, Store, XCircle } from 'lucide-react';
+import { Camera, Check, CheckCircle2, Gauge, Hash, ImageIcon, Info, Loader2, RefreshCw, Send, Store, Tag, X, XCircle } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
 import { useToast } from '@/components/toast';
-import { Button, Modal, cx } from '@/components/ui';
+import { Button, cx } from '@/components/ui';
 import { money, vehicleName } from '@/lib/format';
 import { FacebookIcon, fb, type FbItem, type FbJob } from '@/lib/facebook';
 import { mpMissing, MP_FIX } from '@/lib/marketplace';
@@ -71,6 +71,10 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
   const [loadingPages, setLoadingPages] = useState(false);
   // the text that goes into the Marketplace listing's Description box
   const [mpCopy, setMpCopy] = useState('');
+  const [showMpCopy, setShowMpCopy] = useState(false);
+  // the Page post text: written from the vehicle until the dealer edits it
+  const [editText, setEditText] = useState('');
+  const [textEdited, setTextEdited] = useState(false);
 
   // live progress (popup stays open while it runs)
   const [runId, setRunId] = useState<string | null>(null); // '' = started, id not known yet
@@ -91,6 +95,9 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
     setToMp(saved.mp);
     setSelPages(new Set(saved.pages || []));
     setMpCopy('');
+    setShowMpCopy(false);
+    setEditText('');
+    setTextEdited(false);
     setRunId(null);
     setMpStarted(false);
     setLive(null);
@@ -184,6 +191,16 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
   const pageList = pages.filter((p) => selPages.has(p.url));
   const count = (toProfile ? 1 : 0) + pageList.length + (wantMp ? 1 : 0);
   const postsAnywhere = toProfile || pageList.length > 0;
+  const autoText = [caption.trim(), hashtags.trim()].filter(Boolean).join('\n\n');
+  const text = textEdited ? editText : autoText;
+
+  // Esc closes the popup (not while the Post request is being sent)
+  useEffect(() => {
+    if (!v) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !posting && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [v, posting, onClose]);
 
   async function loadPages(silent = false) {
     setLoadingPages(true);
@@ -228,8 +245,8 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
           form.append('profile', '0');
           form.append('pages', JSON.stringify(pageList));
           form.append('order', JSON.stringify((v.images || []).map((u: string) => `v:${u}`)));
-          form.append('caption', caption || vehicleName(v));
-          form.append('hashtags', hashtags || '');
+          form.append('caption', text || vehicleName(v));
+          form.append('hashtags', '');
           const r = await api<{ runId?: string; job?: FbJob }>('/dealer/facebook/post', { method: 'POST', form });
           setRunId(r?.runId || r?.job?.runId || '');
           setLive((l) => ({ job: r?.job || l?.job || null, mp: l?.mp || { active: null, queue: [], running: false } }));
@@ -374,188 +391,290 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
     onClose();
     router.push(`/dealer/inventory/${id}?focus=${encodeURIComponent(field)}`);
   };
+  const openFbPoster = () => {
+    onClose();
+    router.push('/dealer/facebook');
+  };
+
+  if (!v) return null;
+
+  const where = [wantMp && 'Marketplace', pageList.length === 1 ? (pageList[0].name || 'your Page') : pageList.length > 1 && `${pageList.length} Pages`].filter(Boolean) as string[];
+  const optCls = (on: boolean, warn = false) =>
+    cx(
+      'flex cursor-pointer items-center gap-3 rounded-xl border p-3.5 transition',
+      on ? (warn ? 'border-[#FCD34D] bg-[#FFFBEB]' : 'border-[#93B4F5] bg-[#F5F8FF]') : 'border-[#E5E9F0] bg-white hover:bg-[#F8FAFC]',
+    );
+  const stepNum = (n: number) => <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-[#2563EB] text-[13px] font-bold text-white">{n}</span>;
 
   return (
-    <Modal
-      open={!!v}
-      size="lg"
-      onClose={() => !posting && onClose()}
-      title={
-        <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#1877F2] text-white">
-            <FacebookIcon className="h-4 w-4" />
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-[rgba(15,23,42,0.55)] px-4 py-6 sm:py-10" onMouseDown={(e) => e.target === e.currentTarget && !posting && onClose()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="fbm-h" className="mx-auto flex w-full max-w-[720px] flex-col overflow-hidden rounded-2xl bg-white text-sm text-[#0F172A] shadow-[0_24px_60px_rgba(15,23,42,0.35)]">
+        {/* header */}
+        <div className="flex items-start gap-3.5 border-b border-[#E5E9F0] px-6 py-5">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#1877F2] text-white">
+            <FacebookIcon className="h-[22px] w-[22px]" />
           </span>
-          <span className="font-heading font-bold text-slate-900">Post to Facebook</span>
-        </div>
-      }
-      footer={
-        <div className="flex w-full flex-wrap items-center justify-between gap-2">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              onClose();
-              router.push('/dealer/facebook');
-            }}
-            disabled={posting}
-          >
-            <ExternalLink className="mr-1 h-3.5 w-3.5" />
-            FB Poster
-          </Button>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button variant="ghost" onClick={onClose} disabled={posting}>
-              {busy ? 'Close (keeps posting)' : started ? 'Close' : 'Cancel'}
-            </Button>
-            {!started && (
-              <Button
-                className="border-transparent bg-[#1877F2] font-bold text-white hover:bg-[#166fe5]"
-                loading={posting}
-                disabled={!count || disconnected}
-                onClick={postNow}
-              >
-                <FacebookIcon className="mr-1.5 h-3.5 w-3.5" />
-                {count > 1 ? `Post to ${count} places` : wantMp ? 'Post to Marketplace' : 'Post to Page'}
-              </Button>
-            )}
+          <div className="flex flex-1 flex-col gap-0.5">
+            <h2 id="fbm-h" className="m-0 text-xl font-bold">
+              Post to Facebook
+            </h2>
+            <span className="text-sm text-[#526077]">{started ? 'Posting runs on our server. You can close this window; it carries on.' : 'Choose where to share this vehicle, check the text, then post.'}</span>
           </div>
+          <button
+            type="button"
+            aria-label="Close"
+            disabled={posting}
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#E5E9F0] bg-white text-[#334155] hover:bg-[#F8FAFC] hover:text-[#0F172A] disabled:opacity-50"
+          >
+            <X className="h-[18px] w-[18px]" />
+          </button>
         </div>
-      }
-    >
-      {v && (
-        <div className="space-y-4">
-          {disconnected && (
-            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-              <b className="block">{conn?.loginLost || needLogin ? 'Facebook asks to log in again' : 'Facebook is not connected yet'}</b>
-              <p className="mt-0.5 text-xs text-amber-800">
-                Open FB Poster and click <b>Connect Facebook</b> to log in once. The login is saved on the server, so after that every post from Inventory
-                works with one click.
-              </p>
-              <Button
-                size="sm"
-                className="mt-2 border-transparent bg-[#1877F2] font-semibold text-white hover:bg-[#166fe5]"
-                onClick={() => {
-                  onClose();
-                  router.push('/dealer/facebook');
-                }}
-              >
-                <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Connect in FB Poster
-              </Button>
-            </div>
-          )}
-          {!disconnected && conn?.connected && !started && (
-            <p className="text-[11px] text-slate-500">
-              Posting as <b className="text-slate-700">{conn.fbName || 'your saved Facebook login'}</b>.
-            </p>
-          )}
+
+        <div className="flex flex-col gap-[22px] px-6 py-5">
           {/* live progress stays on top while posting */}
           {progress}
           {intro}
 
           {/* vehicle */}
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-            <div className="flex h-12 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
-              {v.images?.[0] ? <img src={mediaUrl(v.images[0])} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="h-5 w-5 text-slate-400" />}
-            </div>
-            <div className="min-w-0 flex-1">
-              <b className="block truncate text-sm text-slate-900">{vehicleName(v)}</b>
-              <div className="mt-0.5 truncate text-xs text-slate-500">
-                <span className="font-semibold text-slate-700">{money(v.price)}</span> · {(Number(v.mileage) || 0).toLocaleString()} mi · #{v.stockNumber || '—'} · {v.images?.length || 0} photo{v.images?.length === 1 ? '' : 's'}
-              </div>
+          <div className="flex items-center gap-3.5 rounded-xl border border-[#E5E9F0] bg-[#F8FAFC] p-3">
+            <span className="flex h-[62px] w-[88px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#E2E8F0] text-[#64748B]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {v.images?.[0] ? <img src={mediaUrl(v.images[0])} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="h-[22px] w-[22px]" />}
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <span className="truncate text-base font-bold">{vehicleName(v)}</span>
+              <span className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[13px] text-[#526077]">
+                <span className="inline-flex items-center gap-1.5">
+                  <Tag className="h-3.5 w-3.5" />
+                  {money(v.price)}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Gauge className="h-3.5 w-3.5" />
+                  {(Number(v.mileage) || 0).toLocaleString()} mi
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Hash className="h-3.5 w-3.5" />
+                  Stock {v.stockNumber || '—'}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Camera className="h-3.5 w-3.5" />
+                  {v.images?.length || 0} photo{v.images?.length === 1 ? '' : 's'}
+                </span>
+              </span>
             </div>
           </div>
 
-          {/* where to post: profile, your Pages, Marketplace */}
-          {!started && (
-            <div className="space-y-2">
-              {/* your Pages */}
-              <div className={cx('rounded-xl border px-3 py-2.5 text-xs', pageList.length ? 'border-[#1877F2] bg-blue-50/50' : 'border-slate-200')}>
-                <div className="flex items-center gap-2.5">
-                  <Flag className="h-4 w-4 shrink-0 text-[#1877F2]" />
-                  <b className="flex-1 text-sm text-slate-900">Post on my Pages</b>
-                  <button type="button" disabled={loadingPages || disconnected} onClick={() => loadPages()} className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:underline disabled:opacity-50">
-                    {loadingPages ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                    {pages.length ? 'Refresh' : 'Load my Pages'}
-                  </button>
-                </div>
-                {pages.length ? (
-                  <div className="mt-2 max-h-32 space-y-1 overflow-y-auto pl-[26px]">
-                    {pages.map((p) => (
-                      <label key={p.url} className="flex cursor-pointer items-center gap-2.5 py-0.5" title={p.url}>
-                        <input type="checkbox" className="h-3.5 w-3.5 accent-[#1877F2]" checked={selPages.has(p.url)} onChange={() => togglePage(p.url)} />
-                        <span className="min-w-0 flex-1 truncate text-slate-700">{p.name || p.url}</span>
-                      </label>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-1 pl-[26px] text-slate-500">{loadingPages ? 'Reading your Pages from Facebook…' : 'No Pages loaded yet. Press “Load my Pages” (takes a few seconds).'}</p>
-                )}
-              </div>
-
-              <label
-                className={cx(
-                  'flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2.5 text-xs transition',
-                  toMp ? (mpReady ? 'border-emerald-500 bg-emerald-50/60' : 'border-amber-400 bg-amber-50/60') : 'border-slate-200',
-                )}
-              >
-                <input type="checkbox" className="mt-0.5 h-4 w-4 accent-emerald-600" checked={toMp} onChange={(e) => setToMp(e.target.checked)} />
-                <Store className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
-                <span className="min-w-0 flex-1">
-                  <b className="block text-sm text-slate-900">List on Facebook Marketplace</b>
-                  {mpReady ? (
-                    <span className="text-slate-500">Every Marketplace field is filled in — it is listed automatically.</span>
-                  ) : (
-                    <span className="text-amber-800">
-                      Still needed:{' '}
-                      {missing.map((m, i) => (
-                        <span key={m}>
-                          {i > 0 && ', '}
-                          <button
-                            type="button"
-                            className="font-semibold text-blue-700 hover:underline"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              goEdit(MP_FIX[m]);
-                            }}
-                          >
-                            {m}
-                          </button>
-                        </span>
-                      ))}
-                    </span>
-                  )}
+          {/* connection */}
+          {disconnected ? (
+            <div className="flex items-start gap-2.5 rounded-[10px] border border-[#FDE68A] bg-[#FFFBEB] px-3.5 py-3 text-[13px] text-[#78350F]">
+              <Info className="mt-px h-[18px] w-[18px] shrink-0" />
+              <span className="flex-1">
+                <b className="block">{conn?.loginLost || needLogin ? 'Facebook asks to log in again' : 'Facebook is not connected yet'}</b>
+                Open FB Poster and click <b>Connect Facebook</b> to log in once. After that every post from Inventory works with one click.
+              </span>
+              <button type="button" onClick={openFbPoster} className="whitespace-nowrap font-semibold text-[#1D4ED8] hover:underline">
+                Connect
+              </button>
+            </div>
+          ) : (
+            !started && (
+              <div className="flex items-start gap-2.5 rounded-[10px] border border-[#DBE7FE] bg-[#EFF6FF] px-3.5 py-3 text-[13px] text-[#1E3A8A]">
+                <Info className="mt-px h-[18px] w-[18px] shrink-0" />
+                <span className="flex-1">
+                  Posting as <b>{conn?.fbName || 'your saved Facebook login'}</b>. If you haven’t posted for a while, the first post takes a few extra seconds while Facebook starts up.
                 </span>
-              </label>
-            </div>
+                <button type="button" onClick={openFbPoster} className="whitespace-nowrap font-semibold text-[#1D4ED8] hover:underline">
+                  Change account
+                </button>
+              </div>
+            )
           )}
 
-          {/* the post text (profile / Pages) */}
-          {!started && postsAnywhere && (
-            <div>
-              <div className="mb-1 flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-600">Post text · description and hashtags</span>
-                {loadingText && <span className="text-slate-400">Loading…</span>}
-              </div>
-              <div className="max-h-28 overflow-y-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-2.5 font-mono text-[11px] leading-relaxed text-slate-700">
-                {caption}
-                {hashtags ? `\n\n${hashtags}` : ''}
-              </div>
-            </div>
-          )}
+          {!started && (
+            <>
+              {/* step 1 */}
+              <section aria-labelledby="s1-h" className="flex flex-col gap-2.5">
+                <div className="flex items-center gap-2.5">
+                  {stepNum(1)}
+                  <h3 id="s1-h" className="m-0 flex-1 text-base font-bold">
+                    Where do you want to post?
+                  </h3>
+                  <span className="whitespace-nowrap rounded-full bg-[#EAF1FF] px-2.5 py-[3px] text-xs font-semibold text-[#1D4ED8]">
+                    {count} place{count === 1 ? '' : 's'} selected
+                  </span>
+                </div>
 
-          {/* the Marketplace listing text: exactly what goes into its Description box */}
-          {!started && wantMp && (
-            <div>
-              <div className="mb-1 flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-600">Marketplace listing · description and hashtags</span>
-                {!mpCopy && <span className="text-slate-400">Loading…</span>}
-              </div>
-              <div className="max-h-28 overflow-y-auto whitespace-pre-wrap rounded-lg border border-emerald-100 bg-emerald-50/40 p-2.5 font-mono text-[11px] leading-relaxed text-slate-700">
-                {mpCopy || '…'}
-              </div>
-              <p className="mt-1 text-[11px] text-slate-400">Change this text in FB Poster › Marketplace.</p>
-            </div>
+                {/* Marketplace */}
+                <label className={optCls(toMp, toMp && !mpReady)}>
+                  <input type="checkbox" className="h-[18px] w-[18px] shrink-0 cursor-pointer accent-[#2563EB]" checked={toMp} onChange={(e) => setToMp(e.target.checked)} />
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] bg-[#E8F7EE] text-[#15803D]">
+                    <Store className="h-[18px] w-[18px]" />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="text-[15px] font-semibold">Facebook Marketplace</span>
+                      {mpReady ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#E8F7EE] px-2.5 py-[3px] text-xs font-semibold text-[#15803D]">
+                          <Check className="h-3 w-3" strokeWidth={2.6} /> Ready
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-[#FEF3C7] px-2.5 py-[3px] text-xs font-semibold text-[#92400E]">Not ready</span>
+                      )}
+                    </span>
+                    {mpReady ? (
+                      <span className="text-[13px] text-[#526077]">Every detail Marketplace needs is filled in. It is listed automatically.</span>
+                    ) : (
+                      <span className="text-[13px] text-[#78350F]">
+                        Still needed:{' '}
+                        {missing.map((m, i) => (
+                          <span key={m}>
+                            {i > 0 && ', '}
+                            <button
+                              type="button"
+                              className="font-semibold text-[#1D4ED8] hover:underline"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                goEdit(MP_FIX[m]);
+                              }}
+                            >
+                              {m}
+                            </button>
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </span>
+                  <Tip text="Marketplace is Facebook’s buy-and-sell area. Your listing shows to local buyers searching for vehicles, with price, mileage and photos taken from your inventory." />
+                </label>
+
+                {/* Pages */}
+                {pages.map((p) => (
+                  <label key={p.url} className={optCls(selPages.has(p.url))} title={p.url}>
+                    <input type="checkbox" className="h-[18px] w-[18px] shrink-0 cursor-pointer accent-[#2563EB]" checked={selPages.has(p.url)} onChange={() => togglePage(p.url)} />
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] bg-[#EAF1FF] text-[#1D4ED8]">
+                      <FacebookIcon className="h-[18px] w-[18px]" />
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="text-[15px] font-semibold">Your Facebook Page</span>
+                      <span className="truncate text-[13px] text-[#526077]">{p.name || p.url}</span>
+                    </span>
+                    <Tip text="Your business Page on Facebook. The post goes out as the Page itself, with the photos and the text below. Your Facebook account must be an admin of the Page." />
+                  </label>
+                ))}
+                <div className="flex flex-wrap items-center gap-2 px-1 text-[13px] text-[#526077]">
+                  {loadingPages ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading your Pages from Facebook…
+                    </span>
+                  ) : (
+                    <>
+                      <span>{pages.length ? 'Missing a Page?' : 'No Facebook Pages loaded yet.'}</span>
+                      <button type="button" disabled={disconnected} onClick={() => loadPages()} className="inline-flex items-center gap-1 font-semibold text-[#1D4ED8] hover:underline disabled:opacity-50">
+                        <RefreshCw className="h-3.5 w-3.5" /> {pages.length ? 'Refresh my Pages' : 'Load my Pages'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </section>
+
+              {/* step 2 */}
+              <section aria-labelledby="s2-h" className="flex flex-col gap-2.5">
+                <div className="flex items-center gap-2.5">
+                  {stepNum(2)}
+                  <h3 id="s2-h" className="m-0 flex-1 text-base font-bold">
+                    Check the post text
+                  </h3>
+                  {textEdited && (
+                    <button type="button" className="text-[13px] font-semibold text-[#1D4ED8] hover:underline" onClick={() => setTextEdited(false)}>
+                      Use automatic text
+                    </button>
+                  )}
+                </div>
+                <span className="text-[13px] text-[#526077]">
+                  {loadingText ? 'Writing the text from the vehicle’s details…' : 'Written for you from the vehicle’s details. Edit anything you like before posting.'}
+                  {!postsAnywhere && ' (Used for Page posts.)'}
+                </span>
+                <div className="flex overflow-hidden rounded-lg border border-[#CBD5E1] bg-white focus-within:border-[#2563EB] focus-within:shadow-[0_0_0_3px_rgba(37,99,235,0.18)]">
+                  <label htmlFor="fb-text" className="sr-only">
+                    Post text
+                  </label>
+                  <textarea
+                    id="fb-text"
+                    value={text}
+                    onChange={(e) => {
+                      setTextEdited(true);
+                      setEditText(e.target.value);
+                    }}
+                    className="min-h-[150px] min-w-0 flex-1 resize-y border-0 bg-transparent px-3 py-2.5 text-sm leading-normal text-[#0F172A] outline-none"
+                  />
+                </div>
+                {toMp && (
+                  <div className="rounded-[10px] border border-[#BBE5CB] bg-[#F3FBF6] px-3.5 py-2.5 text-[13px]">
+                    <div className="flex items-center gap-2">
+                      <Store className="h-4 w-4 shrink-0 text-[#15803D]" />
+                      <span className="flex-1 text-[#14532D]">Marketplace uses its own listing text (description and hashtags).</span>
+                      <button type="button" className="font-semibold text-[#1D4ED8] hover:underline" onClick={() => setShowMpCopy(!showMpCopy)}>
+                        {showMpCopy ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+                    {showMpCopy && (
+                      <>
+                        <div className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg bg-white p-2.5 font-mono text-[11px] leading-relaxed text-[#334155]">{mpCopy || 'Loading…'}</div>
+                        <p className="mt-1 text-[11px] text-[#526077]">Change it in FB Poster › Marketplace.</p>
+                      </>
+                    )}
+                  </div>
+                )}
+              </section>
+            </>
           )}
         </div>
-      )}
-    </Modal>
+
+        {/* footer */}
+        <div className="flex flex-wrap items-center gap-3 border-t border-[#E5E9F0] bg-[#F8FAFC] px-6 py-4">
+          <span className="min-w-[220px] flex-1 text-[13px] text-[#334155]">
+            {started
+              ? busy
+                ? 'Posting… you can close this window, progress also shows at the top of every page.'
+                : 'Finished.'
+              : !count
+                ? 'Select at least one place to post.'
+                : `Posts to ${where.length > 1 ? where.slice(0, -1).join(', ') + ' and ' + where[where.length - 1] : where[0]}. This takes about a minute. You can close this window; progress shows in FB Poster.`}
+          </span>
+          <button type="button" onClick={onClose} disabled={posting} className="inline-flex min-h-[42px] items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-[#CBD5E1] bg-white px-4 text-sm font-semibold text-[#0F172A] hover:bg-[#F8FAFC] disabled:opacity-60">
+            {busy ? 'Close (keeps posting)' : started ? 'Close' : 'Cancel'}
+          </button>
+          {!started && (
+            <button
+              type="button"
+              disabled={!count || disconnected || posting}
+              onClick={postNow}
+              className={cx(
+                'inline-flex min-h-[42px] items-center justify-center gap-2 whitespace-nowrap rounded-lg px-[18px] text-sm font-semibold transition disabled:cursor-not-allowed',
+                count && !disconnected ? 'bg-[#1877F2] text-white hover:bg-[#166fe5]' : 'bg-[#C7D2E3] text-[#334155]',
+              )}
+            >
+              {posting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {!count ? 'Choose where to post' : `Post to ${count} place${count === 1 ? '' : 's'}`}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** ⓘ with an explanation on hover */
+function Tip({ text }: { text: string }) {
+  return (
+    <span className="group relative inline-flex shrink-0 self-start" onClick={(e) => e.preventDefault()}>
+      <button type="button" aria-label="More information" className="inline-flex h-6 w-6 cursor-help items-center justify-center rounded-full text-[#64748B] outline-none hover:bg-[#EAF1FF] hover:text-[#1D4ED8] focus-visible:bg-[#EAF1FF]">
+        <Info className="h-[15px] w-[15px]" />
+      </button>
+      <span role="tooltip" className="pointer-events-none absolute bottom-[calc(100%+8px)] right-[-10px] z-40 hidden w-[260px] rounded-lg bg-[#0F172A] px-3 py-2.5 text-[12.5px] font-normal leading-normal text-[#F1F5F9] shadow-[0_8px_24px_rgba(15,23,42,0.25)] group-focus-within:block group-hover:block">
+        {text}
+      </span>
+    </span>
   );
 }
