@@ -96,17 +96,18 @@ export function mediaUrl(u?: string | null) {
 
 /** Public website address of a dealership. */
 export function siteUrl(t: { id: string; domains?: string[]; siteUrl?: string }) {
-  let pattern = process.env.NEXT_PUBLIC_SITE_PATTERN || 'http://{id}.localhost:3002';
-  // older settings pointed at port 3000, which is now the Dealership Portal (or 3001, this admin): the websites are on 3002
-  const port = (u: string) => (u.match(/:(\d+)(?:\/|$)/) || [])[1] || '';
-  const pp = port(pattern.replace('{id}', 'x'));
-  if (pp && (pp === port(DEALER_PORTAL_URL) || pp === port(PLATFORM_ADMIN_URL))) pattern = 'http://{id}.localhost:3002';
-  // On this computer always open the local website app, never the live domain / old address saved in Business details
-  if (isLocalAdmin()) return pattern.replace('{id}', t.id);
+  // If a custom dealer domain exists (e.g. joesautos.com), use it directly
   const d = t.domains?.[0];
-  if (d && !d.endsWith('localhost')) return `https://${d}`;
-  if (t.siteUrl && !t.siteUrl.includes('appalachiangrowthsolutions.com')) return t.siteUrl;
-  return pattern.replace('{id}', t.id);
+  if (d && !d.endsWith('localhost')) return `https://${d}`.replace(/\/+$/, '');
+
+  // If a valid custom external website URL is set (not pointing back to hostinger/portal), use it
+  if (t.siteUrl && /^https?:\/\//i.test(t.siteUrl) && !t.siteUrl.includes('appalachiangrowthsolutions.com')) {
+    return t.siteUrl.replace(/\/+$/, '');
+  }
+
+  // Fallback to configured frontend URL or VPS public frontend port 3002
+  const frontendBase = (process.env.NEXT_PUBLIC_FRONTEND_URL || (isLocalAdmin() ? 'http://localhost:3002' : 'http://5.183.35.10:3002')).replace(/\/+$/, '');
+  return `${frontendBase}/?pa_live=true&tenant=${encodeURIComponent(t.id)}`;
 }
 
 /** The admin itself is running on this computer (localhost) — dealer websites are then the local website app too. */
