@@ -79,6 +79,13 @@ export default function InventoryPage() {
     return () => window.removeEventListener('dealer-search', read);
   }, []);
 
+  // changes made from the "Just tell it" bar (mark sold, prices …): show them straight away
+  useEffect(() => {
+    const again = () => void reload();
+    window.addEventListener('inventory-changed', again);
+    return () => window.removeEventListener('inventory-changed', again);
+  }, [reload]);
+
   // photos that still need the branding bands are done in the background (progress pill at the bottom)
   useEffect(() => {
     void brandRun();

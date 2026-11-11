@@ -152,6 +152,13 @@ export default function FbPostPage() {
       ].slice(0, 20));
     });
 
+  // opened from the "Just tell it" bar ("Post the Buick to Facebook"): that vehicle is chosen already
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('vehicle');
+    if (id) fromVehicle(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const addEmoji = (e: string) => {
     const el = captionRef.current;
     if (!el) return setCaption((c) => c + e);

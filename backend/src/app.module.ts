@@ -23,6 +23,7 @@ import { MediaModule } from './media/media.module.js';
 import { CargurusModule } from './cargurus/cargurus.module.js';
 import { PublicModule } from './public/public.module.js';
 import { PlatformModule } from './platform/platform.module.js';
+import { AiModule } from './ai/ai.module.js';
 import { AuthGuard } from './common/auth.guard.js';
 
 @Module({
@@ -51,6 +52,7 @@ import { AuthGuard } from './common/auth.guard.js';
     CargurusModule,
     PublicModule,
     PlatformModule,
+    AiModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: AuthGuard }],

@@ -7,6 +7,8 @@ const backendUrl = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL |
 const basePath = '/admin';
 
 const nextConfig: NextConfig = {
+  // AI Quick Add: reading 40 photos or a video can take more than the default 30 s of the /api proxy
+  experimental: { proxyTimeout: 180_000 },
   basePath,
   env: { NEXT_PUBLIC_BASE_PATH: basePath },
   images: {

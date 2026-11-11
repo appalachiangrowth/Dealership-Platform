@@ -1,15 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  House, Store, Palette, FileText, Car, Newspaper, Mail, Users, ExternalLink, LogOut, Menu, Plus, KeyRound, Rss, ShieldAlert, X, Send, Check, Search, Bell,
+  House, Store, Palette, FileText, Car, Newspaper, Mail, Users, ExternalLink, LogOut, Menu, Plus, KeyRound, Rss, ShieldAlert, X, Send, Check, Bell,
 } from 'lucide-react';
 import { api, auth, mediaUrl, siteUrl, PLATFORM_ADMIN_URL } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { Loading, cx } from './ui';
 import { FbActivityBar } from './fb/FbActivityBar';
+import { CommandBar } from './CommandBar';
+import { AddVehicleChooser } from './AddVehicleChooser';
 
 export interface DealerTenant {
   id: string;
@@ -35,8 +37,6 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
   const [unread, setUnread] = useState(0);
   // setup ticks next to "Your website" and the number of vehicles for sale (from the Overview numbers)
   const [setup, setSetup] = useState<{ done: Set<string>; forSale: number } | null>(null);
-  const [q, setQ] = useState('');
-  const searchRef = useRef<HTMLInputElement>(null);
   const support = me?.user.kind === 'owner';
 
   const loadTenant = async () => {
@@ -85,18 +85,6 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }, [tenant, onOverview, can]);
 
-  // Ctrl/Cmd + K: jump to the search box
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
   if (loading || !me || !tenant) return <Loading />;
 
   const done = (...ids: string[]) => !!setup && ids.every((id) => setup.done.has(id));
@@ -137,14 +125,6 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
     // leave support mode: forget the owner login in this app and go back to the Platform Admin
     auth.clear();
     window.location.href = `${PLATFORM_ADMIN_URL}/platform/dealers/${tenant.id}`;
-  };
-
-  const search = (e: React.FormEvent) => {
-    e.preventDefault();
-    const term = q.trim();
-    router.push(`/dealer/inventory${term ? `?q=${encodeURIComponent(term)}` : ''}`);
-    // the Inventory page may already be open: tell it about the new search
-    setTimeout(() => window.dispatchEvent(new Event('dealer-search')), 50);
   };
 
   const sidebar = (
@@ -232,6 +212,7 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
 
   return (
     <TenantCtx.Provider value={{ tenant, support, refreshTenant: () => void loadTenant() }}>
+      <AddVehicleChooser />
       <div className="flex min-h-screen">
         <div className="fixed inset-y-0 left-0 z-30 hidden lg:block">{sidebar}</div>
         {open && (
@@ -267,25 +248,11 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
               <span />
             )}
           </header>
-          {/* desktop top bar: search + new inquiries */}
-          <header className="hidden flex-wrap items-center gap-4 border-b border-[#E5E9F0] bg-white px-7 py-3.5 lg:flex">
-            <form onSubmit={search} className="flex min-h-[42px] max-w-[520px] flex-[1_1_280px] items-center gap-2.5 rounded-[10px] border border-[#E5E9F0] bg-[#F4F6FA] px-3 text-[#526077]">
-              <Search className="h-[18px] w-[18px] shrink-0" />
-              <label htmlFor="dealer-search" className="sr-only">
-                Search
-              </label>
-              <input
-                id="dealer-search"
-                ref={searchRef}
-                type="search"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search vehicles by make, model, VIN or stock number…"
-                className="min-w-0 flex-1 border-0 bg-transparent text-sm text-[#0F172A] outline-none placeholder:text-[#526077]"
-              />
-              <span className="rounded-[5px] border border-[#CBD5E1] px-1.5 py-0.5 text-[11px] font-semibold text-[#526077]">Ctrl K</span>
-            </form>
-            <div className="ml-auto flex items-center gap-2">
+          {/* top bar on every page: the "Just tell it" AI command bar (also searches the inventory) + new inquiries */}
+          {(can('inventory') || can('leads')) && (
+          <header className="relative z-30 flex flex-wrap items-center gap-3 border-b border-[#E5E9F0] bg-white px-4 py-3 sm:px-7 lg:gap-4 lg:py-3.5">
+            {can('inventory') && <CommandBar enabled={tenant.features.ai !== false} />}
+            <div className="ml-auto hidden items-center gap-2 lg:flex">
               {can('leads') && (
                 <Link
                   href="/dealer/leads"
@@ -299,6 +266,7 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
               )}
             </div>
           </header>
+          )}
           {/* Facebook posting / Marketplace progress, on every page until it is done */}
           <FbActivityBar enabled={tenant.features.facebook !== false && can('inventory')} />
           <main className={cx('w-full flex-1 px-4 py-6 sm:px-7', wide ? 'max-w-none sm:py-6' : 'max-w-[1240px] sm:py-7')}>{children}</main>

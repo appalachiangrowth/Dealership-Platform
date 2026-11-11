@@ -4,6 +4,8 @@ import path from 'path';
 const backendUrl = process.env.BACKEND_URL || 'http://5.183.35.10:4000';
 
 const nextConfig: NextConfig = {
+  // AI Quick Add: reading 40 photos or a video can take more than the default 30 s of the /api proxy
+  experimental: { proxyTimeout: 180_000 },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**' },
