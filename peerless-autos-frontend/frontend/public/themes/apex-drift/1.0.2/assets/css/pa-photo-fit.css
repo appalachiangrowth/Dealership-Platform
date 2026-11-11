@@ -1,0 +1,13 @@
+/* Branded vehicle photos (header + footer template) are 4:3. Show them in 4:3 boxes so the
+   logo/address header and phone/website footer are never cut off. Old photos still fill the box (cover). */
+.v-card .ph,.p-card .ph,.car-family-card .ph,.pl-root .pl-pimg,.g-main{aspect-ratio:4/3 !important;height:auto !important}
+.pa-page .ph:has(>img),.pa-page .size .ph:has(>img),.pa-page .card .ph:has(>img),.pa-page .panel .ph:has(>img),.pa-page .fam .ph:has(>img),
+.hub-page .ph:has(>img),.sedan-page .ph:has(>img),.wagon-page .ph:has(>img),.truck-page .ph:has(>img),.suv-page .ph:has(>img){aspect-ratio:4/3 !important;height:auto !important}
+.v-card .ph img,.p-card .ph img,.car-family-card .ph img,.pl-root .pl-pimg img,.g-main img,.pa-page .ph>img{width:100% !important;height:100% !important;object-fit:cover !important;object-position:center !important}
+/* no hover zoom on these, zooming would crop the header/footer edges */
+.v-card:hover img,.p-card:hover img,.pl-root .pl-card:hover .pl-pimg img{transform:none !important}
+/* thumbnails 4:3 */
+.g-thumb{flex:0 0 96px !important;height:72px !important}
+.g-thumb img{object-fit:cover !important}
+/* admin lists */
+.adm-table img{height:48px !important}

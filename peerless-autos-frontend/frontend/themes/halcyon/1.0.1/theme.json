@@ -1,0 +1,125 @@
+{
+  "id": "halcyon",
+  "name": "Halcyon",
+  "version": "1.0.1",
+  "description": "Midnight showroom design: a 3D car on a glowing turntable, cinematic motion and compact, phone-first pages.",
+  "author": "Appalachian Growth Solutions",
+  "released": "2026-10-29",
+  "pages": [
+    {
+      "id": "home",
+      "label": "Home",
+      "template": "index.html",
+      "sitemap": true
+    },
+    {
+      "id": "inventory",
+      "label": "Inventory",
+      "template": "inventory.html",
+      "sitemap": true
+    },
+    {
+      "id": "used-cars",
+      "label": "Used Cars",
+      "template": "used-cars.html",
+      "sitemap": true
+    },
+    {
+      "id": "used-sedans",
+      "label": "Used Sedans",
+      "template": "used-sedans.html",
+      "sitemap": true
+    },
+    {
+      "id": "used-trucks",
+      "label": "Used Trucks",
+      "template": "used-trucks.html",
+      "sitemap": true
+    },
+    {
+      "id": "used-suvs",
+      "label": "Used SUVs",
+      "template": "used-suvs.html",
+      "sitemap": true
+    },
+    {
+      "id": "used-wagons",
+      "label": "Used Wagons",
+      "template": "used-wagons.html",
+      "sitemap": true
+    },
+    {
+      "id": "about-us",
+      "label": "About Us",
+      "template": "about-us.html",
+      "sitemap": true
+    },
+    {
+      "id": "contact-us",
+      "label": "Contact Us",
+      "template": "contact-us.html",
+      "sitemap": true
+    },
+    {
+      "id": "blog",
+      "label": "Blog",
+      "template": "blog.html",
+      "sitemap": true
+    },
+    {
+      "id": "pages",
+      "label": "Pages",
+      "template": "pages.html",
+      "sitemap": true
+    },
+    {
+      "id": "vehicle",
+      "label": "Vehicle Details (query id)",
+      "template": "vehicle.html",
+      "sitemap": false
+    },
+    {
+      "id": "blog-post",
+      "label": "Blog Article (query id)",
+      "template": "blog-post.html",
+      "sitemap": false
+    }
+  ],
+  "design": {
+    "colors": [
+      {
+        "var": "--sr-accent",
+        "label": "Accent colour",
+        "default": "#e0212b",
+        "also": [],
+        "hint": "Buttons, highlights and glows"
+      },
+      {
+        "var": "--sr-night",
+        "label": "Dark background",
+        "default": "#06080d",
+        "also": [],
+        "hint": "Hero and dark sections"
+      },
+      {
+        "var": "--sr-paper",
+        "label": "Light background",
+        "default": "#f1f0ec",
+        "also": [],
+        "hint": "Light sections"
+      },
+      {
+        "var": "--sr-paint",
+        "label": "3D car paint",
+        "default": "#8a0812",
+        "also": [],
+        "hint": "Colour of the car in the 3D showroom"
+      }
+    ]
+  },
+  "content_map": {
+    "home.hero.description": "home.hero.text"
+  },
+  "preview": "assets/preview.jpg",
+  "style": "Dark 3D showroom"
+}

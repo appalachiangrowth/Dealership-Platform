@@ -1,0 +1,182 @@
+'use client';
+
+import { useRef, useState } from 'react';
+import { ArrowLeft, ArrowRight, ImagePlus, Link2, Trash2, Upload } from 'lucide-react';
+import { api, mediaUrl } from '@/lib/api';
+import { useToast } from './toast';
+import { Button, Input, Spinner, cx } from './ui';
+
+/**
+ * Like the old upload.php: photos are stored as JPG / PNG / GIF (CarGurus refuses WebP, AVIF …) and very large
+ * photos are made smaller. Converted in the browser before upload; JPG / PNG / GIF under the limits are sent as they are.
+ */
+const MAX_SIDE = 2400;
+async function webReady(f: File): Promise<File> {
+  if (!/^image\//.test(f.type) || f.type === 'image/gif') return f;
+  const okType = f.type === 'image/jpeg' || f.type === 'image/png';
+  if (okType && f.size <= 2.5 * 1024 * 1024) return f;
+  try {
+    const bmp = await createImageBitmap(f);
+    const k = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+    if (okType && k === 1 && f.type === 'image/png') return f; // keep PNG transparency when no resize is needed
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * k);
+    c.height = Math.round(bmp.height * k);
+    const g = c.getContext('2d');
+    if (!g) return f;
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/jpeg', 0.88));
+    if (!blob) return f;
+    return new File([blob], f.name.replace(/\.[a-z0-9]+$/i, '') + '.jpg', { type: 'image/jpeg' });
+  } catch {
+    return f; // the browser cannot read this format: the server decides
+  }
+}
+
+async function uploadFiles(files: FileList | File[], folder?: string): Promise<string[]> {
+  const form = new FormData();
+  for (const f of Array.from(files)) form.append('files', await webReady(f));
+  const r = await api<{ files: { url: string }[]; errors: { file: string; error: string }[] }>(`/dealer/media${folder ? `?folder=${folder}` : ''}`, { form });
+  if (r.errors.length) throw new Error(r.errors.map((e) => `${e.file}: ${e.error}`).join('\n'));
+  return r.files.map((f) => f.url);
+}
+
+/** Ordered photo list for a vehicle or post. First photo = cover. */
+export function ImageUploader({ value, onChange, max = 60 }: { value: string[]; onChange: (v: string[]) => void; max?: number }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [url, setUrl] = useState('');
+  const [drag, setDrag] = useState(false);
+  const toast = useToast();
+
+  async function add(files: FileList | File[]) {
+    if (!files.length) return;
+    setBusy(true);
+    try {
+      const urls = await uploadFiles(files);
+      onChange([...value, ...urls].slice(0, max));
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const move = (i: number, d: number) => {
+    const j = i + d;
+    if (j < 0 || j >= value.length) return;
+    const next = [...value];
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  };
+
+  return (
+    <div>
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDrag(true);
+        }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDrag(false);
+          void add(e.dataTransfer.files);
+        }}
+        className={cx('rounded-xl border-2 border-dashed p-4 transition', drag ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-slate-50')}
+      >
+        {value.length > 0 && (
+          <div className="mb-4 grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+            {value.map((u, i) => (
+              <div key={u + i} className="group relative aspect-[4/3] overflow-hidden rounded-lg bg-white ring-1 ring-slate-200">
+                <img src={mediaUrl(u)} alt="" className="h-full w-full object-cover" />
+                {i === 0 && <span className="absolute left-1 top-1 rounded bg-blue-700 px-1.5 py-0.5 text-[9px] font-bold text-white">COVER</span>}
+                <div className="absolute inset-x-0 bottom-0 flex justify-between bg-black/50 p-1 opacity-0 transition group-hover:opacity-100">
+                  <button type="button" onClick={() => move(i, -1)} className="rounded p-1 text-white hover:bg-white/20" title="Move left">
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                  </button>
+                  <button type="button" onClick={() => onChange(value.filter((_, k) => k !== i))} className="rounded p-1 text-white hover:bg-red-500" title="Remove">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                  <button type="button" onClick={() => move(i, 1)} className="rounded p-1 text-white hover:bg-white/20" title="Move right">
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" variant="secondary" onClick={() => ref.current?.click()} loading={busy}>
+            <Upload className="h-4 w-4" /> Upload photos
+          </Button>
+          <span className="text-xs text-slate-500">or drag photos here · JPG, PNG, GIF, WebP · first photo is the cover</span>
+          <input ref={ref} type="file" accept="image/*" multiple hidden onChange={(e) => e.target.files && add(e.target.files)} />
+        </div>
+        <div className="mt-3 flex gap-2">
+          <div className="relative flex-1">
+            <Link2 className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <Input className="pl-9" placeholder="…or paste a photo link (https://…)" value={url} onChange={(e) => setUrl(e.target.value)} />
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              if (/^https?:\/\//.test(url.trim())) {
+                onChange([...value, url.trim()]);
+                setUrl('');
+              } else toast.error('Paste a link that starts with https://');
+            }}
+          >
+            Add link
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One image (logo, cover, share image). */
+export function SingleImage({ value, onChange, folder = 'site', label = 'Upload image', round }: { value: string; onChange: (v: string) => void; folder?: string; label?: string; round?: boolean }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  return (
+    <div className="flex items-center gap-4">
+      <div className={cx('flex h-20 w-20 items-center justify-center overflow-hidden bg-slate-100 ring-1 ring-slate-200', round ? 'rounded-full' : 'rounded-xl')}>
+        {busy ? <Spinner /> : value ? <img src={mediaUrl(value)} alt="" className="h-full w-full object-contain" /> : <ImagePlus className="h-6 w-6 text-slate-400" />}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="secondary" size="sm" onClick={() => ref.current?.click()}>
+          {label}
+        </Button>
+        {value && (
+          <Button type="button" variant="ghost" size="sm" onClick={() => onChange('')}>
+            Remove
+          </Button>
+        )}
+      </div>
+      <input
+        ref={ref}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={async (e) => {
+          if (!e.target.files?.length) return;
+          setBusy(true);
+          try {
+            const [u] = await uploadFiles(e.target.files, folder);
+            onChange(u);
+          } catch (err) {
+            toast.error((err as Error).message);
+          } finally {
+            setBusy(false);
+            e.target.value = '';
+          }
+        }}
+      />
+    </div>
+  );
+}
