@@ -41,7 +41,7 @@ export function PostForm({ initial }: { initial: Record<string, any> }) {
       <PageHeader
         back="/dealer/blog"
         title={p.id ? 'Edit post' : 'New post'}
-        desc={p.id && p.status === 'PUBLISHED' && tenant ? <a className="text-blue-700 underline" href={`${siteUrl(tenant)}/index.html#/blog`} target="_blank" rel="noreferrer">View on website</a> : undefined}
+        desc={p.id && p.status === 'PUBLISHED' && tenant ? <a className="text-blue-700 underline" href={siteUrl(tenant, 'index.html#/blog')} target="_blank" rel="noreferrer">View on website</a> : undefined}
         actions={
           <>
             {p.id && (

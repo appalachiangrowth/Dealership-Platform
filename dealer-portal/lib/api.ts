@@ -106,17 +106,21 @@ function frontendBase(): string {
   const raw = String(process.env.NEXT_PUBLIC_FRONTEND_URL || '');
   const m = raw.match(/https?:\/\/[^\s)\]"'<>]+/i);
   if (m) return m[0].replace(/\/+$/, '');
-  return isLocalAdmin() ? 'http://localhost:3002' : 'http://5.183.35.10:3002';
+  return isLocalAdmin() ? 'http://localhost:3002' : 'https://sites.appalachiangrowthsolutions.com';
 }
 
 /** Where a dealership's website lives: its own domain, its own site address, or the shared website app (needs ?tenant=). */
 export function siteBase(t: { id: string; domains?: string[]; siteUrl?: string }): { base: string; shared: boolean } {
-  // a custom dealer domain (e.g. joesautos.com)
-  const d = t.domains?.[0];
-  if (d && !d.endsWith('localhost')) return { base: `https://${d}`.replace(/\/+$/, ''), shared: false };
-  // a full external website address (not the portal itself)
-  if (t.siteUrl && /^https?:\/\//i.test(t.siteUrl) && !t.siteUrl.includes('appalachiangrowthsolutions.com')) {
-    return { base: t.siteUrl.replace(/\/+$/, ''), shared: false };
+  // Every "View website" link and every preview uses the shared website app
+  // (https://sites.appalachiangrowthsolutions.com/?tenant=<id>), which always serves the right dealership.
+  // A dealer's own domain (e.g. joesautos.com) is only used once those domains point at the server:
+  // build with NEXT_PUBLIC_USE_DEALER_DOMAINS=1 to switch that on.
+  if (/^(1|true|yes)$/i.test(String(process.env.NEXT_PUBLIC_USE_DEALER_DOMAINS || '').trim())) {
+    const d = t.domains?.[0];
+    if (d && !d.endsWith('localhost')) return { base: `https://${d}`.replace(/\/+$/, ''), shared: false };
+    if (t.siteUrl && /^https?:\/\//i.test(t.siteUrl) && !t.siteUrl.includes('appalachiangrowthsolutions.com')) {
+      return { base: t.siteUrl.replace(/\/+$/, ''), shared: false };
+    }
   }
   return { base: frontendBase(), shared: true };
 }
