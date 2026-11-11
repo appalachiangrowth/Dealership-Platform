@@ -6,7 +6,7 @@
  *   /sitemap.xml  /robots.txt           → generated per dealership
  * Photos (/uploads/…) are passed to the backend (next.config.ts), theme assets come from public/themes/.
  */
-import { backend, hostOf, originOf, securityHeaders, siteErrorPage, statePage } from '@/lib/backend';
+import { backend, hostOf, originOf, securityHeaders, siteErrorPage, statePage, withTenant } from '@/lib/backend';
 import { loadTheme, themesInstalled } from '@/lib/engine';
 import { renderPage, type ThemeContext } from '@/lib/page';
 import { injectNav, renderCustomPage, type CustomPage, type NavItem } from '@/lib/custom-pages';
@@ -82,7 +82,12 @@ async function customPage(req: Request, url: URL, host: string, slug: string) {
   });
 }
 
-export async function GET(req: Request, { params }: Ctx) {
+/** every answer keeps the dealership of a https://sites.…/?tenant=<id> visit (cookie + links), see withTenant */
+export async function GET(req: Request, ctx: Ctx) {
+  return withTenant(req, await page(req, ctx));
+}
+
+async function page(req: Request, { params }: Ctx) {
   const url = new URL(req.url);
   const host = hostOf(req);
   let r = decodeURIComponent((await params).path?.join('/') || '').replace(/^\/+/, '');
