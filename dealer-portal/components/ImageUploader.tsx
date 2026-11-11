@@ -35,7 +35,7 @@ async function webReady(f: File): Promise<File> {
   }
 }
 
-async function uploadFiles(files: FileList | File[], folder?: string): Promise<string[]> {
+export async function uploadFiles(files: FileList | File[], folder?: string): Promise<string[]> {
   const form = new FormData();
   for (const f of Array.from(files)) form.append('files', await webReady(f));
   const r = await api<{ files: { url: string }[]; errors: { file: string; error: string }[] }>(`/dealer/media${folder ? `?folder=${folder}` : ''}`, { form });

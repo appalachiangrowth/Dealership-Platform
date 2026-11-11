@@ -47,5 +47,8 @@ export function useSettings(keys: string[]) {
     }
   }
 
-  return { form, set, save, saving, dirty, error };
+  /** Back to the last saved values (Discard changes). */
+  const reset = () => setForm(original);
+
+  return { form, set, save, saving, dirty, error, reset };
 }
