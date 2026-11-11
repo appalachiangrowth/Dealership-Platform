@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, Copy, ExternalLink, MoreHorizontal, Palette, Plus, RotateCcw, Trash2, Undo2 } from 'lucide-react';
-import { api, siteUrl } from '@/lib/api';
+import { api, siteBase, siteUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { SECTION_DEFS, TOKENS, make, type Section } from '@/lib/page-sections';
 import { SectionCard, cloneSection, ImageField } from '@/components/PageSectionEditor';
@@ -125,11 +125,13 @@ export default function PageEditor() {
   };
 
   const tenant = tenants.data?.find((t) => t.id === previewTenant);
-  const site = tenant ? siteUrl({ id: tenant.id, domains: tenant.domains.map((d) => d.domain) }) : '';
+  const tSite = tenant ? { id: tenant.id, domains: tenant.domains.map((d) => d.domain) } : null;
+  // shown as the page address (no ?tenant=…); links are built with siteUrl()
+  const site = tSite ? siteBase(tSite).base : '';
   const previewSrc = useMemo(() => {
-    if (!site || !token || !p) return '';
+    if (!tSite || !token || !p) return '';
     const qs = new URLSearchParams({ pa_page_preview: token, _: String(rev) });
-    return `${site}/${p.slug}?${qs}${focus >= 0 ? `#pa-s-${focus}` : ''}`;
+    return siteUrl(tSite, `${p.slug}?${qs}${focus >= 0 ? `#pa-s-${focus}` : ''}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [site, token, p?.slug, rev]);
 
@@ -161,7 +163,7 @@ export default function PageEditor() {
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {p.status === 'PUBLISHED' && site && (
-            <a href={`${site}/${p.slug}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">
+            <a href={tSite ? siteUrl(tSite, p.slug) : '#'} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">
               View live <ExternalLink className="h-3.5 w-3.5" />
             </a>
           )}

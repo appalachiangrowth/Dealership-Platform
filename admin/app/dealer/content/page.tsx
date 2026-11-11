@@ -79,7 +79,7 @@ export default function ContentPage() {
             <Button variant="secondary" onClick={() => setHistoryOpen(true)}>
               <History className="h-4 w-4" /> Earlier versions
             </Button>
-            <LinkButton variant="secondary" href={siteUrl(tenant) + (PAGE_PATH[pageId] || '/')} target="_blank">
+            <LinkButton variant="secondary" href={siteUrl(tenant, PAGE_PATH[pageId] || '/')} target="_blank">
               <ExternalLink className="h-4 w-4" /> View page
             </LinkButton>
             <Button onClick={save} loading={saving} disabled={!changed.length && !reset.length}>

@@ -56,7 +56,6 @@ export default function DesignPage() {
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} retry={reload} />;
   if (!data || !tenant) return null;
-  const site = siteUrl(tenant);
   const slots: Slot[] = data.colors.slots || [];
   const saved: Record<string, string> = data.colors.values || {};
   const colorsChanged = slots.some((s) => (colors[s.key] || '').toUpperCase() !== (saved[s.key] || '').toUpperCase());
@@ -89,7 +88,7 @@ export default function DesignPage() {
     }
   }
 
-  const previewSrc = `${site}/index.html?pa_live=1&pa_tenant=${encodeURIComponent(tenant.id)}${showingCurrent ? '' : `&pa_theme_preview=${encodeURIComponent(previewId)}`}`;
+  const previewSrc = siteUrl(tenant, `index.html?pa_live=1&pa_tenant=${encodeURIComponent(tenant.id)}${showingCurrent ? '' : `&pa_theme_preview=${encodeURIComponent(previewId)}`}`);
 
   return (
     <div className="grid gap-6 lg:h-[calc(100vh-3rem)] lg:grid-cols-[minmax(360px,520px)_1fr]">
@@ -158,7 +157,7 @@ export default function DesignPage() {
                   )}
                 >
                   <button type="button" onClick={() => setPreviewId(t.active ? '' : t.id)} className="relative block aspect-[16/10] w-full bg-slate-100 text-left" title="Show in the preview">
-                    <DesignPicture src={t.previewUrl ? mediaUrl(t.previewUrl) : ''} alt={t.name} live={`${site}/index.html?pa_live=1&pa_theme_preview=${encodeURIComponent(t.id)}`} />
+                    <DesignPicture src={t.previewUrl ? mediaUrl(t.previewUrl) : ''} alt={t.name} live={siteUrl(tenant, `index.html?pa_live=1&pa_theme_preview=${encodeURIComponent(t.id)}`)} />
                     {t.active && (
                       <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-blue-700 px-2 py-0.5 text-[11px] font-bold text-white">
                         <Check className="h-3 w-3" /> Your design
@@ -209,7 +208,7 @@ export default function DesignPage() {
         ref={preview}
         className="hidden min-h-[600px] lg:flex"
         src={previewSrc}
-        openUrl={showingCurrent ? `${site}/` : `${site}/index.html?pa_theme_preview=${encodeURIComponent(previewId)}`}
+        openUrl={showingCurrent ? siteUrl(tenant) : siteUrl(tenant, `index.html?pa_theme_preview=${encodeURIComponent(previewId)}`)}
         title={showingCurrent ? `Your website · ${data.current.name}` : `Trying ${tried?.name || previewId}`}
         onReady={() => {
           const c = Object.keys(colors).length ? colors : (data?.colors?.values || {});

@@ -82,11 +82,11 @@ export function ThemeInstall({ themes, onChanged }: { themes: Theme[]; onChanged
       const form = new FormData();
       form.append('file', file, file.name);
       const r = await api('/platform/themes/install', { form });
-      const site = list[0] ? siteUrl({ id: list[0].id, domains: list[0].domains?.map((d: any) => d.domain) }) : '';
+      const first = list[0] ? { id: list[0].id, domains: list[0].domains?.map((d: any) => d.domain) } : null;
       setResult({
         ok: true,
         text: `Installed ${r.theme.name} ${r.theme.version}. Not activated yet${r.theme.isNew ? ' — it now appears in every dealer’s Design & colours gallery' : ''}.`,
-        preview: site ? `${site}/index.html?pa_theme_preview=${encodeURIComponent(r.theme.id)}` : '',
+        preview: first ? siteUrl(first, `index.html?pa_theme_preview=${encodeURIComponent(r.theme.id)}`) : '',
       });
       toast.ok(`Installed ${r.theme.name} ${r.theme.version}. Not activated yet.`);
       setFile(null);

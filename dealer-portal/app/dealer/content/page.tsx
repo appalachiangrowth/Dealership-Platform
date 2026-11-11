@@ -67,7 +67,7 @@ export default function ContentPage() {
   useEffect(() => {
     if (!site || !themeId) return;
     let stop = false;
-    fetch(`${site}/pa-keys.json?theme=${encodeURIComponent(themeId)}`)
+    fetch(siteUrl(tenant!, `pa-keys.json?theme=${encodeURIComponent(themeId)}`))
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => !stop && setKeyMap(j))
       .catch(() => {});
@@ -193,7 +193,7 @@ export default function ContentPage() {
     setReset([]);
   }
 
-  const previewSrc = `${site}/${view.template}?pa_live=1&pa_tenant=${encodeURIComponent(tenant.id)}${view.hash}`;
+  const previewSrc = siteUrl(tenant, `${view.template}?pa_live=1&pa_tenant=${encodeURIComponent(tenant.id)}${view.hash}`);
   const pageLabel = keyMap?.pages.find((p) => p.template === view.template)?.label || page.label;
 
   return (
@@ -342,7 +342,7 @@ export default function ContentPage() {
         ref={preview}
         className="hidden min-h-[600px] lg:flex"
         src={previewSrc}
-        openUrl={`${site}/${view.template === 'index.html' ? '' : view.template}${view.hash}`}
+        openUrl={siteUrl(tenant, `${view.template === 'index.html' ? '' : view.template}${view.hash}`)}
         title={pageLabel}
         live={live}
         onLiveChange={(on) => {

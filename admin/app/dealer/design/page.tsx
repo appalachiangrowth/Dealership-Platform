@@ -25,7 +25,6 @@ export default function DesignPage() {
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} retry={reload} />;
   if (!data || !tenant) return null;
-  const site = siteUrl(tenant);
 
   async function activate(id: string) {
     setBusy(id);
@@ -136,7 +135,7 @@ export default function DesignPage() {
             </Button>
           </div>
           <div className="flex flex-1 justify-center">
-            <iframe src={`${site}/index.html?pa_theme_preview=${preview.id}`} className={cx('h-full rounded-xl bg-white', preview.device === 'desktop' ? 'w-full' : 'w-[390px]')} />
+            <iframe src={siteUrl(tenant, `index.html?pa_theme_preview=${preview.id}`)} className={cx('h-full rounded-xl bg-white', preview.device === 'desktop' ? 'w-full' : 'w-[390px]')} />
           </div>
         </div>
       )}

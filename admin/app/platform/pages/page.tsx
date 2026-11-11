@@ -24,7 +24,7 @@ function pageStatus(p: { status: string; unpublishedChanges?: boolean }) {
   return p.unpublishedChanges ? <Badge color="amber">Published · changes not live</Badge> : <Badge color="green">Published</Badge>;
 }
 
-const site = (t?: Tenant) => (t ? siteUrl({ id: t.id, domains: t.domains.map((d) => d.domain) }) : '');
+const site = (t?: Tenant, path = '') => (t ? siteUrl({ id: t.id, domains: t.domains.map((d) => d.domain) }, path) : '');
 
 /** Platform Admin › Pages & SEO: every dealership with its theme → its pages → add / edit */
 export default function PagesHome() {
@@ -165,7 +165,7 @@ export default function PagesHome() {
             ) : (
               <Table head={['Page', 'Status', 'Menu', 'Updated', '']}>
                 {shown.map((p) => {
-                  const url = tenant && selected !== SHARED ? `${site(tenant)}/${p.slug}` : tenants.data?.[0] ? `${site(tenants.data[0])}/${p.slug}` : '';
+                  const url = tenant && selected !== SHARED ? site(tenant, p.slug) : tenants.data?.[0] ? site(tenants.data[0], p.slug) : '';
                   return (
                     <tr key={p.id} className="hover:bg-slate-50">
                       <Td>

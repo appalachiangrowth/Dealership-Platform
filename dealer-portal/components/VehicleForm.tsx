@@ -563,7 +563,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
                 {status0 === 'PUBLISHED' && tenant && (
                   <>
                     {' · '}
-                    <a className="font-semibold text-[#1D4ED8] hover:underline" href={`${siteUrl(tenant)}/index.html#/vehicle/${encodeURIComponent(initial.legacyId || initial.id)}`} target="_blank" rel="noreferrer">
+                    <a className="font-semibold text-[#1D4ED8] hover:underline" href={siteUrl(tenant, `index.html#/vehicle/${encodeURIComponent(initial.legacyId || initial.id)}`)} target="_blank" rel="noreferrer">
                       View on website
                     </a>
                   </>

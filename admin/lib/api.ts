@@ -94,20 +94,54 @@ export function mediaUrl(u?: string | null) {
   return u.startsWith('/uploads/') || u.startsWith('/themes/') ? API_URL + u : u;
 }
 
-/** Public website address of a dealership. */
-export function siteUrl(t: { id: string; domains?: string[]; siteUrl?: string }) {
-  // If a custom dealer domain exists (e.g. joesautos.com), use it directly
+/**
+ * The configured address of the shared website app (frontend, port 3002 behind nginx).
+ * Takes the first real http(s) address in the setting, so a value pasted as a Markdown link
+ * like "[http://x](http://x)" still works, and NEVER returns a relative path.
+ */
+function frontendBase(): string {
+  const raw = String(process.env.NEXT_PUBLIC_FRONTEND_URL || '');
+  const m = raw.match(/https?:\/\/[^\s)\]"'<>]+/i);
+  if (m) return m[0].replace(/\/+$/, '');
+  return isLocalAdmin() ? 'http://localhost:3002' : 'http://5.183.35.10:3002';
+}
+
+/** Where a dealership's website lives: its own domain, its own site address, or the shared website app (needs ?tenant=). */
+export function siteBase(t: { id: string; domains?: string[]; siteUrl?: string }): { base: string; shared: boolean } {
+  // a custom dealer domain (e.g. joesautos.com)
   const d = t.domains?.[0];
-  if (d && !d.endsWith('localhost')) return `https://${d}`.replace(/\/+$/, '');
-
-  // If a valid custom external website URL is set (not pointing back to hostinger/portal), use it
+  if (d && !d.endsWith('localhost')) return { base: `https://${d}`.replace(/\/+$/, ''), shared: false };
+  // a full external website address (not the portal itself)
   if (t.siteUrl && /^https?:\/\//i.test(t.siteUrl) && !t.siteUrl.includes('appalachiangrowthsolutions.com')) {
-    return t.siteUrl.replace(/\/+$/, '');
+    return { base: t.siteUrl.replace(/\/+$/, ''), shared: false };
   }
+  return { base: frontendBase(), shared: true };
+}
 
-  // Fallback to configured frontend URL or VPS public frontend port 3002
-  const frontendBase = (process.env.NEXT_PUBLIC_FRONTEND_URL || (isLocalAdmin() ? 'http://localhost:3002' : 'http://5.183.35.10:3002')).replace(/\/+$/, '');
-  return `${frontendBase}/?pa_live=true&tenant=${encodeURIComponent(t.id)}`;
+/**
+ * Public address of a dealership page: siteUrl(t) for the home page, siteUrl(t, 'index.html?pa_live=1#/blog') for others.
+ * Always absolute. On the shared website app the dealership is chosen with ?tenant=…, merged correctly with the
+ * page's own query and #hash (never "…?tenant=x/index.html").
+ */
+export function siteUrl(t: { id: string; domains?: string[]; siteUrl?: string }, path = '') {
+  const { base, shared } = siteBase(t);
+  let p = String(path || '').replace(/^\/+/, '');
+  let hash = '';
+  const hi = p.indexOf('#');
+  if (hi >= 0) {
+    hash = p.slice(hi);
+    p = p.slice(0, hi);
+  }
+  let query = '';
+  const qi = p.indexOf('?');
+  if (qi >= 0) {
+    query = p.slice(qi + 1);
+    p = p.slice(0, qi);
+  }
+  const qs = new URLSearchParams(query);
+  if (shared && !qs.has('tenant') && !qs.has('pa_tenant')) qs.set('tenant', t.id);
+  const q = qs.toString();
+  return `${base}/${p}${q ? `?${q}` : ''}${hash}`;
 }
 
 /** The admin itself is running on this computer (localhost) — dealer websites are then the local website app too. */

@@ -130,7 +130,7 @@ export function VehicleForm({ initial }: { initial: Vehicle }) {
             {v.id && v.status === 'PUBLISHED' && tenant && (
               <>
                 {' · '}
-                <a className="text-blue-700 underline" href={`${siteUrl(tenant)}/index.html#/vehicle/${encodeURIComponent(v.legacyId || v.id)}`} target="_blank" rel="noreferrer">
+                <a className="text-blue-700 underline" href={siteUrl(tenant, `index.html#/vehicle/${encodeURIComponent(v.legacyId || v.id)}`)} target="_blank" rel="noreferrer">
                   View on website
                 </a>
               </>
