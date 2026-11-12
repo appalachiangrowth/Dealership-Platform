@@ -128,7 +128,8 @@ export class VehiclesService {
     let cgExcluded = 0;
     for (const iss of ready.values()) iss.length ? cgExcluded++ : cgReady++;
     const byStatus = Object.fromEntries(counts.map((c) => [c.status, c._count]));
-    const items = rows.map((v) => ({ ...this.serialize(v), cargurus: cargurusOn && v.status === 'PUBLISHED' ? { issues: ready.get(v.id) ?? [] } : null }));
+    // vehicles switched off for CarGurus are not in its feed: no CarGurus status for them
+    const items = rows.map((v) => ({ ...this.serialize(v), cargurus: cargurusOn && v.status === 'PUBLISHED' && v.syndicateCargurus !== false ? { issues: ready.get(v.id) ?? [] } : null }));
     return { items, total, page, pageSize, cargurusOn, counts: { PUBLISHED: 0, DRAFT: 0, SOLD: 0, ...byStatus, cgReady, cgExcluded } };
   }
 

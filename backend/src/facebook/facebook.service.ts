@@ -585,6 +585,8 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
       const job = await this.wrap(s.startPost({
           targets, names, mediaPaths, tempFiles, caption, delayMin, delayMax, runId: run.id,
           actAs: {}, // always as the personal profile
+          // the vehicle's name for the progress bar ("Posting 2021 Honda Civic…"); a post started while another runs waits its turn
+          label: String(b.vehicle || '').slice(0, 120),
         })).catch(async (e) => {
         await this.prisma.fbPostRun.delete({ where: { id: run.id } }).catch(() => undefined);
         throw e;
@@ -728,6 +730,8 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
             }
           : { status: 'none', url: '', fbId: '', postedPrice: null, error: '', publishedAt: null, checkedAt: null, postedBy: '', mine: true, history: [] },
         queued: queued.has(r.id),
+        /** off in the vehicle editor: website only, not listed on Facebook */
+        facebookOn: r.syndicateFacebook !== false,
       };
     });
     return {
@@ -877,7 +881,7 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
     const { s, uk } = await this.live(tenantId, u);
     const settings = await this.mpSettings(tenantId);
     let used = await this.publishedToday(tenantId, uk);
-    const accepted: { id: string; action: string }[] = [];
+    const accepted: { id: string; action: string; name: string }[] = [];
     const rejected: { id: string; error: string }[] = [];
     for (const id of ids.map(String).slice(0, 200)) {
       const v = await this.prisma.vehicle.findFirst({ where: { id, tenantId }, include: { fbListing: true } });
@@ -896,6 +900,10 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
         rejected.push({ id, error: `${label}: add at least one photo in Inventory` });
         continue;
       }
+      if (v.syndicateFacebook === false) {
+        rejected.push({ id, error: `${label}: Facebook is switched off for this vehicle (website only). Turn Facebook on in the vehicle editor to list it.` });
+        continue;
+      }
       const st = v.fbListing?.status || 'none';
       if (['published', 'awaiting_publish', 'publishing', 'queued'].includes(st)) {
         rejected.push({ id, error: `${label}: already ${st.replace('_', ' ')}` });
@@ -912,7 +920,7 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
       used++;
       await this.upsertListing(tenantId, id, { status: 'queued', error: '', postedBy: uk });
       this.queueListingWrite(tenantId, id, {}, 'Queued for publishing');
-      accepted.push({ id, action: 'publish' });
+      accepted.push({ id, action: 'publish', name: [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') });
     }
     s.mpEnqueue(accepted);
     return { ok: true, queued: accepted.length, rejected };

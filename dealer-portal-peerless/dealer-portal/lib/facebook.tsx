@@ -8,10 +8,26 @@ import { api, API_URL, auth } from './api';
 export type FbItem = { name: string; url: string };
 export type FbResult = { url: string; name: string; status: string; note?: string; error?: string };
 export type FbJob = {
-  runId?: string; status: 'running' | 'finished'; total: number; ok: number; failed: number; cancelled: boolean;
+  runId?: string; status: 'queued' | 'running' | 'finished'; total: number; ok: number; failed: number; cancelled: boolean;
+  /** the vehicle this post is for (empty for posts from FB Poster) */
+  label?: string;
   startedAt: number; finishedAt: number | null; nextAt: number | null; results: FbResult[];
 };
 export type FbLog = { seq: number; at: number; msg: string };
+
+/** one vehicle of the Marketplace batch (the progress bar at the top of every page) */
+export type MpBatchItem = {
+  id: string; action: string; verb: string; name: string; position: number;
+  status: 'queued' | 'running' | 'done' | 'attention' | 'failed' | 'cancelled';
+  step: string; error: string; outcome: string; tries: number;
+  queuedAt: number; startedAt: number | null; endedAt: number | null;
+};
+/** every vehicle queued for Marketplace since the queue was last empty */
+export type MpBatch = {
+  id: number; startedAt: number; finishedAt: number | null; nextAt: number | null;
+  total: number; done: number; attention: number; failed: number; cancelled: number; queued: number; running: number;
+  items: MpBatchItem[];
+};
 export type FbState = {
   browserOpen: boolean;
   loggedIn: boolean | null;
@@ -20,7 +36,9 @@ export type FbState = {
   view: boolean;
   url: string;
   job: FbJob | null;
-  mp: { active: { vehicleId: string; action: string } | null; queue: { id: string; action: string }[]; running: boolean; report: unknown };
+  mp: { active: { vehicleId: string; action: string } | null; queue: { id: string; action: string }[]; running: boolean; report: unknown; batch?: MpBatch | null };
+  /** Page posts waiting for the current one to finish */
+  postQueue?: { runId?: string; label: string; total: number }[];
   logSeq: number;
   account: {
     fbUserId: string; fbName: string; connectedAt: string | null; actingAs: { url?: string; name?: string; verified?: boolean };

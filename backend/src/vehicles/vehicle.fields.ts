@@ -71,6 +71,12 @@ export function cleanImageList(v: unknown): string[] {
   return strArray(v, 60, 600).filter((u) => u.startsWith('/uploads/') || /^https?:\/\//i.test(u));
 }
 
+/** true / false from JSON, a form or a CSV ("false", "0", "no", "off" = false) */
+function bool(v: unknown): boolean {
+  if (typeof v === 'string') return !/^(false|0|no|off|)$/i.test(v.trim());
+  return !!v;
+}
+
 /** Validates vehicle input from the admin. Only keys present in `b` are returned (PATCH friendly). */
 export function cleanVehicleInput(b: Record<string, unknown>): Prisma.VehicleUncheckedUpdateInput {
   const d: Record<string, unknown> = {};
@@ -87,6 +93,9 @@ export function cleanVehicleInput(b: Record<string, unknown>): Prisma.VehicleUnc
   if ('mileage' in b) d.mileage = int(b.mileage);
   if ('certified' in b) d.certified = b.certified === true || b.certified === 'Yes' || b.certified === 'true';
   if ('featured' in b) d.featured = !!b.featured;
+  // syndication: off = the vehicle stays on the website only for that channel (website-only when both are off)
+  if ('syndicateCargurus' in b) d.syndicateCargurus = bool(b.syndicateCargurus);
+  if ('syndicateFacebook' in b) d.syndicateFacebook = bool(b.syndicateFacebook);
   if ('features' in b) d.features = strArray(b.features, 150, 120);
   if ('safetyFeatures' in b) d.safetyFeatures = strArray(b.safetyFeatures, 150, 120);
   if ('images' in b) d.images = cleanImageList(b.images);

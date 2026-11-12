@@ -247,6 +247,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
           form.append('order', JSON.stringify((v.images || []).map((u: string) => `v:${u}`)));
           form.append('caption', text || vehicleName(v));
           form.append('hashtags', '');
+          form.append('vehicle', vehicleName(v)); // shown in the progress bar; a post started while another runs waits its turn
           const r = await api<{ runId?: string; job?: FbJob }>('/dealer/facebook/post', { method: 'POST', form });
           setRunId(r?.runId || r?.job?.runId || '');
           setLive((l) => ({ job: r?.job || l?.job || null, mp: l?.mp || { active: null, queue: [], running: false } }));

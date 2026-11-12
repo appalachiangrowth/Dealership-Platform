@@ -1,7 +1,18 @@
 import { BadRequestException, HttpException, Injectable } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { VehiclesService } from '../vehicles/vehicles.service.js';
+import { TenantsService } from '../tenants/tenants.service.js';
+import { AuditService } from '../audit/audit.service.js';
+import { CargurusService } from '../cargurus/cargurus.service.js';
+import { LeadsService } from '../leads/leads.service.js';
+import { FacebookService } from '../facebook/facebook.service.js';
+import { cleanSettingsPatch, type Hours } from '../tenants/settings.fields.js';
 import type { AuthUser } from '../common/auth.types.js';
+import {
+  PAGES, actionCatalog, areasOf, cleanActions, confirmReason, linkFor, money, planActions, settingLabel,
+  type Action, type Car, type Change, type DealerSnap, type LeadRow,
+} from './ai.actions.js';
 import { aiAllowed, aiConfig, AiError, aiText, claudeCall, claudeText, extractJson, httpJson, oaiCall } from './ai.provider.js';
 import { CLOSEUP_PROMPT, FAST_RULES, FAST_SHAPE, mapNhtsa, normalize, normFrames, VIDEO_RULES, VIDEO_SHAPE, vinOk } from './ai.vehicle.js';
 
@@ -20,44 +31,34 @@ function images(list: unknown, max: number, maxChars = 4_000_000): { data: strin
     }));
 }
 
-/* ---------- "Just tell it" command bar ---------- */
-type Car = {
-  n: number;
-  id: string;
-  name: string;
-  ext: string;
-  body: string;
-  stock: string;
-  vin: string;
-  price: number | null;
-  mileage: number | null;
-  status: 'PUBLISHED' | 'DRAFT' | 'SOLD';
-  days: number;
-  photos: number;
-  featured: boolean;
-  fb: boolean;
-  extra: Record<string, unknown>;
-};
-type Action = { type: string; car_ids: string[]; params: Record<string, unknown> };
-type Change = { id: string; car: string; stock: string; what: string; before: string; after: string; data: Record<string, unknown> };
-
-const ACTION_TYPES = ['mark_sold', 'mark_for_sale', 'mark_draft', 'set_price', 'change_price', 'change_price_percent', 'feature', 'unfeature'];
-const PAGES = ['inventory', 'add_vehicle', 'ai_add', 'facebook', 'leads', 'cargurus', 'business', 'design', 'content', 'blog', 'team', 'overview'];
+/* ---------- "Just tell it" command bar: actions, plans and undo (see ai.actions.ts) ---------- */
 const STATUS_TXT = { PUBLISHED: 'For sale', DRAFT: 'Draft', SOLD: 'Sold' } as const;
-const money = (n: number | null | undefined) => (n == null ? '—' : `$${Math.round(Number(n)).toLocaleString('en-US')}`);
-const toNum = (v: unknown) => {
-  const n = Number(String(v ?? '').replace(/[^0-9.-]/g, ''));
-  return Number.isFinite(n) && String(v ?? '').trim() !== '' ? n : null;
+/** a plan waiting for a click on Confirm (10 minutes) */
+type StoredPlan = { tenantId: string; user: string; actions: Action[]; at: number };
+/** what Undo puts back (30 minutes) */
+type UndoEntry = {
+  at: number;
+  vehicles: { id: string; data: Record<string, unknown> }[];
+  leads: { id: string; status: string }[];
+  settings: Record<string, unknown>;
 };
+const DEALER_KEYS = ['name', 'legalName', 'tagline', 'phone', 'email', 'street', 'city', 'state', 'zip', 'country', 'siteUrl', 'facebook', 'instagram', 'google', 'googleReviews', 'youtube', 'tiktok', 'messenger', 'hours', 'hoursShort', 'feedOperation', 'leadTo', 'brandImages'] as const;
 
 @Injectable()
 export class AiService {
-  /** last confirmed command per dealership, for Undo (30 minutes) */
-  private undoStore = new Map<string, { at: number; items: { id: string; data: Record<string, unknown> }[] }>();
+  /** last command per dealership user, for Undo (30 minutes) */
+  private undoStore = new Map<string, UndoEntry>();
+  /** plans waiting for Confirm, by id */
+  private plans = new Map<string, StoredPlan>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly vehicles: VehiclesService,
+    private readonly tenants: TenantsService,
+    private readonly audit: AuditService,
+    private readonly cargurus: CargurusService,
+    private readonly leadsSvc: LeadsService,
+    private readonly facebook: FacebookService,
   ) {}
 
   private guard(tenantId: string) {
@@ -267,6 +268,7 @@ Reply with the description only.`;
       select: {
         id: true, year: true, make: true, model: true, trim: true, exteriorColor: true, bodyStyle: true, stockNumber: true, vin: true,
         price: true, mileage: true, status: true, featured: true, images: true, extra: true, createdAt: true,
+        syndicateCargurus: true, syndicateFacebook: true,
         fbListing: { select: { status: true } },
       },
     });
@@ -286,230 +288,280 @@ Reply with the description only.`;
       photos: v.images.length,
       featured: v.featured,
       fb: !!v.fbListing && ['published', 'awaiting_publish', 'unconfirmed', 'publishing', 'queued'].includes(v.fbListing.status),
+      cg: v.syndicateCargurus !== false,
+      fbOn: v.syndicateFacebook !== false,
       extra: v.extra && typeof v.extra === 'object' && !Array.isArray(v.extra) ? (v.extra as Record<string, unknown>) : {},
     }));
   }
 
-  /** What would change (nothing is saved here). */
-  private plan(cars: Car[], actions: Action[]) {
-    const byId = new Map(cars.map((c) => [c.id, c]));
-    // working copy, so several actions on one car add up
-    const work = new Map<string, { status: Car['status']; price: number | null; featured: boolean; extra: Record<string, unknown> }>();
-    const changes = new Map<string, Change>();
-    const errors: string[] = [];
-    for (const a of actions) {
-      for (const id of a.car_ids) {
-        const car = byId.get(id);
-        if (!car) continue;
-        const w = work.get(id) || { status: car.status, price: car.price, featured: car.featured, extra: { ...car.extra } };
-        const ch = changes.get(id) || { id, car: car.name, stock: car.stock, what: '', before: '', after: '', data: {} };
-        const whats: string[] = ch.what ? [ch.what] : [];
-        const befores: string[] = ch.before ? [ch.before] : [];
-        const afters: string[] = ch.after ? [ch.after] : [];
-        const p = a.params || {};
-        switch (a.type) {
-          case 'mark_sold': {
-            if (w.status === 'SOLD') break;
-            const sp = toNum(p.sold_price);
-            befores.push(STATUS_TXT[w.status]);
-            w.status = 'SOLD';
-            ch.data.status = 'SOLD';
-            if (sp && sp > 0) {
-              w.extra = { ...w.extra, soldPrice: sp };
-              ch.data.extra = w.extra;
-            }
-            whats.push('Mark as sold');
-            afters.push(`Sold${sp && sp > 0 ? ` for ${money(sp)}` : ''}`);
-            break;
-          }
-          case 'mark_for_sale':
-            if (w.status === 'PUBLISHED') break;
-            if (!car.photos) {
-              errors.push(`${car.name} has no photos, so it can't be put on sale. Add photos first.`);
-              break;
-            }
-            if (!(w.price && w.price > 0)) {
-              errors.push(`${car.name} has no price, so it can't be put on sale.`);
-              break;
-            }
-            befores.push(STATUS_TXT[w.status]);
-            w.status = 'PUBLISHED';
-            ch.data.status = 'PUBLISHED';
-            whats.push('Put on sale');
-            afters.push('For sale');
-            break;
-          case 'mark_draft':
-            if (w.status === 'DRAFT') break;
-            befores.push(STATUS_TXT[w.status]);
-            w.status = 'DRAFT';
-            ch.data.status = 'DRAFT';
-            whats.push('Move to drafts (hidden from the website)');
-            afters.push('Draft');
-            break;
-          case 'set_price':
-          case 'change_price':
-          case 'change_price_percent': {
-            let next: number | null = null;
-            if (a.type === 'set_price') next = toNum(p.price);
-            else if (w.price == null) {
-              errors.push(`${car.name} has no price yet, so it can't be raised or lowered.`);
-              break;
-            } else if (a.type === 'change_price') {
-              const amt = toNum(p.amount);
-              if (amt !== null) next = w.price + amt;
-            } else {
-              const pct = toNum(p.percent);
-              if (pct !== null) next = Math.round(w.price * (1 + pct / 100));
-            }
-            if (next === null || !Number.isFinite(next)) {
-              errors.push(`I couldn't work out the new price for ${car.name}.`);
-              break;
-            }
-            next = Math.round(next * 100) / 100;
-            if (next <= 0) {
-              errors.push(`${car.name}: the new price would be ${money(next)}. Skipped.`);
-              break;
-            }
-            if (next === w.price) break;
-            befores.push(money(w.price));
-            const diff = w.price == null ? null : next - w.price;
-            whats.push(diff == null ? 'Set price' : diff < 0 ? `Lower price by ${money(-diff)}` : `Raise price by ${money(diff)}`);
-            w.price = next;
-            ch.data.price = next;
-            afters.push(money(next));
-            break;
-          }
-          case 'feature':
-          case 'unfeature': {
-            const on = a.type === 'feature';
-            if (w.featured === on) break;
-            befores.push(on ? 'Not featured' : 'Featured');
-            w.featured = on;
-            ch.data.featured = on;
-            whats.push(on ? 'Feature on the home page' : 'Remove from the home page');
-            afters.push(on ? '★ Featured' : 'Not featured');
-            break;
-          }
-        }
-        work.set(id, w);
-        ch.what = whats.join(' + ');
-        ch.before = befores.join(' · ');
-        ch.after = afters.join(' · ');
-        if (Object.keys(ch.data).length) changes.set(id, ch);
-      }
-    }
-    return { changes: [...changes.values()], errors };
+  /** the latest inquiries (only for users who may see them) */
+  private async leadRows(tenantId: string, user: AuthUser): Promise<LeadRow[]> {
+    if (!user.perms.includes('leads')) return [];
+    const rows = await this.prisma.lead.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+      take: 80,
+      select: { id: true, name: true, email: true, phone: true, topic: true, status: true, createdAt: true, vehicle: { select: { year: true, make: true, model: true } } },
+    });
+    const now = Date.now();
+    return rows.map((l, i) => ({
+      n: i + 1,
+      id: l.id,
+      name: l.name || 'Customer',
+      topic: l.topic,
+      vehicle: l.vehicle ? [l.vehicle.year || '', l.vehicle.make, l.vehicle.model].join(' ').trim() : '',
+      status: l.status,
+      days: Math.max(0, Math.floor((now - l.createdAt.getTime()) / 86_400_000)),
+      contact: l.email || l.phone || '',
+    }));
   }
 
-  private cleanActions(input: unknown, idOf: (x: unknown) => string | null): Action[] {
-    return (Array.isArray(input) ? input : [])
-      .filter((a) => a && typeof a === 'object' && ACTION_TYPES.includes((a as any).type))
-      .slice(0, 10)
-      .map((a: any) => ({
-        type: String(a.type),
-        car_ids: [...new Set((Array.isArray(a.car_ids ?? a.cars) ? (a.car_ids ?? a.cars) : []).map(idOf).filter(Boolean) as string[])].slice(0, 300),
-        params: a.params && typeof a.params === 'object' ? a.params : {},
-      }))
-      .filter((a) => a.car_ids.length);
+  /** the dealership's settings the bar can read and change */
+  private async dealer(tenantId: string): Promise<DealerSnap> {
+    const s = await this.prisma.tenantSettings.findUnique({ where: { tenantId } });
+    const raw: Record<string, unknown> = {};
+    for (const k of DEALER_KEYS) raw[k] = s ? (s as unknown as Record<string, unknown>)[k] : undefined;
+    raw.hours = (s?.hours && typeof s.hours === 'object' ? s.hours : {}) as Hours;
+    return raw as DealerSnap;
   }
 
-  async command(tenantId: string, body: { text?: unknown }) {
+  private async context(tenantId: string, user: AuthUser) {
+    const [cars, leads, dealer] = await Promise.all([
+      user.perms.includes('inventory') ? this.cars(tenantId) : Promise.resolve([] as Car[]),
+      this.leadRows(tenantId, user),
+      this.dealer(tenantId),
+    ]);
+    return { cars, leads, dealer };
+  }
+
+  async command(tenantId: string, body: { text?: unknown }, user: AuthUser) {
     const text = String(body.text || '').trim().slice(0, 600);
     if (!text) throw new BadRequestException('Type or say what you want to do.');
     const c = aiConfig();
     // no AI configured: the bar still works as a normal inventory search
     if (!c.key) return { intent: 'search', reply: 'Searching your inventory…', search: text, car_ids: [], cars: [], actions: [], changes: [], errors: [], noAi: true };
     this.guard(tenantId);
-    const cars = await this.cars(tenantId);
-    const lines = cars
+    const { cars, leads, dealer } = await this.context(tenantId, user);
+    const carLines = cars
       .map((x) =>
         [x.n, x.name, x.ext || '-', x.body || '-', `stock ${x.stock || '-'}`, x.vin ? `VIN …${x.vin.slice(-6)}` : 'VIN -', money(x.price), x.mileage == null ? '- mi' : `${x.mileage.toLocaleString('en-US')} mi`,
-          STATUS_TXT[x.status].toLowerCase(), `${x.days} days listed`, `${x.photos} photos`, x.featured ? 'featured' : 'not featured', x.fb ? 'on Facebook' : 'not on Facebook'].join(' | '),
+          STATUS_TXT[x.status].toLowerCase(), `${x.days} days listed`, `${x.photos} photos`, x.featured ? 'featured' : 'not featured', x.fb ? 'on Facebook' : 'not on Facebook',
+          `CarGurus ${x.cg ? 'on' : 'off'}`, `Facebook ${x.fbOn ? 'allowed' : 'off'}`].join(' | '),
       )
       .join('\n');
-    const prompt = `You are the assistant inside a car dealership's inventory system. The dealer typed or said a request. Today is ${new Date().toISOString().slice(0, 10)}.
+    const leadLines = leads.map((l) => [`L${l.n}`, l.name, l.topic, l.vehicle || '-', l.status.toLowerCase(), `${l.days} days ago`, l.contact || '-'].join(' | ')).join('\n');
+    const ch = String(dealer.feedOperation || '').trim() ? String(dealer.feedOperation) : 'cargurus,marketplace (default)';
+    const dealerLines = [
+      `name: ${dealer.name || '-'}`, `phone: ${dealer.phone || '-'}`, `public email: ${dealer.email || '-'}`,
+      `address: ${[dealer.street, dealer.city, dealer.state, dealer.zip].filter(Boolean).join(', ') || '-'}`,
+      `opening hours: ${dealer.hoursShort || '-'}`, `channels (where vehicles are sent besides the website): ${ch}`,
+      ...(user.perms.includes('settings') ? [`inquiry email: ${dealer.leadTo || '-'}`, `photo branding: ${dealer.brandImages ? 'on' : 'off'}`] : []),
+    ].join('\n');
+    const prompt = `You are the assistant inside a car dealership's portal. The dealer typed or said a request. Do what they ask: you can change things directly with the actions below. Today is ${new Date().toISOString().slice(0, 10)}.
 
-INVENTORY (${cars.length} cars, one per line: number | vehicle | colour | body | stock | VIN end | price | mileage | status | days listed | photos | featured | Facebook):
-${lines || '(no cars yet)'}
+DEALERSHIP
+${dealerLines}
 
+INVENTORY (${cars.length} cars, one per line: number | vehicle | colour | body | stock | VIN end | price | mileage | status | days listed | photos | featured | Facebook | CarGurus | Facebook allowed):
+${carLines || '(no cars, or no access)'}
+${leads.length ? `\nINQUIRIES (latest ${leads.length}, one per line: number | name | topic | vehicle | status | received | contact):\n${leadLines}\n` : ''}
 REQUEST: ${JSON.stringify(text)}
 
 Decide what the dealer wants:
-- "action": change cars. Allowed action types (and params):
-  mark_sold {sold_price?: number}, mark_for_sale {}, mark_draft {}, set_price {price: number}, change_price {amount: number, negative = lower},
-  change_price_percent {percent: number, negative = lower}, feature {} (show on the website home page), unfeature {}.
-- "question": a question about the inventory (counts, which cars, totals, averages). Put the matching car numbers in cars and the answer in reply.
+- "action": DO something. Use one or more of these actions:
+${actionCatalog(user.perms)}
+- "question": a question about the inventory, inquiries or the dealership. Put the matching car numbers in cars and the answer in reply.
 - "search": they only want to find or look at cars; put a short search text (make, model, VIN or stock number) in search, and the matching car numbers in cars.
-- "navigate": open a part of the portal. page = one of: ${PAGES.join(', ')}. Posting a car on Facebook or Marketplace = navigate, page facebook, with that car's number in cars. Adding a car with AI / by photos / by video = ai_add.
+- "navigate": ONLY when they ask to see / open / go to a page ("show me my leads", "open CarGurus settings"), or for something no action can do (adding a new car, uploading a logo, writing content). page = one of: ${PAGES.join(', ')}.
 - "unclear": you can't tell which car or what to do. Ask one short question in reply and list the possible cars in cars.
 
 RULES
-- Only use car numbers from the list. Never invent cars.
-- Match cars by year, make, model, trim, colour, body, stock number, VIN or status. "listed over 60 days" means days listed > 60.
+- Prefer "action" over "navigate" whenever an action can do it: "turn off CarGurus" = action cargurus_feed {on:false}; "post the Escape to Marketplace" = action post_marketplace on that car; "change our phone to …" = action update_business.
+- Only use car / lead numbers from the lists. Never invent cars or leads. Lead numbers are written L1, L2 … — put just the number in leads.
+- Match cars by year, make, model, trim, colour, body, stock number, VIN or status. "listed over 60 days" means days listed > 60. "under $5,000" means price < 5000.
 - An action on "the Corolla" when several cars match and the dealer didn't say "all" → intent unclear.
-- Sold cars are not "for sale". Price changes normally apply to cars for sale only, unless the dealer says otherwise.
-- reply: one short friendly sentence. For actions say what WILL happen (e.g. "I'll lower the price by $300 on 4 cars listed over 60 days.").
+- Sold cars are not "for sale". Price changes and unpublishing normally apply to cars for sale only, unless the dealer says otherwise.
+- reply: one short friendly sentence saying what you are doing (e.g. "Turning off your CarGurus feed.", "Lowering the price by $300 on 4 cars listed over 60 days.").
 
 Reply with ONLY this JSON:
-{"intent":"action|question|search|navigate|unclear","reply":"","cars":[],"actions":[{"type":"","cars":[],"params":{}}],"search":"","page":""}`;
-    const r = await aiText(prompt, 2500);
+{"intent":"action|question|search|navigate|unclear","reply":"","cars":[],"leads":[],"actions":[{"type":"","cars":[],"leads":[],"params":{}}],"search":"","page":""}`;
+    const r = await aiText(prompt, 3000);
     const raw = extractJson(r.text);
-    const byN = new Map(cars.map((x) => [x.n, x.id]));
-    const idOf = (x: unknown) => byN.get(Math.trunc(Number(x))) || null;
+    const carByN = new Map(cars.map((x) => [x.n, x.id]));
+    const leadByN = new Map(leads.map((x) => [x.n, x.id]));
+    const carId = (x: unknown) => carByN.get(Math.trunc(Number(x))) || null;
+    const leadId = (x: unknown) => leadByN.get(Math.trunc(Number(String(x).replace(/^L/i, '')))) || null;
     let intent = ['action', 'question', 'search', 'navigate', 'unclear'].includes(raw?.intent) ? raw.intent : 'unclear';
-    const ids = [...new Set((Array.isArray(raw?.cars) ? raw.cars : []).map(idOf).filter(Boolean) as string[])];
-    const actions = intent === 'action' ? this.cleanActions(raw?.actions, idOf) : [];
-    if (intent === 'action' && !actions.length) intent = 'unclear';
-    const { changes, errors } = this.plan(cars, actions);
+    const ids = [...new Set((Array.isArray(raw?.cars) ? raw.cars : []).map(carId).filter(Boolean) as string[])];
+    const { actions, denied } = intent === 'action' ? cleanActions(raw?.actions, carId, leadId, user.perms) : { actions: [], denied: [] as string[] };
+    if (intent === 'action' && !actions.length && !denied.length) intent = 'unclear';
+    const { changes, errors, notes } = planActions(cars, leads, dealer, actions);
+    errors.unshift(...denied);
     const pick = new Set([...ids, ...actions.flatMap((a) => a.car_ids)]);
-    return {
-      intent,
+    const base = {
       reply: String(raw?.reply || '').slice(0, 400) || (intent === 'unclear' ? 'Could you say that a bit more specifically?' : 'Done.'),
       search: String(raw?.search || '').slice(0, 120),
       page: PAGES.includes(raw?.page) ? raw.page : '',
       car_ids: ids,
       cars: cars.filter((x) => pick.has(x.id)).slice(0, 60).map(({ id, name, stock, ext, price, status, photos }) => ({ id, name, stock, ext, price, status, photos })),
-      actions,
-      changes: changes.map(({ data: _d, ...rest }) => rest),
+      notes,
+    };
+    if (intent !== 'action') return { intent, ...base, actions: [], changes: [], errors };
+    if (!changes.length) return { intent: 'action', ...base, actions, changes: [], errors, executed: false };
+
+    // low-risk: do it straight away (Undo is offered); deleting or changing many things at once: one click on Confirm
+    const reason = confirmReason(changes);
+    if (!reason && body && (body as { auto?: unknown }).auto !== false) {
+      const done = await this.exec(tenantId, user, actions);
+      return { intent: 'action', ...base, ...done, errors: [...errors, ...done.errors], notes: [...notes, ...done.notes] };
+    }
+    const planId = this.storePlan(tenantId, user, actions);
+    return { intent: 'action', ...base, actions, planId, needsConfirm: true, confirmReason: reason, changes: changes.map(view), errors, executed: false };
+  }
+
+  private storePlan(tenantId: string, user: AuthUser, actions: Action[]) {
+    const now = Date.now();
+    for (const [k, p] of this.plans) if (now - p.at > 10 * 60_000) this.plans.delete(k);
+    const id = randomUUID();
+    this.plans.set(id, { tenantId, user: user.id, actions, at: now });
+    return id;
+  }
+
+  /** Confirm: runs a plan from command() (planId), or the actions the portal sends (older portals) */
+  async apply(tenantId: string, body: { planId?: unknown; actions?: unknown }, user: AuthUser) {
+    let actions: Action[];
+    if (body.planId) {
+      const p = this.plans.get(String(body.planId));
+      // a plan only runs for the same dealership and user, once, within 10 minutes
+      if (!p || p.tenantId !== tenantId || p.user !== user.id || Date.now() - p.at > 10 * 60_000) throw new BadRequestException('This request has expired. Please ask again.');
+      this.plans.delete(String(body.planId));
+      actions = p.actions;
+    } else {
+      const { cars, leads } = await this.context(tenantId, user);
+      const knownC = new Set(cars.map((c) => c.id));
+      const knownL = new Set(leads.map((l) => l.id));
+      // the portal sends ids (not numbers): only this dealership's
+      actions = cleanActions(
+        body.actions,
+        (x) => (typeof x === 'string' && knownC.has(x) ? x : null),
+        (x) => (typeof x === 'string' && knownL.has(x) ? x : null),
+        user.perms,
+      ).actions;
+    }
+    return this.exec(tenantId, user, actions);
+  }
+
+  /** Runs the actions on the current data (scoped to this dealership; every change goes through the normal services). */
+  private async exec(tenantId: string, user: AuthUser, actions: Action[]) {
+    const { cars, leads, dealer } = await this.context(tenantId, user);
+    const { changes, errors, notes } = planActions(cars, leads, dealer, actions);
+    const may = (perm: string) => user.perms.includes(perm as never);
+    const done: Change[] = [];
+    const undo: UndoEntry = { at: Date.now(), vehicles: [], leads: [], settings: {} };
+    const carBy = new Map(cars.map((c) => [c.id, c]));
+    const leadBy = new Map(leads.map((l) => [l.id, l]));
+
+    // vehicles: the normal vehicle service (validation, CarGurus feed refresh, audit)
+    for (const ch of changes.filter((x) => x.kind === 'vehicle')) {
+      if (!may('inventory')) continue;
+      const cur = carBy.get(ch.id)!;
+      try {
+        if (ch.data.delete) {
+          await this.vehicles.remove(tenantId, ch.id, user);
+        } else {
+          await this.vehicles.update(tenantId, ch.id, ch.data, user);
+          const prev: Record<string, unknown> = {};
+          if ('status' in ch.data) prev.status = cur.status;
+          if ('price' in ch.data) prev.price = cur.price;
+          if ('featured' in ch.data) prev.featured = cur.featured;
+          if ('extra' in ch.data) prev.extra = cur.extra;
+          if ('syndicateCargurus' in ch.data) prev.syndicateCargurus = cur.cg;
+          if ('syndicateFacebook' in ch.data) prev.syndicateFacebook = cur.fbOn;
+          undo.vehicles.push({ id: ch.id, data: prev });
+        }
+        done.push(ch);
+      } catch (e) {
+        errors.push(`${ch.target}: ${(e as Error).message}`);
+      }
+    }
+
+    // Facebook Marketplace: queued one after another (the progress bar at the top shows it)
+    const posts = changes.filter((x) => x.kind === 'facebook');
+    if (posts.length && may('inventory')) {
+      try {
+        const r = await this.facebook.publish(tenantId, user, posts.map((p) => p.id));
+        const bad = new Map((r.rejected || []).map((x) => [x.id, x.error]));
+        for (const p of posts) (bad.has(p.id) ? errors.push(bad.get(p.id)!) : done.push(p));
+        if (r.queued) notes.push(`${r.queued} vehicle${r.queued === 1 ? ' is' : 's are'} queued for Facebook Marketplace — the bar at the top shows the progress.`);
+      } catch (e) {
+        errors.push(`Facebook Marketplace: ${(e as Error).message}`);
+      }
+    }
+
+    // leads
+    for (const ch of changes.filter((x) => x.kind === 'lead')) {
+      if (!may('leads')) continue;
+      try {
+        if (ch.data.delete) await this.leadsSvc.remove(tenantId, ch.id, user);
+        else {
+          await this.leadsSvc.update(tenantId, ch.id, { status: String(ch.data.status) }, user);
+          undo.leads.push({ id: ch.id, status: leadBy.get(ch.id)!.status });
+        }
+        done.push(ch);
+      } catch (e) {
+        errors.push(`${ch.target}: ${(e as Error).message}`);
+      }
+    }
+
+    // dealership settings: one save, same rules as Business details / Email & advanced settings
+    const settingCh = changes.filter((x) => x.kind === 'setting');
+    if (settingCh.length) {
+      const patch: Record<string, unknown> = Object.assign({}, ...settingCh.map((c) => c.data));
+      const { data, denied, invalid } = cleanSettingsPatch(patch, { business: may('business'), settings: may('settings') });
+      if (denied.length) errors.push(`You may not change: ${denied.map(settingLabel).join(', ')}`);
+      if (invalid.length) errors.push(`${invalid.map(settingLabel).join(', ')}: that value isn't valid.`);
+      const keys = Object.keys(data);
+      if (keys.length) {
+        try {
+          for (const k of keys) {
+            if (k === 'hoursWeek' || k === 'hoursWeekend' || k === 'hoursShort') continue; // follow "hours"
+            undo.settings[k] = dealer[k] ?? (k === 'brandImages' ? false : '');
+          }
+          const s = await this.prisma.tenantSettings.upsert({ where: { tenantId }, create: { tenantId, ...data }, update: data });
+          if (typeof data.name === 'string' && data.name) await this.prisma.tenant.update({ where: { id: tenantId }, data: { name: data.name } });
+          if (s.name && s.phone && (s.street || s.city)) await this.tenants.setOnboarding(tenantId, 'business_done');
+          if ('feedOperation' in data) await this.cargurus.afterInventoryChange(tenantId, user.login);
+          await this.audit.record('settings.save', { tenantId, actor: user.login, detail: { keys, via: 'ai-command' } });
+          for (const c of settingCh) if (Object.keys(c.data).every((k) => k in data)) done.push(c);
+        } catch (e) {
+          errors.push((e as Error).message);
+        }
+      }
+    }
+
+    const undoable = undo.vehicles.length + undo.leads.length + Object.keys(undo.settings).length > 0;
+    if (undoable) this.undoStore.set(`${tenantId}:${user.id}`, undo);
+    if (done.length) await this.audit.record('ai.command', { tenantId, actor: user.login, detail: { actions: actions.map((a) => a.type), changes: done.length } });
+    return {
+      executed: done.length > 0,
+      changes: done.map(view),
       errors,
+      notes,
+      undo: undoable,
+      summary: summary(done),
+      areas: areasOf(done),
+      link: linkFor(done),
     };
   }
 
-  async apply(tenantId: string, body: { actions?: unknown }, user: AuthUser) {
-    const cars = await this.cars(tenantId);
-    const known = new Set(cars.map((c) => c.id));
-    const actions = this.cleanActions(body.actions, (x) => (typeof x === 'string' && known.has(x) ? x : null));
-    const { changes, errors } = this.plan(cars, actions);
-    if (!changes.length) return { changes: [], errors: errors.length ? errors : ['Nothing needed changing.'] };
-    const byId = new Map(cars.map((c) => [c.id, c]));
-    const done: typeof changes = [];
-    const undo: { id: string; data: Record<string, unknown> }[] = [];
-    for (const ch of changes) {
-      const cur = byId.get(ch.id)!;
-      try {
-        await this.vehicles.update(tenantId, ch.id, ch.data, user);
-        done.push(ch);
-        const prev: Record<string, unknown> = {};
-        if ('status' in ch.data) prev.status = cur.status;
-        if ('price' in ch.data) prev.price = cur.price;
-        if ('featured' in ch.data) prev.featured = cur.featured;
-        if ('extra' in ch.data) prev.extra = cur.extra;
-        undo.push({ id: ch.id, data: prev });
-      } catch (e) {
-        errors.push(`${ch.car}: ${(e as Error).message}`);
-      }
-    }
-    if (undo.length) this.undoStore.set(tenantId, { at: Date.now(), items: undo });
-    return { changes: done.map(({ data: _d, ...rest }) => rest), errors };
-  }
-
   async undo(tenantId: string, user: AuthUser) {
-    const u = this.undoStore.get(tenantId);
+    const key = `${tenantId}:${user.id}`;
+    const u = this.undoStore.get(key);
     if (!u || Date.now() - u.at > 30 * 60_000) throw new BadRequestException('There is nothing to undo any more.');
-    this.undoStore.delete(tenantId);
+    this.undoStore.delete(key);
     const errors: string[] = [];
     let count = 0;
-    for (const it of u.items) {
+    for (const it of u.vehicles) {
       try {
         await this.vehicles.update(tenantId, it.id, it.data, user);
         count++;
@@ -517,6 +569,59 @@ Reply with ONLY this JSON:
         errors.push((e as Error).message);
       }
     }
-    return { undone: count, errors };
+    for (const it of u.leads) {
+      try {
+        await this.leadsSvc.update(tenantId, it.id, { status: it.status }, user);
+        count++;
+      } catch (e) {
+        errors.push((e as Error).message);
+      }
+    }
+    const areas = new Set<string>();
+    if (u.vehicles.length) areas.add('inventory');
+    if (u.leads.length) areas.add('leads');
+    if (Object.keys(u.settings).length) {
+      const { data } = cleanSettingsPatch(u.settings, { business: user.perms.includes('business'), settings: user.perms.includes('settings') });
+      // an empty setting that was empty before ("feedOperation": "") goes back to empty
+      for (const [k, v] of Object.entries(u.settings)) if ((v === '' || v === null || v === undefined) && !(k in data)) data[k] = '';
+      try {
+        await this.prisma.tenantSettings.upsert({ where: { tenantId }, create: { tenantId, ...data }, update: data });
+        if (typeof data.name === 'string' && data.name) await this.prisma.tenant.update({ where: { id: tenantId }, data: { name: data.name } });
+        if ('feedOperation' in data) await this.cargurus.afterInventoryChange(tenantId, user.login);
+        await this.audit.record('settings.save', { tenantId, actor: user.login, detail: { keys: Object.keys(data), via: 'ai-command undo' } });
+        count += Object.keys(u.settings).length;
+        areas.add('business');
+        if ('feedOperation' in data) areas.add('cargurus').add('inventory');
+      } catch (e) {
+        errors.push((e as Error).message);
+      }
+    }
+    return { undone: count, errors, areas: [...areas] };
   }
+}
+
+/** a change as the portal shows it (without what is saved) */
+function view(c: Change) {
+  const { data: _d, ...rest } = c;
+  void _d;
+  return { ...rest, car: rest.target, stock: rest.sub };
+}
+
+/** "CarGurus feed turned off" / "3 changes saved" */
+function summary(done: Change[]): string {
+  if (!done.length) return '';
+  if (done.length === 1) {
+    const c = done[0];
+    if (c.kind === 'setting') {
+      if (c.after === 'On' || c.after === 'Off') return `${c.target} is now ${c.after.toUpperCase()}`;
+      return `${c.target} changed to ${c.after}`;
+    }
+    if (c.kind === 'facebook') return `${c.target} is queued for Facebook Marketplace`;
+    if (c.destructive) return `${c.target} deleted`;
+    return `${c.target}: ${c.what.charAt(0).toLowerCase()}${c.what.slice(1)}`;
+  }
+  const kinds = new Set(done.map((c) => c.kind));
+  if (kinds.size === 1 && kinds.has('vehicle')) return `${done.length} vehicles updated`;
+  if (kinds.size === 1 && kinds.has('setting')) return `${done.length} settings changed`;
+  return `${done.length} changes saved`;
 }

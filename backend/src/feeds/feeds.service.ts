@@ -261,9 +261,10 @@ export class FeedsService {
   }
 
   /** Informational CarGurus CSV of the website inventory + which vehicles are left out and why. */
+  /** the vehicles for sale that go to CarGurus (vehicles switched off for CarGurus stay on the website only) */
   async cargurusFromInventory(tenantId: string) {
     const { t, s, site } = await this.context(tenantId);
-    const vehicles = await this.prisma.vehicle.findMany({ where: { tenantId, status: 'PUBLISHED' }, orderBy: { createdAt: 'desc' } });
+    const vehicles = await this.prisma.vehicle.findMany({ where: { tenantId, status: 'PUBLISHED', syndicateCargurus: true }, orderBy: { createdAt: 'desc' } });
     const records = cg.ingestRows(null, this.inventoryRows(vehicles, site));
     records.forEach((r, i) => {
       const ex = vehicleExtra(vehicles[i]);

@@ -44,17 +44,27 @@ export class AiController {
     return this.ai.run(() => this.ai.transcribe(t, b || {}));
   }
 
+  /**
+   * "Just tell it": understands the request and does it — vehicles, inquiries, Business details, feeds, Facebook.
+   * Open to anyone with one of these permissions; every action checks its own permission (ai.actions.ts) and is
+   * scoped to the dealership of the request. Simple changes run straight away (with Undo); deleting or changing many
+   * things at once returns a plan to confirm.
+   */
   @Post('command')
-  command(@TenantId() t: string, @Body() b: Record<string, unknown>) {
-    return this.ai.run(() => this.ai.command(t, b || {}));
+  @Perms('inventory', 'leads', 'business', 'settings')
+  command(@TenantId() t: string, @Body() b: Record<string, unknown>, @CurrentUser() u: AuthUser) {
+    return this.ai.run(() => this.ai.command(t, b || {}, u));
   }
 
+  /** { planId } from command (or { actions } from older portals) */
   @Post('command/apply')
+  @Perms('inventory', 'leads', 'business', 'settings')
   apply(@TenantId() t: string, @Body() b: Record<string, unknown>, @CurrentUser() u: AuthUser) {
     return this.ai.run(() => this.ai.apply(t, b || {}, u));
   }
 
   @Post('command/undo')
+  @Perms('inventory', 'leads', 'business', 'settings')
   undo(@TenantId() t: string, @CurrentUser() u: AuthUser) {
     return this.ai.run(() => this.ai.undo(t, u));
   }

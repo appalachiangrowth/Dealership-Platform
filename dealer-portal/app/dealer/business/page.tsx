@@ -411,18 +411,15 @@ export default function BusinessPage() {
     }
   };
 
-  const platforms = String(form.feedOperation || 'cargurus,marketplace')
+  // "website" = neither CarGurus nor Facebook Marketplace (vehicles go to the website only)
+  const platforms: string[] = String(form.feedOperation || 'cargurus,marketplace')
     .split(',')
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter((s) => s === 'cargurus' || s === 'marketplace');
   const togglePlatform = (p: string) => {
     const on = platforms.includes(p);
     const next = on ? platforms.filter((x) => x !== p) : [...platforms, p];
-    if (!next.length) {
-      toast.error('Keep at least one place selected.');
-      return;
-    }
-    put('feedOperation', next.join(','));
+    put('feedOperation', next.length ? next.join(',') : 'website');
   };
 
   const val = (k: string) => String(form[k] ?? '');

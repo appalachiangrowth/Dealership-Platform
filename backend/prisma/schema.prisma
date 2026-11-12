@@ -418,6 +418,9 @@ model Vehicle {
   extra           Json          @default("{}")
   status          VehicleStatus @default(DRAFT)
   featured        Boolean       @default(false)
+  /// where it goes besides the dealer's website (vehicle editor › "When you publish, it goes to"); both off = website only
+  syndicateCargurus Boolean     @default(true)
+  syndicateFacebook Boolean     @default(true)
   soldAt          DateTime?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt

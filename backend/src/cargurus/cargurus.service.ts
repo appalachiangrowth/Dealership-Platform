@@ -401,11 +401,11 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
     return res;
   }
 
-  /** pa_cg_prune_live: vehicles deleted, sold or hidden leave the live CarGurus feed straight away. */
+  /** pa_cg_prune_live: vehicles deleted, sold, hidden or switched off for CarGurus leave the live CarGurus feed straight away. */
   async pruneLive(tenantId: string) {
     const live = await this.liveSub(tenantId);
     if (!live?.feedCsv) return 0;
-    const forSale = await this.prisma.vehicle.findMany({ where: { tenantId, status: 'PUBLISHED' }, select: { vin: true, stockNumber: true } });
+    const forSale = await this.prisma.vehicle.findMany({ where: { tenantId, status: 'PUBLISHED', syndicateCargurus: true }, select: { vin: true, stockNumber: true } });
     const keys = new Set<string>();
     for (const v of forSale) for (const k of [keyOf(v.vin, ''), keyOf('', v.stockNumber)]) if (k) keys.add(k);
     const [h, rows] = cg.parse(live.feedCsv);

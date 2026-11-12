@@ -4,5 +4,5 @@ import { FacebookService } from './facebook.service.js';
 import { BrandingModule } from '../branding/branding.module.js';
 
 /** FB Poster: Facebook groups / Pages posting + Marketplace vehicle listings (old fb-poster app). */
-@Module({ imports: [BrandingModule], controllers: [FacebookController], providers: [FacebookService] })
+@Module({ imports: [BrandingModule], controllers: [FacebookController], providers: [FacebookService], exports: [FacebookService] })
 export class FacebookModule {}

@@ -39,6 +39,29 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
   const [setup, setSetup] = useState<{ done: Set<string>; forSale: number } | null>(null);
   const support = me?.user.kind === 'owner';
 
+  // the command bar changed something ("portal-data-changed" { areas }): the page showing it loads again, so a
+  // Business details form, the inventory or the inquiries show the new values without a manual reload
+  const [dataRev, setDataRev] = useState(0);
+  useEffect(() => {
+    const AREA_PATHS: Record<string, string[]> = {
+      inventory: ['/dealer/inventory', '/dealer/vehicles'],
+      business: ['/dealer/business', '/dealer/advanced'],
+      cargurus: ['/dealer/cargurus', '/dealer/feeds'],
+      leads: ['/dealer/leads'],
+      facebook: ['/dealer/facebook'],
+    };
+    const on = (e: Event) => {
+      const areas: string[] = (e as CustomEvent<{ areas?: string[] }>).detail?.areas || [];
+      const path = window.location.pathname;
+      const hit = path === '/dealer' || areas.some((a) => (AREA_PATHS[a] || []).some((p) => path === p || path.startsWith(`${p}/`)));
+      if (hit) setDataRev((n) => n + 1);
+      if (areas.includes('business')) void loadTenant();
+    };
+    window.addEventListener('portal-data-changed', on);
+    return () => window.removeEventListener('portal-data-changed', on);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me]);
+
   const loadTenant = async () => {
     if (!me) return;
     if (me.user.kind === 'dealer') {
@@ -251,7 +274,7 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
           {/* top bar on every page: the "Just tell it" AI command bar (also searches the inventory) + new inquiries */}
           {(can('inventory') || can('leads')) && (
           <header className="relative z-30 flex flex-wrap items-center gap-3 border-b border-[#E5E9F0] bg-white px-4 py-3 sm:px-7 lg:gap-4 lg:py-3.5">
-            {can('inventory') && <CommandBar enabled={tenant.features.ai !== false} />}
+            {(can('inventory') || can('leads') || can('business') || can('settings')) && <CommandBar enabled={tenant.features.ai !== false} />}
             <div className="ml-auto hidden items-center gap-2 lg:flex">
               {can('leads') && (
                 <Link
@@ -269,7 +292,11 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
           )}
           {/* Facebook posting / Marketplace progress, on every page until it is done */}
           <FbActivityBar enabled={tenant.features.facebook !== false && can('inventory')} />
-          <main className={cx('w-full flex-1 px-4 py-6 sm:px-7', wide ? 'max-w-none sm:py-6' : 'max-w-[1240px] sm:py-7')}>{children}</main>
+          <main className={cx('w-full flex-1 px-4 py-6 sm:px-7', wide ? 'max-w-none sm:py-6' : 'max-w-[1240px] sm:py-7')}>
+            <div key={dataRev} className="contents">
+              {children}
+            </div>
+          </main>
         </div>
       </div>
     </TenantCtx.Provider>

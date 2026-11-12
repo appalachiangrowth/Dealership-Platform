@@ -2,19 +2,27 @@
 
 /**
  * "Just tell it" — the bar at the top of every page of the portal.
- * Type or speak: "Mark the silver Corolla as sold for $16,500", "Lower the price by $300 on cars listed over 60 days",
+ * Type or speak and it DOES it: "Turn off the CarGurus feed", "Change our phone to (540) 555-0199",
+ * "Open Saturdays 9 to 5", "Mark the 2021 Civic as sold", "Post the Escape to Facebook Marketplace",
  * "Which cars have fewer than 5 photos?", or simply search ("2019 Camry", a VIN, a stock number).
- * A confirmation card shows every change before anything is saved; Undo is offered afterwards.
+ * Simple changes run straight away and show "Done — …" with Undo and a link to the setting; deleting or changing
+ * many things at once shows the changes first and waits for one click on Confirm. The page that shows the data
+ * reloads it at once ("portal-data-changed").
  */
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Check, Loader2, Mic, Search, Sparkles, Square, X } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, Loader2, Mic, Search, Sparkles, Square, Trash2, X } from 'lucide-react';
 import { aiApi, extractAudio } from '@/lib/ai';
 import { useToast } from './toast';
 import { cx } from './ui';
 
-type Change = { id: string; car: string; stock: string; what: string; before: string; after: string };
+type Change = {
+  id: string; kind?: 'vehicle' | 'lead' | 'setting' | 'facebook'; target?: string; sub?: string;
+  car: string; stock: string; what: string; before: string; after: string; destructive?: boolean; undoable?: boolean;
+};
+/** what happened after an action ran */
+type Result = { executed?: boolean; changes: Change[]; errors: string[]; notes?: string[]; undo?: boolean; summary?: string; areas?: string[]; link?: { href: string; label: string } | null };
 type CarLite = { id: string; name: string; stock: string; ext: string; price: number | null; status: string; photos: number };
 type Plan = {
   intent: 'action' | 'question' | 'search' | 'navigate' | 'unclear';
@@ -27,14 +35,27 @@ type Plan = {
   changes: Change[];
   errors: string[];
   noAi?: boolean;
+  notes?: string[];
+  /** ran straight away */
+  executed?: boolean;
+  undo?: boolean;
+  summary?: string;
+  areas?: string[];
+  link?: { href: string; label: string } | null;
+  /** waits for Confirm */
+  planId?: string;
+  needsConfirm?: boolean;
+  confirmReason?: string;
 };
 
 const EXAMPLES = [
+  'Turn off the CarGurus feed',
   'Mark the silver Corolla as sold for $16,500',
   'Lower the price by $300 on cars listed over 60 days',
+  'Post the Buick to Facebook Marketplace',
+  'Change our phone number to (540) 555-0199',
+  'We are open Saturdays 9am to 5pm',
   'Which cars have fewer than 5 photos?',
-  'Post the Buick to Facebook',
-  'Feature all SUVs on the home page',
 ];
 
 const PAGE_URL: Record<string, string> = {
@@ -42,6 +63,9 @@ const PAGE_URL: Record<string, string> = {
   add_vehicle: '/dealer/inventory/new?manual=1',
   ai_add: '/dealer/inventory/ai',
   facebook: '/dealer/facebook',
+  marketplace: '/dealer/facebook/marketplace',
+  import: '/dealer/inventory/import',
+  branding: '/dealer/content/branding',
   leads: '/dealer/leads',
   cargurus: '/dealer/cargurus',
   business: '/dealer/business',
@@ -54,7 +78,7 @@ const PAGE_URL: Record<string, string> = {
 
 /** A plain search (a VIN, a stock number, "2019 Camry") doesn't need the AI. */
 const ACTION_WORDS =
-  /\b(sold|sell|price|prices|lower|raise|increase|reduce|drop|cut|mark|feature|featured|unfeature|draft|drafts|publish|post|facebook|marketplace|which|what|how|many|much|show|list|delete|remove|hide|change|set|make|add|open|go|older|over|under|days|photos?|average|total|cheapest|most|least|newest|oldest)\b|\?/i;
+  /\b(sold|sell|price|prices|lower|raise|increase|reduce|drop|cut|mark|feature|featured|unfeature|draft|drafts|publish|unpublish|post|facebook|marketplace|cargurus|feed|feeds|turn|enable|disable|switch|stop|start|on|off|phone|number|email|address|hours|open|closed|closing|opening|lead|leads|inquir\w*|branding|logo|name|which|what|how|many|much|show|list|delete|remove|hide|change|set|update|make|add|go|older|over|under|days|photos?|average|total|cheapest|most|least|newest|oldest)\b|\?/i;
 const looksLikeSearch = (t: string) => !ACTION_WORDS.test(t) && t.split(/\s+/).length <= 4;
 
 const money = (n: number | null) => (n == null ? '' : `$${Math.round(n).toLocaleString('en-US')}`);
@@ -70,7 +94,7 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
   const [planText, setPlanText] = useState('');
   const [error, setError] = useState('');
   const [applying, setApplying] = useState(false);
-  const [undo, setUndo] = useState<{ msg: string } | null>(null);
+  const [done, setDone] = useState<{ msg: string; undo: boolean; link: { href: string; label: string } | null; at: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
@@ -145,6 +169,17 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
         router.push(url);
         return;
       }
+      // it was done straight away
+      if (r.intent === 'action' && r.executed) {
+        setText('');
+        finished(r);
+        // problems or notes next to what was done: keep the card open to show them
+        if (r.errors.length || (r.notes || []).length) {
+          setPlan(r);
+          setPlanText(t);
+        }
+        return;
+      }
       setPlan(r);
       setPlanText(t);
     } catch (e) {
@@ -154,20 +189,32 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
     }
   };
 
+  /** after a change: "Done — …" with Undo / View, and the page showing that data reloads it */
+  const finished = (a: Result) => {
+    if (a.changes.length) {
+      const msg = a.summary || `${a.changes.length} change${a.changes.length > 1 ? 's' : ''} saved`;
+      const at = Date.now();
+      setDone({ msg, undo: !!a.undo, link: a.link || null, at });
+      setTimeout(() => setDone((u) => (u?.at === at ? null : u)), 20000);
+    }
+    refreshPortal(a.areas || []);
+  };
+  const refreshPortal = (areas: string[]) => {
+    if (!areas.length) return;
+    window.dispatchEvent(new CustomEvent('portal-data-changed', { detail: { areas } }));
+    if (areas.includes('inventory')) window.dispatchEvent(new Event('inventory-changed'));
+    if (areas.includes('facebook')) window.dispatchEvent(new Event('fb-activity')); // the Marketplace progress bar
+  };
+
   const confirm = async () => {
     if (!plan) return;
     setApplying(true);
     try {
-      const a = await aiApi<{ changes: Change[]; errors: string[] }>('command/apply', { actions: plan.actions });
+      const a = await aiApi<Result>('command/apply', plan.planId ? { planId: plan.planId } : { actions: plan.actions });
       setPlan(null);
       setText('');
-      if (a.changes.length) {
-        const msg = `Done: ${a.changes.length} change${a.changes.length > 1 ? 's' : ''} saved.`;
-        setUndo({ msg });
-        setTimeout(() => setUndo((u) => (u?.msg === msg ? null : u)), 15000);
-      }
+      finished(a);
       if (a.errors.length) toast.error(a.errors.join(' '));
-      window.dispatchEvent(new Event('inventory-changed'));
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -177,11 +224,11 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
 
   const doUndo = async () => {
     try {
-      const r = await aiApi<{ undone: number; errors: string[] }>('command/undo', {});
-      setUndo(null);
-      toast.ok(`Undone. ${r.undone} vehicle${r.undone === 1 ? ' is' : 's are'} back as they were.`);
+      const r = await aiApi<{ undone: number; errors: string[]; areas?: string[] }>('command/undo', {});
+      setDone(null);
+      toast.ok(r.undone === 1 ? 'Undone — it is back as it was.' : `Undone — ${r.undone} changes are back as they were.`);
       if (r.errors.length) toast.error(r.errors.join(' '));
-      window.dispatchEvent(new Event('inventory-changed'));
+      refreshPortal(r.areas || ['inventory']);
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -207,7 +254,7 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onFocus={() => setFocus(true)}
-          placeholder={enabled ? 'Just tell it… e.g. “Mark the silver Corolla as sold for $16,500” — or search' : 'Search vehicles by make, model, VIN or stock number…'}
+          placeholder={enabled ? 'Just tell it… e.g. “Turn off the CarGurus feed” or “Mark the silver Corolla as sold” — or search' : 'Search vehicles by make, model, VIN or stock number…'}
           className="min-w-0 flex-1 border-0 bg-transparent text-sm text-[#0F172A] outline-none placeholder:text-[#64748B]"
         />
         {enabled && <VoiceButton onText={(t) => setText((x) => `${x.trim() ? `${x.trim()} ` : ''}${t}`.trim())} onError={(m) => toast.error(m)} onDone={() => inputRef.current?.focus()} />}
@@ -238,13 +285,15 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
               </button>
             ))}
           </div>
-          <div className="mt-2.5 text-xs text-[#64748B]">Or type a make, model, VIN or stock number to search. Nothing changes until you confirm.</div>
+          <div className="mt-2.5 text-xs text-[#64748B]">
+            Or type a make, model, VIN or stock number to search. Simple changes are done straight away (with Undo); deleting or changing many things asks first.
+          </div>
         </div>
       )}
 
       {busy && (
         <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 flex items-center gap-2 rounded-xl border border-[#E9E3FF] bg-[#F7F5FF] px-4 py-3 text-sm font-medium text-[#5B3FD6] shadow-lg">
-          <Loader2 className="h-4 w-4 animate-spin" /> Working out what to do…
+          <Loader2 className="h-4 w-4 animate-spin" /> On it…
         </div>
       )}
 
@@ -262,11 +311,28 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
           <div className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto p-4">
             <div className="flex items-start gap-2.5">
               <Sparkles className="mt-0.5 h-[18px] w-[18px] shrink-0 text-[#7C3AED]" />
-              <div className="flex-1 text-sm font-semibold text-[#0F172A]">{plan.reply}</div>
+              <div className="flex-1 text-sm font-semibold text-[#0F172A]">
+                {plan.intent === 'action' && !plan.executed && !plan.changes.length && plan.errors.length ? 'I couldn’t do that.' : plan.reply}
+              </div>
               <button type="button" onClick={() => setPlan(null)} aria-label="Close" className="text-[#64748B] hover:text-[#0F172A]">
                 <X className="h-4 w-4" />
               </button>
             </div>
+            {plan.executed && plan.changes.length > 0 && (
+              <div className="flex items-start gap-2 rounded-[10px] border border-[#BBE5CB] bg-[#E8F7EE] px-3 py-2 text-[13px] text-[#14532D]">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#15803D]" />
+                <span>
+                  <b>Done — {plan.summary}.</b> {plan.changes.length > 1 && plan.changes.map((c) => `${c.target || c.car}: ${c.after}`).join(' · ')}
+                </span>
+              </div>
+            )}
+            {(plan.notes || []).length > 0 && (
+              <div className="rounded-[10px] border border-[#DBEAFE] bg-[#EFF6FF] px-3 py-2 text-[13px] text-[#1E3A8A]">
+                {(plan.notes || []).map((n, i) => (
+                  <div key={i}>{n}</div>
+                ))}
+              </div>
+            )}
             {plan.errors.length > 0 && (
               <div className="rounded-[10px] border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2 text-[13px] text-[#78350F]">
                 {plan.errors.map((e, i) => (
@@ -275,13 +341,13 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
               </div>
             )}
 
-            {plan.intent === 'action' && plan.changes.length > 0 && (
+            {plan.intent === 'action' && !plan.executed && plan.changes.length > 0 && (
               <>
                 <div className="overflow-x-auto rounded-[10px] border border-[#E5E9F0]">
                   <table className="w-full text-[13px]">
                     <thead className="bg-[#F8FAFC] text-left text-[11.5px] uppercase tracking-[0.04em] text-[#526077]">
                       <tr>
-                        <th className="px-3 py-2">Car</th>
+                        <th className="px-3 py-2">{plan.changes.every((c) => !c.kind || c.kind === 'vehicle' || c.kind === 'facebook') ? 'Car' : 'Item'}</th>
                         <th className="px-3 py-2">Change</th>
                         <th className="px-3 py-2">Now</th>
                         <th className="px-3 py-2">After</th>
@@ -289,28 +355,42 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
                     </thead>
                     <tbody>
                       {plan.changes.map((c) => (
-                        <tr key={c.id} className="border-t border-[#EEF1F6]">
+                        <tr key={`${c.kind || 'vehicle'}:${c.id}`} className="border-t border-[#EEF1F6]">
                           <td className="px-3 py-2">
-                            <b className="text-[#0F172A]">{c.car}</b>
-                            {c.stock && <div className="text-xs text-[#64748B]">{c.stock}</div>}
+                            <b className="text-[#0F172A]">{c.target || c.car}</b>
+                            {(c.sub || c.stock) && <div className="text-xs text-[#64748B]">{c.sub || c.stock}</div>}
                           </td>
                           <td className="px-3 py-2 text-[#334155]">{c.what}</td>
                           <td className="px-3 py-2 text-[#64748B]">{c.before}</td>
-                          <td className="px-3 py-2 font-bold text-[#15803D]">{c.after}</td>
+                          <td className={cx('px-3 py-2 font-bold', c.destructive ? 'text-[#B91C1C]' : 'text-[#15803D]')}>{c.after}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+                {plan.confirmReason && (
+                  <div className="flex items-start gap-2 rounded-[10px] border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-[13px] text-[#7F1D1D]">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#DC2626]" />
+                    <span>
+                      <b>Please confirm.</b> {plan.confirmReason}
+                    </span>
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-2.5">
                   <button
                     type="button"
                     disabled={applying}
                     onClick={() => void confirm()}
-                    className="inline-flex min-h-[38px] items-center gap-2 rounded-lg bg-[#2563EB] px-4 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-70"
+                    autoFocus
+                    className={cx(
+                      'inline-flex min-h-[38px] items-center gap-2 rounded-lg px-4 text-sm font-semibold text-white disabled:opacity-70',
+                      plan.changes.some((c) => c.destructive) ? 'bg-[#DC2626] hover:bg-[#B91C1C]' : 'bg-[#2563EB] hover:bg-[#1D4ED8]',
+                    )}
                   >
-                    {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    Confirm {plan.changes.length} change{plan.changes.length > 1 ? 's' : ''}
+                    {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : plan.changes.some((c) => c.destructive) ? <Trash2 className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                    {plan.changes.some((c) => c.destructive)
+                      ? `Yes, delete${plan.changes.length > 1 ? ` ${plan.changes.length} items` : ''}`
+                      : `Confirm${plan.changes.length > 1 ? ` ${plan.changes.length} changes` : ''}`}
                   </button>
                   <button
                     type="button"
@@ -322,11 +402,20 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
                   >
                     Cancel
                   </button>
-                  <span className="text-xs text-[#64748B]">Nothing changes until you confirm. You can undo afterwards.</span>
+                  <span className="text-xs text-[#64748B]">
+                    {plan.changes.some((c) => c.destructive) ? 'Deleting cannot be undone.' : 'Nothing changes until you confirm. You can undo afterwards.'}
+                  </span>
                 </div>
               </>
             )}
-            {plan.intent === 'action' && !plan.changes.length && !plan.errors.length && <span className="text-[13px] text-[#64748B]">Nothing needs changing: it’s already like that.</span>}
+            {plan.intent === 'action' && !plan.changes.length && !plan.errors.length && !(plan.notes || []).length && (
+              <span className="text-[13px] text-[#64748B]">Nothing needs changing: it’s already like that.</span>
+            )}
+            {plan.executed && plan.link && (
+              <Link href={plan.link.href} onClick={() => setPlan(null)} className="text-[13px] font-semibold text-[#1D4ED8] hover:underline">
+                {plan.link.label} →
+              </Link>
+            )}
 
             {(plan.intent === 'question' || plan.intent === 'unclear') && plan.cars.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
@@ -346,7 +435,7 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
               </div>
             )}
             {plan.intent === 'unclear' && <span className="text-[13px] text-[#64748B]">Try being more specific, e.g. add the year, colour or stock number.</span>}
-            {plan.intent !== 'action' && (
+            {plan.intent !== 'action' && plan.intent !== 'navigate' && (
               <div>
                 <button type="button" onClick={() => searchInventory(plan.search || planText)} className="text-[13px] font-semibold text-[#1D4ED8] hover:underline">
                   Search the inventory for “{plan.search || planText}” →
@@ -357,13 +446,29 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
         </div>
       )}
 
-      {undo && (
-        <div className="fixed bottom-5 left-1/2 z-[110] flex -translate-x-1/2 items-center gap-4 rounded-xl bg-[#0F172A] px-4 py-3 text-sm text-white shadow-[0_10px_30px_rgba(15,23,42,0.3)]">
-          <span>✓ {undo.msg}</span>
-          <button type="button" onClick={() => void doUndo()} className="font-bold text-[#93C5FD] hover:underline">
-            Undo
-          </button>
-          <button type="button" onClick={() => setUndo(null)} aria-label="Close" className="text-[#94A3B8]">
+      {done && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-5 left-1/2 z-[110] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-[#0F172A] px-4 py-3 text-sm text-white shadow-[0_10px_30px_rgba(15,23,42,0.3)]"
+        >
+          <span className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-[#4ADE80]" />
+            <span>
+              <b>Done</b> — {done.msg}
+            </span>
+          </span>
+          {done.undo && (
+            <button type="button" onClick={() => void doUndo()} className="font-bold text-[#93C5FD] hover:underline">
+              Undo
+            </button>
+          )}
+          {done.link && (
+            <Link href={done.link.href} onClick={() => setDone(null)} className="font-bold text-[#93C5FD] hover:underline">
+              {done.link.label}
+            </Link>
+          )}
+          <button type="button" onClick={() => setDone(null)} aria-label="Close" className="text-[#94A3B8]">
             <X className="h-4 w-4" />
           </button>
         </div>

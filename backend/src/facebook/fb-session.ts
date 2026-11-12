@@ -1430,18 +1430,39 @@ export function createFbSession(opts) {
   }
 
   /** start posting in the background; targets are facebook.com links (Page first, then groups) */
-  async function startPost({ targets, names, mediaPaths, tempFiles, caption, delayMin, delayMax, runId, actAs }) {
-    if (job && job.status === 'running') throw new Error('A Facebook post is already running. Wait for it to finish or press Stop.');
-    if (busy && busyWhat !== 'Marketplace') throw new Error('Another task is running (' + (busyWhat || 'Facebook') + '). Wait for it to finish or press Stop.');
+  /**
+   * Page posts started while another one is still running wait in line here (one Chrome, one post at a time) and start
+   * on their own when the one before finishes — posting several vehicles back to back never fails with "already running".
+   */
+  const postQueue = []; // [{ spec, job }]
+
+  async function startPost({ targets, names, mediaPaths, tempFiles, caption, delayMin, delayMax, runId, actAs, label }) {
+    if (busy && busyWhat !== 'Marketplace' && busyWhat !== 'posting') throw new Error('Another task is running (' + (busyWhat || 'Facebook') + '). Wait for it to finish or press Stop.');
     await needLogin(); // starts Chrome with the saved login when it is asleep
-    cancelFlag = false; S.lastAction = Date.now();
-    groupsAs = actAs && actAs.url ? { url: String(actAs.url), name: String(actAs.name || '') } : null;
-    job = {
-      runId, status: 'running', total: targets.length, ok: 0, failed: 0, cancelled: false, startedAt: Date.now(), finishedAt: null, nextAt: null,
+    const spec = { targets, mediaPaths, tempFiles, caption, delayMin, delayMax, actAs };
+    const newJob = {
+      runId, label: String(label || '').slice(0, 120), status: 'running', total: targets.length, ok: 0, failed: 0, cancelled: false, startedAt: Date.now(), finishedAt: null, nextAt: null,
       results: targets.map((u) => ({ url: u, name: (names && names[u]) || u, status: 'waiting', note: '', error: '' })),
     };
-    const myJob = job;
+    if ((job && job.status === 'running') || postQueue.length) {
+      newJob.status = 'queued';
+      postQueue.push({ spec, job: newJob });
+      log(`Facebook post${newJob.label ? ` for ${newJob.label}` : ''} queued: it starts when the current post is finished (${postQueue.length} waiting).`);
+      return newJob;
+    }
+    launchJob(newJob, spec);
+    return newJob;
+  }
+
+  /** runs one Page post (waits for a Marketplace listing that is being filled in first), then starts the next queued one */
+  function launchJob(myJob, { targets, mediaPaths, tempFiles, caption, delayMin, delayMax, actAs }) {
+    cancelFlag = false; S.lastAction = Date.now();
+    groupsAs = actAs && actAs.url ? { url: String(actAs.url), name: String(actAs.name || '') } : null;
+    job = myJob;
+    myJob.status = 'running';
+    myJob.startedAt = Date.now();
     const nVid = mediaPaths.filter(isVideoFile).length;
+    log(myJob.label ? `Posting ${myJob.label} on Facebook...` : 'Posting on Facebook...');
     log(mediaPaths.length
       ? `Media received: ${mediaPaths.length - nVid} photo(s), ${nVid} video(s)${mediaPaths.length > 1 ? ' (featured first)' : ''}.`
       : 'No media selected: text-only post.');
@@ -1458,16 +1479,30 @@ export function createFbSession(opts) {
       }
       busy = true; busyWhat = 'posting';
       await runJob({ targets, mediaPaths, tempFiles, caption, delayMin, delayMax });
-    })().catch((e) => {
-      busy = false; busyWhat = '';
-      log(`Job crashed: ${e.message}`);
-      if (myJob) Object.assign(myJob, { status: 'finished', cancelled: false, finishedAt: Date.now() });
-    });
-    return job;
+    })()
+      .catch((e) => {
+        busy = false; busyWhat = '';
+        log(`Job crashed: ${e.message}`);
+        if (myJob) Object.assign(myJob, { status: 'finished', cancelled: false, finishedAt: Date.now() });
+      })
+      .finally(() => {
+        // the next vehicle's post, if one is waiting
+        const next = postQueue.shift();
+        if (next) setTimeout(() => {
+          try { launchJob(next.job, next.spec); } catch (e) { log(`Could not start the next post: ${e.message}`); }
+        }, 1500);
+      });
   }
 
   function stopPosting() {
     cancelFlag = true;
+    // posts waiting in line are cancelled too
+    for (const q of postQueue.splice(0)) {
+      for (const r of q.job.results) r.status = 'cancelled';
+      Object.assign(q.job, { status: 'finished', cancelled: true, finishedAt: Date.now() });
+      for (const p of q.spec.tempFiles || []) fs.unlink(p, () => {});
+      try { hooks.onJobDone && hooks.onJobDone(q.job); } catch (e) {}
+    }
     log('Stopping after the current one...');
   }
 
@@ -1483,6 +1518,7 @@ export function createFbSession(opts) {
     const fbDescription = (v) => v.fbText || '';
     function setListing(v, patch, note) {
       v.listing = { ...(v.listing || {}), ...patch };
+      mpOutcome(v.id, patch);
       hooks.setListing(v.id, patch, note);
       emit({ type: 'mp', vehicleId: v.id, listing: v.listing });
     }
@@ -1773,6 +1809,7 @@ export function createFbSession(opts) {
         const report = [];
         const step = async (name, fn) => {
           if (mpCancel) throw new Error('Stopped by you.');
+          mpStep(name.startsWith('Photos') ? `Uploading photos${name.slice(6)}` : `Filling in ${name.toLowerCase()}`);
           try { const r = await fn(); report.push({ name, ok: r !== false, note: typeof r === 'string' ? r : '' }); }
           catch (e) { report.push({ name, ok: false, note: e.message }); }
         };
@@ -2018,6 +2055,7 @@ export function createFbSession(opts) {
         mpActive = { vehicleId: v.id, action: 'publish' }; emit({ type: 'mp', active: mpActive });
         setListing(v, { status: 'publishing', error: '' }, 'Publishing started');
         log(`Marketplace: preparing ${v.year} ${v.make} ${v.model}...`);
+        mpStep('Opening the Marketplace form');
         await useProfile(); // vehicles are listed by your personal profile (Pages cannot list vehicles)
         await page().goto('https://www.facebook.com/marketplace/create/vehicle', { waitUntil: 'domcontentloaded' });
         if (await page().$('#email, input[name="email"]')) throw new Error('Facebook asked for login again. Click "Connect Facebook" and log in.');
@@ -2048,6 +2086,7 @@ export function createFbSession(opts) {
         let published = false;
         if (auto) {
           // ---- automatic: Next → Publish
+          mpStep('Publishing');
           setListing(v, { status: 'publishing' }, missed.length ? `Form filled (optional fields skipped: ${missed.map((m) => m.name).join(', ')}), publishing` : 'Form filled, publishing');
           await overlay('Form filled. Publishing automatically…', 'ok');
           await page().keyboard.press('Escape').catch(() => {}); // close any open dropdown
@@ -2076,6 +2115,7 @@ export function createFbSession(opts) {
           await overlay(
             (missed.length ? `<b>Fix these fields:</b> ${missed.map((m) => m.name).join(', ')}<br>` : '') +
             'Then click Facebook\'s <b>Next</b> and <b>Publish</b>. The link is saved automatically.', 'warn');
+          mpStep(missed.length ? `Needs you in Chrome: ${missed.map((m) => m.name).join(', ')}, then Publish` : 'Waiting for you to click Publish in Chrome');
           setListing(v, { status: 'awaiting_publish' }, missed.length ? `Needs you: ${missed.map((m) => m.name).join(', ')}` : 'Waiting for you to click Publish');
           const end = Date.now() + 15 * 60000;
           let lastUrl = page().url();
@@ -2105,6 +2145,7 @@ export function createFbSession(opts) {
         }).catch(() => '');
         if (fbErr) throw new Error('Facebook said: "' + fbErr + '"');
 
+        mpStep('Confirming the listing on Facebook');
         const hit = await findListingOnSellingPage(v);
         if (hit && hit.flagged) {
           // created, but Facebook did not publish it (e.g. "duplicate listing", rejected, under review)
@@ -2223,21 +2264,78 @@ export function createFbSession(opts) {
   const queue = [];
   let running = false;
 
+  /**
+   * The current batch for the progress bar in the portal: every vehicle queued since the queue was last empty, with
+   * its state (queued → running → done / attention / failed / cancelled), the step it is at, and when the next one
+   * starts. A new batch begins when vehicles are queued after everything before has ended.
+   */
+  let batch = null;
+  let batchSeq = 0;
+  const ACTION_TEXT = { publish: 'Listing', update: 'Updating the price of', sold: 'Marking as sold', delete: 'Deleting the listing of', verify: 'Checking' };
+  const ended = (it) => ['done', 'attention', 'failed', 'cancelled'].includes(it.status);
+  function batchItem(id, action) {
+    if (!batch) return null;
+    for (let i = batch.items.length - 1; i >= 0; i--) if (batch.items[i].id === id && batch.items[i].action === action) return batch.items[i];
+    return null;
+  }
+  function runningItem() {
+    return batch ? batch.items.find((it) => it.status === 'running') || null : null;
+  }
+  /** the step the vehicle that is being posted is at ("Uploading photos (12)", "Publishing" …) */
+  function mpStep(text) {
+    const it = runningItem();
+    if (it) { it.step = String(text || '').slice(0, 120); it.stepAt = Date.now(); }
+  }
+  /** what the listing became, from the listing updates of the Marketplace engine */
+  function mpOutcome(id, patch) {
+    const it = runningItem();
+    if (!it || it.id !== id || !patch || !patch.status) return;
+    if (patch.status === 'published') it.outcome = 'published';
+    else if (patch.status === 'needs_attention') { it.outcome = 'needs_attention'; it.error = String(patch.error || '').slice(0, 400); }
+    else if (patch.status === 'unconfirmed') { it.outcome = 'unconfirmed'; it.error = String(patch.error || '').slice(0, 400); }
+    else if (patch.status === 'sold' || patch.status === 'removed') it.outcome = patch.status;
+  }
+  function finishItem(it, status, error) {
+    if (!it) return;
+    it.status = status;
+    it.endedAt = Date.now();
+    it.step = '';
+    if (error) it.error = String(error).slice(0, 400);
+    if (status === 'done' && (it.outcome === 'needs_attention' || it.outcome === 'unconfirmed')) it.status = 'attention';
+  }
+  function closeBatchIfDone() {
+    if (batch && !batch.finishedAt && batch.items.every(ended) && !queue.length) {
+      batch.finishedAt = Date.now();
+      batch.nextAt = null;
+      const n = (st) => batch.items.filter((it) => it.status === st).length;
+      log(`Marketplace: batch finished — ${n('done')} done, ${n('attention')} need attention, ${n('failed')} failed, ${n('cancelled')} cancelled.`);
+    }
+  }
+
   async function pump() {
     if (running) return;
     running = true;
     try {
       while (queue.length) {
         const task = queue.shift();
+        const it = batchItem(task.id, task.action);
+        if (it) { it.status = 'running'; it.startedAt = Date.now(); it.step = 'Getting the vehicle ready'; it.error = ''; it.outcome = ''; }
+        if (batch) batch.nextAt = null;
         let v = null;
         try { v = await hooks.getVehicle(task.id, task.action); } catch (e) { log(`Marketplace: ${e.message}`); }
-        if (!v) continue;
+        if (!v) {
+          finishItem(it, 'failed', 'The vehicle could not be loaded (deleted?).');
+          continue;
+        }
+        if (it && !it.name) it.name = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ');
         try {
           // a group posting run (or a Pages / groups load) may be busy: wait for it instead of failing
+          if (busy && !mpCancel) mpStep(`Waiting for the ${busyWhat || 'current'} task to finish`);
           while (busy && !mpCancel) await sleep(1000);
           if (mpCancel) throw new Error('Stopped by you.');
           busy = true; busyWhat = 'Marketplace'; mpCancel = false; S.lastAction = Date.now();
           try {
+            mpStep('Starting Facebook');
             await needLogin(); // starts Chrome with the saved login when it is asleep
             if (task.action === 'publish') await MP.publishVehicle(v);
             else if (task.action === 'update') await MP.updateListing(v, task.opts || {});
@@ -2247,11 +2345,13 @@ export function createFbSession(opts) {
             busy = false; busyWhat = ''; mpActive = null;
             await MP.removeOverlay();
           }
+          finishItem(it, 'done');
         } catch (e) {
           log(`Marketplace: ${task.action} failed: ${e.message}`);
+          finishItem(it, /Stopped by you/.test(e.message) ? 'cancelled' : 'failed', e.message);
           if (task.action === 'publish') hooks.setListing(v.id, { status: 'failed', error: e.message }, 'Failed: ' + e.message);
           else hooks.setListing(v.id, { error: e.message }, `${task.action} failed: ${e.message}`);
-          if (/Stopped by you|login|Not logged in/i.test(e.message)) dropQueue();
+          if (/Stopped by you|login|Not logged in/i.test(e.message)) dropQueue(/Stopped by you/.test(e.message) ? '' : 'Facebook asked for login again. Connect Facebook, then retry.');
         } finally {
           try { hooks.releaseVehicle && hooks.releaseVehicle(v.id); } catch (e) {}
         }
@@ -2259,21 +2359,48 @@ export function createFbSession(opts) {
           const gap = Math.max(10, Number(hooks.gapSeconds()) || 45);
           const wait = Math.round(gap * (0.8 + Math.random() * 0.4));
           log(`Marketplace: next vehicle in ${wait}s (${queue.length} left)...`);
+          if (batch) batch.nextAt = Date.now() + wait * 1000;
           for (let i = 0; i < wait && !mpCancel; i++) await sleep(1000);
+          if (batch) batch.nextAt = null;
         }
       }
     } finally {
       running = false;
       mpCancel = false;
+      closeBatchIfDone();
     }
   }
 
-  function dropQueue() {
-    for (const t of queue.splice(0)) if (t.action === 'publish') hooks.setListing(t.id, { status: 'none' }, 'Removed from queue');
+  function dropQueue(reason = '') {
+    for (const t of queue.splice(0)) {
+      if (t.action === 'publish') hooks.setListing(t.id, { status: 'none' }, 'Removed from queue');
+      finishItem(batchItem(t.id, t.action), 'cancelled', reason || 'Removed from the queue (stopped).');
+    }
+    closeBatchIfDone();
   }
 
+  /** tasks: [{ id, action, name?, opts? }] — vehicles queued while another one is posting simply wait their turn */
   function mpEnqueue(tasks) {
-    for (const t of tasks) if (!queue.some((q) => q.id === t.id && q.action === t.action)) queue.push(t);
+    // retrying vehicles of a batch that just finished: that batch opens again, so its counts stay together
+    const retry = batch && batch.finishedAt && Date.now() - batch.finishedAt < 10 * 60000 &&
+      tasks.some((t) => { const o = batchItem(t.id, t.action); return o && ['failed', 'cancelled', 'attention'].includes(o.status); });
+    if (retry) {
+      batch.finishedAt = null;
+    } else if (!batch || batch.finishedAt || (batch.items.every(ended) && !queue.length && !running)) {
+      // a new batch when nothing of the last one is still waiting or running
+      batch = { id: ++batchSeq, startedAt: Date.now(), finishedAt: null, nextAt: null, items: [] };
+    }
+    for (const t of tasks) {
+      if (queue.some((q) => q.id === t.id && q.action === t.action)) continue;
+      queue.push(t);
+      const old = batchItem(t.id, t.action);
+      const fresh = { id: t.id, action: t.action, name: String(t.name || ''), status: 'queued', step: '', error: '', outcome: '', queuedAt: Date.now(), startedAt: null, endedAt: null, tries: 1 };
+      if (old && ended(old)) {
+        // retry: the same row starts again (and moves to the end of the line)
+        batch.items.splice(batch.items.indexOf(old), 1);
+        batch.items.push({ ...fresh, name: fresh.name || old.name, tries: (old.tries || 1) + 1 });
+      } else if (!old) batch.items.push(fresh);
+    }
     S.lastAction = Date.now();
     pump();
   }
@@ -2282,6 +2409,30 @@ export function createFbSession(opts) {
     mpCancel = true;
     dropQueue();
     log('Marketplace: stopped.');
+  }
+
+  /** the batch as the portal shows it (a copy) */
+  function batchView() {
+    if (!batch) return null;
+    const count = (st) => batch.items.filter((it) => it.status === st).length;
+    return {
+      id: batch.id,
+      startedAt: batch.startedAt,
+      finishedAt: batch.finishedAt,
+      nextAt: batch.nextAt,
+      total: batch.items.length,
+      done: count('done'),
+      attention: count('attention'),
+      failed: count('failed'),
+      cancelled: count('cancelled'),
+      queued: count('queued'),
+      running: count('running'),
+      items: batch.items.map((it, i) => ({
+        ...it,
+        position: i + 1,
+        verb: ACTION_TEXT[it.action] || it.action,
+      })),
+    };
   }
 
   // ---------- state for the portal ----------
@@ -2299,13 +2450,14 @@ export function createFbSession(opts) {
       view: view.on,
       url: open ? page.url() : '',
       job,
-      mp: { active: mpActive, queue: queue.map((q) => ({ id: q.id, action: q.action })), running, report: lastReport },
+      mp: { active: mpActive, queue: queue.map((q) => ({ id: q.id, action: q.action })), running, report: lastReport, batch: batchView() },
+      postQueue: postQueue.map((q) => ({ runId: q.job.runId, label: q.job.label || '', total: q.job.total })),
       logs: logs.filter((l) => l.seq > logAfter),
       logSeq,
     };
   }
 
-  const idle = () => !busy && !running && !queue.length && !launching;
+  const idle = () => !busy && !running && !queue.length && !postQueue.length && !launching;
 
   return {
     S, log, state, idle,

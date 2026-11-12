@@ -105,6 +105,16 @@ const TIPS: Record<string, string> = {
   metaDescription: 'The short summary shown under the title in Google results. Aim for about 150 characters.',
 };
 
+/** what the website itself needs to publish (the server checks the same): [field, label] */
+const WEB_REQ: [string, string][] = [
+  ['images', 'At least one photo'],
+  ['year', 'Year'],
+  ['make', 'Make'],
+  ['model', 'Model'],
+  ['price', 'Price'],
+  ['mileage', 'Mileage'],
+];
+
 /** the details needed to publish, in form order: [field, label, section] */
 const REQ: [string, string, string][] = [
   ['images', 'At least one photo', 'Photos'],
@@ -199,8 +209,14 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   const [cgOn, setCgOn] = useState(false);
   const [hot, setHot] = useState('');
 
-  // Platform selection — CarGurus / Marketplace toggles
-  const [platforms, setPlatforms] = useState<('cargurus' | 'marketplace')[]>(['cargurus', 'marketplace']);
+  // Where it goes besides the website — CarGurus / Facebook. Both optional: both off = website only.
+  // A saved vehicle keeps its own choice; a new one starts from the dealership's channels (Business details).
+  const savedChoice = typeof initial.syndicateCargurus === 'boolean' || typeof initial.syndicateFacebook === 'boolean';
+  const [platforms, setPlatforms] = useState<('cargurus' | 'marketplace')[]>(
+    savedChoice
+      ? ([initial.syndicateCargurus !== false && 'cargurus', initial.syndicateFacebook !== false && 'marketplace'].filter(Boolean) as ('cargurus' | 'marketplace')[])
+      : ['cargurus', 'marketplace'],
+  );
   // after "Publish vehicle": the Facebook popup for the saved vehicle (closing it goes back to Inventory)
   const [fbVehicle, setFbVehicle] = useState<Vehicle | null>(null);
   const router = useRouter();
@@ -230,18 +246,20 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
       .catch(() => {});
   }, []);
 
-  // Load destination platforms configured in Business details
+  // Load destination platforms configured in Business details (new vehicles only: a saved vehicle keeps its choice)
   useEffect(() => {
+    if (savedChoice) return;
     api('/dealer/settings')
       .then((r) => {
         const op = r?.settings?.feedOperation;
         if (op && typeof op === 'string') {
           const list = op.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean) as ('cargurus' | 'marketplace')[];
-          const valid = list.filter((p) => p === 'cargurus' || p === 'marketplace');
-          if (valid.length > 0) setPlatforms(valid);
+          // "website" (both switched off in Business details) = website only
+          setPlatforms(list.filter((p) => p === 'cargurus' || p === 'marketplace'));
         }
       })
       .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -295,7 +313,16 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   }, [focusField, goField]);
 
   function bodyFor(status: string) {
-    const b: Record<string, unknown> = { ...v, status, features: lines(featText), safetyFeatures: lines(safeText), vin: String(v.vin || '').toUpperCase().trim() };
+    const b: Record<string, unknown> = {
+      ...v,
+      status,
+      features: lines(featText),
+      safetyFeatures: lines(safeText),
+      vin: String(v.vin || '').toUpperCase().trim(),
+      // where it goes besides the website (both off = website only)
+      syndicateCargurus: platforms.includes('cargurus'),
+      syndicateFacebook: platforms.includes('marketplace'),
+    };
     for (const k of SERVER_ONLY) delete b[k];
     if (!String(b.slug || '').trim() || b.slug === initial.slug) delete b.slug;
     return b;
@@ -303,20 +330,21 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
 
   async function save(status: string, msg: string) {
     if (status === 'PUBLISHED') {
-      if (platforms.length === 0) {
-        toast.error('Select at least one platform (CarGurus or Marketplace).');
-        return;
-      }
       if (!canPublish) {
         const issuesList: string[] = [];
+        if (!webOk) {
+          issuesList.push(`Website: ${webMiss.map(([, l]) => l).join(', ')}`);
+        }
         if (cgSelected && !ready) {
           issuesList.push(`CarGurus: ${badCount} required field(s) missing or invalid`);
         }
         if (mpSelected && !mpOk) {
           issuesList.push(`Marketplace: ${mpMiss.size} required field(s) missing`);
         }
-        toast.error(`Please complete all required fields for the selected platform(s): ${issuesList.join('; ')}`);
-        if (cgSelected && !ready && issues[0]) {
+        toast.error(`Please complete the required details: ${issuesList.join('; ')}`);
+        if (!webOk) {
+          goField(webMiss[0][0]);
+        } else if (cgSelected && !ready && issues[0]) {
           goField(issues[0].f);
         } else if (mpSelected && !mpOk) {
           const firstMiss = Array.from(mpMiss)[0];
@@ -338,8 +366,8 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
       setDirty(false);
       toast.ok(msg);
       void brandRun(); // the main photo gets the dealer's branding bands (when photo branding is on)
-      // just published (new, or was a draft / sold): offer to post it on Facebook straight away
-      if (status === 'PUBLISHED' && (isNew || status0 !== 'PUBLISHED')) {
+      // just published (new, or was a draft / sold) with Facebook on: offer to post it on Facebook straight away
+      if (status === 'PUBLISHED' && mpSelected && (isNew || status0 !== 'PUBLISHED')) {
         setFbVehicle({ ...v, ...body, ...(out && typeof out === 'object' && out.id ? out : { id: v.id }) } as Vehicle);
         return;
       }
@@ -383,8 +411,13 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   const cgSelected = platforms.includes('cargurus');
   const mpSelected = platforms.includes('marketplace');
 
-  // Fields required depending on active platforms
+  // The website itself needs these to publish (same rule as the server): year, make, model, price, mileage, a photo
+  const webMiss = WEB_REQ.filter(([k]) => (k === 'images' ? !(v.images || []).length : String(v[k] ?? '').trim() === ''));
+  const webOk = webMiss.length === 0;
+
+  // Fields required depending on active platforms (the website's own details always)
   const isReq = (k: string) => {
+    if (WEB_REQ.some(([w]) => w === k)) return true;
     if (cgSelected && mpSelected) {
       return (
         k === 'vin' || k === 'make' || k === 'model' || k === 'year' || k === 'trim' ||
@@ -422,13 +455,15 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
     return miss;
   }, [cgSelected, mpSelected, ready, mpOk]);
 
-  const canPublish = missingReqFields.length === 0 && platforms.length > 0;
+  // website only (both off), website + CarGurus, website + Facebook, or all three
+  const canPublish = missingReqFields.length === 0 && webOk;
 
 
   /* ───────────── what is still needed (one list for CarGurus + Marketplace) ───────────── */
   const mpMissKeys = useMemo(() => new Set(MP_FIELDS.filter(([, l]) => mpMiss.has(l)).map(([k]) => k)), [mpMiss]);
   const problem = (k: string): string => {
     if (!isReq(k)) return '';
+    if (webMiss.some(([w]) => w === k)) return 'Needed to publish on your website.';
     if (cgSelected && bad[k]) return bad[k];
     if (mpSelected && mpMissKeys.has(k)) {
       return k === 'mileage' && String(v.mileage ?? '').trim() !== '' ? 'Facebook Marketplace needs a mileage of more than 0.' : 'Needed for Facebook Marketplace.';
@@ -449,13 +484,12 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
     return d === r.length ? { text: '✓ Complete', tone: 'ok' } : { text: `${d} of ${r.length} required`, tone: 'todo' };
   };
   const photoN = (v.images || []).length;
+  // both can be off: the vehicle is then published on the website only
   const togglePlatform = (p: 'cargurus' | 'marketplace') => {
-    if (platforms.includes(p)) {
-      const next = platforms.filter((x) => x !== p);
-      if (next.length) setPlatforms(next);
-      else toast.error('Keep at least one: CarGurus or Facebook Marketplace.');
-    } else setPlatforms([...platforms, p]);
+    setDirty(true);
+    setPlatforms((cur) => (cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]));
   };
+  const channels = ['your website', ...(cgSelected ? ['CarGurus'] : []), ...(mpSelected ? ['Facebook'] : [])];
 
   /* ───────────── field building blocks ───────────── */
   const dupNote = (k: string) =>
@@ -865,9 +899,9 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
                 </span>
                 <span className="flex flex-1 flex-col">
                   <span className="text-[13px] font-semibold text-[#0F172A]">CarGurus</span>
-                  <span className="text-xs text-[#526077]">{cgSelected ? 'Included in your next CarGurus feed' : 'Not checked for CarGurus'}</span>
+                  <span className="text-xs text-[#526077]">{cgSelected ? 'Included in your next CarGurus feed' : 'Off — not sent to CarGurus'}</span>
                 </span>
-                <input type="checkbox" className="mt-1.5 h-4 w-4 accent-[#2563EB]" checked={cgSelected} onChange={() => togglePlatform('cargurus')} aria-label="Check this vehicle for CarGurus" />
+                <input type="checkbox" className="mt-1.5 h-4 w-4 accent-[#2563EB]" checked={cgSelected} onChange={() => togglePlatform('cargurus')} aria-label="Send this vehicle to CarGurus" />
               </label>
               <label className="flex cursor-pointer items-start gap-2.5">
                 <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg bg-[#EAF1FF] text-[#1877F2]">
@@ -876,11 +910,14 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
                 <span className="flex flex-1 flex-col">
                   <span className="text-[13px] font-semibold text-[#0F172A]">Facebook</span>
                   <span className="text-xs text-[#526077]">
-                    {mpSelected ? 'Post it to your profile and Marketplace right after publishing' : 'Profile posts only (Marketplace details not checked)'}
+                    {mpSelected ? 'Post it to your Pages and Marketplace right after publishing' : 'Off — not posted to Facebook'}
                   </span>
                 </span>
-                <input type="checkbox" className="mt-1.5 h-4 w-4 accent-[#2563EB]" checked={mpSelected} onChange={() => togglePlatform('marketplace')} aria-label="Check this vehicle for Facebook Marketplace" />
+                <input type="checkbox" className="mt-1.5 h-4 w-4 accent-[#2563EB]" checked={mpSelected} onChange={() => togglePlatform('marketplace')} aria-label="Post this vehicle to Facebook and Marketplace" />
               </label>
+              <span className={cx('rounded-lg px-2.5 py-1.5 text-xs', cgSelected || mpSelected ? 'bg-white text-[#334155]' : 'bg-[#EAF1FF] font-semibold text-[#1D4ED8]')}>
+                {cgSelected || mpSelected ? `Publishes to ${channels.slice(0, -1).join(', ')} and ${channels[channels.length - 1]}.` : 'Website only — CarGurus and Facebook are both off. You can turn them on any time.'}
+              </span>
             </div>
           </section>
 
