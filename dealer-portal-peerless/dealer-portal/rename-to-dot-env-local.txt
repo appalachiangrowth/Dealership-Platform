@@ -6,3 +6,7 @@ NEXT_PUBLIC_PLATFORM_ADMIN_URL=http://localhost:3001
 # How dealer websites are opened when a dealer has no domain yet.
 # On this computer: http://<dealer-id>.localhost:3002  (the website app)
 NEXT_PUBLIC_SITE_PATTERN=http://{id}.localhost:3002
+
+# The Peerless website — "View website" links and the Design / Content / Pages previews
+# (default https://www.peerlessautosales1.com; http://localhost:3002 when the portal runs on localhost)
+# NEXT_PUBLIC_FRONTEND_URL=https://www.peerlessautosales1.com

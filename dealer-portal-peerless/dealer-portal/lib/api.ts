@@ -103,34 +103,32 @@ export function mediaUrl(u?: string | null) {
   return u.startsWith('/uploads/') || u.startsWith('/themes/') ? API_URL + u : u;
 }
 
+/** The Peerless website. This portal is the Peerless-only build (https://peerlessautosales1.com/admin). */
+export const PEERLESS_SITE_URL = 'https://www.peerlessautosales1.com';
+
 /**
- * The configured address of the shared website app (frontend, port 3002 behind nginx).
- * Takes the first real http(s) address in the setting, so a value pasted as a Markdown link
- * like "[http://x](http://x)" still works, and NEVER returns a relative path.
+ * The address of the dealership website: NEXT_PUBLIC_FRONTEND_URL, else https://www.peerlessautosales1.com
+ * (http://localhost:3002 when the portal itself runs on localhost). Takes the first real http(s) address in
+ * the setting, so a value pasted as a Markdown link like "[http://x](http://x)" still works, and NEVER
+ * returns a relative path.
  */
-function frontendBase(): string {
+export function frontendBase(): string {
   const raw = String(process.env.NEXT_PUBLIC_FRONTEND_URL || '');
   const m = raw.match(/https?:\/\/[^\s)\]"'<>]+/i);
   if (m) return m[0].replace(/\/+$/, '');
-  return isLocalAdmin() ? 'http://localhost:3002' : 'https://sites.appalachiangrowthsolutions.com';
+  return isLocalAdmin() ? 'http://localhost:3002' : PEERLESS_SITE_URL;
 }
 
-/** Where a dealership's website lives: its own domain, its own site address, or the shared website app (needs ?tenant=). */
-export function siteBase(t: { id: string; domains?: string[]; siteUrl?: string }): { base: string; shared: boolean } {
-  // Every "View website" link and every preview uses the shared website app
-  // (https://sites.appalachiangrowthsolutions.com/?tenant=<id>), which always serves the right dealership.
-  // A dealer's own domain (e.g. joesautos.com) is only used once those domains point at the server:
-  // build with NEXT_PUBLIC_USE_DEALER_DOMAINS=1 to switch that on.
-  // single-dealer deployment: the website is NEXT_PUBLIC_FRONTEND_URL itself (e.g. https://peerlessautosales.com), no ?tenant=
-  if (FIXED_TENANT) return { base: frontendBase(), shared: false };
-  if (/^(1|true|yes)$/i.test(String(process.env.NEXT_PUBLIC_USE_DEALER_DOMAINS || '').trim())) {
-    const d = t.domains?.[0];
-    if (d && !d.endsWith('localhost')) return { base: `https://${d}`.replace(/\/+$/, ''), shared: false };
-    if (t.siteUrl && /^https?:\/\//i.test(t.siteUrl) && !t.siteUrl.includes('appalachiangrowthsolutions.com')) {
-      return { base: t.siteUrl.replace(/\/+$/, ''), shared: false };
-    }
-  }
-  return { base: frontendBase(), shared: true };
+/**
+ * Where the website lives. This is a single-dealer deployment: every "View website" link and every
+ * Design / Content / Pages preview uses frontendBase() itself, with clean addresses (no ?tenant=, no
+ * dealer sub-domain). Only a local test setup without a pinned dealer (no NEXT_PUBLIC_TENANT and no
+ * NEXT_PUBLIC_FRONTEND_URL, on localhost) still picks the dealership with ?tenant=.
+ */
+export function siteBase(_t: { id: string; domains?: string[]; siteUrl?: string }): { base: string; shared: boolean } {
+  const configured = /https?:\/\//i.test(String(process.env.NEXT_PUBLIC_FRONTEND_URL || ''));
+  const shared = !FIXED_TENANT && !configured && isLocalAdmin();
+  return { base: frontendBase(), shared };
 }
 
 /**

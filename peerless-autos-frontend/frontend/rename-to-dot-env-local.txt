@@ -3,6 +3,7 @@
 API_URL=http://localhost:4000
 
 # Dealership Portal + Platform Admin addresses (comma-separated) — allowed to show this website inside their design preview
+# (https://peerlessautosales1.com and https://www.peerlessautosales1.com are always allowed; add others here)
 ADMIN_URL=http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001
 
 # Optional: dealership shown when the site is opened on plain http://localhost:3002

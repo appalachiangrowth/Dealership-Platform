@@ -35,20 +35,8 @@ export interface RenderOverride {
   raw?: Record<string, string>;
 }
 
-/** Dealership Portal + Platform Admin addresses that may drive the live preview (ADMIN_URL, comma-separated). */
-export function adminOrigins(): string[] {
-  const fromEnv = (process.env.ADMIN_URL || '')
-    .split(',')
-    .map((u) => u.trim().replace(/\/+$/, ''))
-    .filter(Boolean);
-  const defaults = [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:3001',
-  ];
-  return Array.from(new Set([...defaults, ...fromEnv]));
-}
+/** Dealership Portal + Platform Admin addresses that may frame this site and drive the live preview (see lib/origins.ts). */
+export { adminOrigins } from './origins';
 
 export function renderPage(ctx: ThemeContext, theme: Theme, r: string, origin: string, themePreview: boolean, live = false, override?: RenderOverride): string {
   const values: Record<string, string> = ctx.values || {};
