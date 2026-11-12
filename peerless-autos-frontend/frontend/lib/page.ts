@@ -4,6 +4,7 @@
  */
 import { colorVarMap, designCss, renderSource, renderTemplate, type Theme } from './engine';
 import { liveScript } from './live';
+import { withAdminLogin } from './admin-login';
 import { h, jsonHex } from './php';
 import { absSiteUrl, rel, siteTokens, siteTokensDisplay } from './tokens';
 
@@ -84,7 +85,8 @@ export function renderPage(ctx: ThemeContext, theme: Theme, r: string, origin: s
   if (override?.raw) Object.assign(raw, override.raw);
 
   const rctx = { values, tokens, raw, features: ctx.features || {}, live };
-  const html = override ? renderSource(theme, override.source, rctx) : renderTemplate(theme, r, rctx);
+  // every design gets the footer "Admin Login" link to the Peerless Dealer Portal (lib/admin-login.ts)
+  const html = withAdminLogin(override ? renderSource(theme, override.source, rctx) : renderTemplate(theme, r, rctx), values['global.footer.admin']);
   if (!live) return html;
   // editor preview: the portal can change texts / colours live and point at the text being edited
   const script = liveScript({ colorMap: colorVarMap(theme), origins: adminOrigins() });

@@ -9,7 +9,7 @@
  * Markers: {%text key | Default%} {%para%} {%head key hl="cls"%} {%link%} {%img%} {%js%} {%site key%} {%siteurl key%}
  *          {%sitejs key%} {%asset path%} {%raw NAME%} {%include file.html%} {%if site.x%}…{%endif%} {%show content.key%}…{%endshow%}
  */
-import { existsSync, readFileSync, readdirSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { CONTENT_FIELDS } from './content.schema';
 import { h, hDecode, isLocalAsset, jsonHex, nl2br, safeUrl } from './php';
@@ -35,11 +35,29 @@ export interface Theme {
   manifest: ThemeManifest;
 }
 
-const cache = new Map<string, unknown>();
-const cached = <T>(key: string, fn: () => T): T => {
+/** last-modified time of a file or folder (0 = missing) */
+const mtime = (p: string) => {
+  try {
+    return statSync(p).mtimeMs;
+  } catch {
+    return 0;
+  }
+};
+
+/**
+ * Parsed theme files, kept in memory in production. Each entry remembers the file's last-modified time, so a design
+ * uploaded again from Platform Admin (e.g. deleted and re-installed with the same version) is read fresh at once:
+ * one cheap stat per file instead of a restart or rebuild.
+ */
+const cache = new Map<string, { at: number; v: unknown }>();
+const cached = <T>(key: string, path: string, fn: () => T): T => {
   if (process.env.NODE_ENV !== 'production') return fn();
-  if (!cache.has(key)) cache.set(key, fn());
-  return cache.get(key) as T;
+  const at = mtime(path);
+  const hit = cache.get(key);
+  if (hit && hit.at === at) return hit.v as T;
+  const v = fn();
+  cache.set(key, { at, v });
+  return v;
 };
 
 const versionCmp = (a: string, b: string) => {
@@ -49,12 +67,25 @@ const versionCmp = (a: string, b: string) => {
   return 0;
 };
 
-/** pa_themes_installed: { id: [versions ascending] } — re-read every 15 s so designs installed from Platform Admin appear without a restart */
+/**
+ * pa_themes_installed: { id: [versions ascending] }. Re-read as soon as a design is added, re-installed or deleted
+ * (Platform Admin writes into themes/<id>/<version>, which changes the folders' modified times), and at least
+ * every 15 s, so uploads appear without a restart or rebuild.
+ */
 let installedAt = 0;
+let installedSig = '';
 let installedList: Record<string, string[]> | null = null;
+function themesSignature(): string {
+  if (!existsSync(THEMES_DIR)) return '';
+  let sig = String(mtime(THEMES_DIR));
+  for (const id of readdirSync(THEMES_DIR)) if (/^[a-z0-9][a-z0-9-]{1,39}$/.test(id)) sig += `|${id}:${mtime(join(THEMES_DIR, id))}`;
+  return sig;
+}
 export function themesInstalled(): Record<string, string[]> {
-  if (installedList && Date.now() - installedAt < 15_000) return installedList;
+  const sig = themesSignature();
+  if (installedList && sig === installedSig && Date.now() - installedAt < 15_000) return installedList;
   installedAt = Date.now();
+  installedSig = sig;
   return (installedList = (() => {
     const out: Record<string, string[]> = {};
     if (!existsSync(THEMES_DIR)) return out;
@@ -75,7 +106,8 @@ export function loadTheme(id: string, version: string): Theme {
   const vers = inst[tid];
   const ver = tid === id && vers.includes(version) ? version : vers[vers.length - 1];
   const dir = join(THEMES_DIR, tid, ver);
-  const manifest = cached(`m:${tid}@${ver}`, () => JSON.parse(readFileSync(join(dir, 'theme.json'), 'utf8')) as ThemeManifest);
+  const manifestPath = join(dir, 'theme.json');
+  const manifest = cached(`m:${tid}@${ver}`, manifestPath, () => JSON.parse(readFileSync(manifestPath, 'utf8')) as ThemeManifest);
   return { id: tid, version: ver, dir, url: `themes/${tid}/${ver}`, manifest };
 }
 
@@ -83,7 +115,7 @@ export function loadTheme(id: string, version: string): Theme {
 export function rawTemplate(theme: Theme, file: string): string {
   if (!/^[a-z0-9][a-z0-9_\-\/]*\.html$/.test(file) || file.includes('..')) return '';
   const path = join(theme.dir, file.includes('/') ? file : join('templates', file));
-  return cached(`f:${path}`, () => (existsSync(path) ? readFileSync(path, 'utf8') : ''));
+  return cached(`f:${path}`, path, () => (existsSync(path) ? readFileSync(path, 'utf8') : ''));
 }
 
 /** {%include x.html%} → the partial (up to 4 levels deep) */

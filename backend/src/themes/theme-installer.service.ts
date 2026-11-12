@@ -1,7 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { existsSync, readdirSync } from 'fs';
-import { copyFile, mkdir, rename, rm, writeFile } from 'fs/promises';
+import { copyFile, cp, mkdir, rename, rm, writeFile } from 'fs/promises';
 import { dirname, extname, join, resolve } from 'path';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -17,6 +17,8 @@ import type { AuthUser } from '../common/auth.types.js';
  *  - Activate for a dealership: pins one design version to one dealership only (history kept for rollback).
  *  - Roll back: restores the dealership's previous design.
  * The website app folder is ../frontend next to the backend; set WEBSITE_DIR in backend/.env when it lives elsewhere.
+ * Other website apps that render the same designs (the Peerless storefront, ../peerless-autos-frontend/frontend) get
+ * every install and delete too, see MIRROR_DIRS.
  */
 const MB = 1024 * 1024;
 const ASSET_EXT = ['css', 'js', 'json', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'svg', 'ico', 'woff', 'woff2', 'ttf', 'otf', 'mp4', 'webm', 'glb', 'gltf', 'bin'];
@@ -26,6 +28,29 @@ const SEMVER = /^\d+\.\d+\.\d+$/;
 export const WEBSITE_DIR = resolve(process.env.WEBSITE_DIR || join(process.cwd(), '..', 'frontend'));
 const TEMPLATES_ROOT = join(WEBSITE_DIR, 'themes');
 const ASSETS_ROOT = join(WEBSITE_DIR, 'public', 'themes');
+
+/**
+ * More website apps that read designs from their OWN folders (<dir>/themes and <dir>/public/themes) and so must get a
+ * copy of every design installed here: WEBSITE_MIRROR_DIRS in backend/.env (comma-separated), plus the Peerless
+ * storefront next to the backend (../peerless-autos-frontend/frontend) when it exists. Only folders that already have
+ * a themes/ folder are used, so a wrong path never creates a stray copy.
+ */
+export const MIRROR_DIRS: string[] = (() => {
+  const wanted = [
+    ...String(process.env.WEBSITE_MIRROR_DIRS || '').split(','),
+    join(process.cwd(), '..', 'peerless-autos-frontend', 'frontend'),
+  ]
+    .map((d) => d.trim())
+    .filter(Boolean)
+    .map((d) => resolve(d));
+  return [...new Set(wanted)].filter((d) => d !== WEBSITE_DIR && existsSync(join(d, 'themes')));
+})();
+
+/** <mirror>/themes/<id>/<version> and <mirror>/public/themes/<id>/<version> */
+const mirrorPaths = (dir: string, id: string, version?: string) => ({
+  site: version ? join(dir, 'themes', id, version) : join(dir, 'themes', id),
+  assets: version ? join(dir, 'public', 'themes', id, version) : join(dir, 'public', 'themes', id),
+});
 
 type Manifest = { id?: unknown; version?: unknown; name?: unknown; description?: unknown; style?: unknown; author?: unknown; preview?: unknown; pages?: unknown; design?: { colors?: unknown } };
 
@@ -70,11 +95,69 @@ export function installedVersions(id: string): string[] {
 }
 
 @Injectable()
-export class ThemeInstallerService {
+export class ThemeInstallerService implements OnModuleInit {
+  private readonly log = new Logger('Themes');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
   ) {}
+
+  /**
+   * Startup: every design version installed in the main website is copied to the other storefronts that lack it,
+   * so designs uploaded before a storefront was added (or while it was unreachable) appear there too.
+   */
+  async onModuleInit() {
+    if (!MIRROR_DIRS.length || !existsSync(TEMPLATES_ROOT)) return;
+    let copied = 0;
+    for (const id of readdirSync(TEMPLATES_ROOT)) {
+      if (!VALID_ID.test(id)) continue;
+      for (const version of installedVersions(id)) {
+        const r = await this.mirrorVersion(id, version);
+        copied += r.filter((x) => x.copied).length;
+      }
+    }
+    this.log.log(`Design folders: ${WEBSITE_DIR} (main)${MIRROR_DIRS.map((d) => ` + ${d}`).join('')}${copied ? ` · ${copied} missing design version(s) copied` : ''}`);
+  }
+
+  /**
+   * Copies one installed design version (templates + assets) from the main website to every mirror storefront.
+   * An installed version is never overwritten, like the main install; a mirror that fails is reported, not fatal.
+   */
+  async mirrorVersion(id: string, version: string): Promise<{ dir: string; copied: boolean; error?: string }[]> {
+    const out: { dir: string; copied: boolean; error?: string }[] = [];
+    if (!VALID_ID.test(id) || !SEMVER.test(version)) return out;
+    const srcSite = join(TEMPLATES_ROOT, id, version);
+    const srcAssets = join(ASSETS_ROOT, id, version);
+    if (!existsSync(join(srcSite, 'theme.json'))) return out;
+    for (const dir of MIRROR_DIRS) {
+      const dst = mirrorPaths(dir, id, version);
+      if (existsSync(join(dst.site, 'theme.json'))) {
+        out.push({ dir, copied: false });
+        continue;
+      }
+      // copy into a staging name first, then rename: the storefront never sees a half-copied design
+      const tmp = join(dir, 'themes', `.sync-${randomBytes(6).toString('hex')}`);
+      try {
+        await cp(srcSite, tmp, { recursive: true });
+        await mkdir(dirname(dst.site), { recursive: true });
+        await rm(dst.site, { recursive: true, force: true });
+        await rename(tmp, dst.site);
+        if (existsSync(srcAssets)) {
+          await rm(dst.assets, { recursive: true, force: true });
+          await mkdir(dirname(dst.assets), { recursive: true });
+          await cp(srcAssets, dst.assets, { recursive: true });
+        }
+        out.push({ dir, copied: true });
+      } catch (e) {
+        await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+        const error = (e as Error).message;
+        this.log.warn(`could not copy design ${id} ${version} to ${dir}: ${error}`);
+        out.push({ dir, copied: false, error });
+      }
+    }
+    return out;
+  }
 
   /** Validate & install a design ZIP. Returns the installed design; nothing is activated. */
   async install(buf: Buffer, fileName: string, user: AuthUser) {
@@ -221,8 +304,12 @@ export class ThemeInstallerService {
       create: { themeId: id, version, notes: `Installed from ${fileName.slice(0, 120)}` },
       update: {},
     });
-    await this.audit.record('theme.install', { actor: user.login, detail: { theme: id, version, file: fileName } });
-    return { ok: true, message: 'Theme validated and installed. It has not been activated yet.', theme: { id, name, version, isNew: !existing } };
+    // the other storefronts (Peerless) get the same files straight away
+    const mirrors = await this.mirrorVersion(id, version);
+    const failed = mirrors.filter((m) => m.error);
+    await this.audit.record('theme.install', { actor: user.login, detail: { theme: id, version, file: fileName, mirrors: mirrors.map((m) => ({ dir: m.dir, ok: !m.error })) } });
+    const note = failed.length ? ` Not copied to ${failed.map((m) => m.dir).join(', ')}: ${failed[0].error}. It is retried when the backend restarts.` : '';
+    return { ok: true, message: `Theme validated and installed. It has not been activated yet.${note}`, theme: { id, name, version, isNew: !existing }, mirrors };
   }
 
   /** Colour slots of a new design from theme.json design.colors (keyed by CSS variable). */
@@ -305,6 +392,12 @@ export class ThemeInstallerService {
       await rm(join(TEMPLATES_ROOT, id), { recursive: true, force: true }).catch(() => undefined);
       await rm(join(ASSETS_ROOT, id), { recursive: true, force: true }).catch(() => undefined);
       for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) await rm(join(process.cwd(), 'public', 'themes', id + ext), { force: true }).catch(() => undefined);
+      // and from the other storefronts (Peerless)
+      for (const dir of MIRROR_DIRS) {
+        const m = mirrorPaths(dir, id);
+        await rm(m.site, { recursive: true, force: true }).catch(() => undefined);
+        await rm(m.assets, { recursive: true, force: true }).catch(() => undefined);
+      }
     }
     await this.audit.record('theme.delete', { actor: user.login, detail: { theme: id, name: theme.name } });
     return { ok: true, message: `${theme.name} was deleted.` };

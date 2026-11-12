@@ -9,6 +9,8 @@
  * Published pages can also get a menu link: injectNav() adds it to the theme's desktop and mobile menus
  * on every page of the website.
  */
+import { statSync } from 'fs';
+import { join } from 'path';
 import { rawTemplate, type Theme } from './engine';
 import { renderPage, type ThemeContext } from './page';
 import { h, safeUrl } from './php';
@@ -569,14 +571,25 @@ function buildKit(theme: Theme): ThemeKit {
   };
 }
 
-/** per installed design version; re-checked every 30 s so a design deleted and installed again is picked up */
-const kits = new Map<string, { at: number; kit: ThemeKit }>();
+/**
+ * per installed design version. Rebuilt as soon as the design's files change (a design deleted and installed again
+ * from Platform Admin has new files), and at least every 30 s.
+ */
+const kits = new Map<string, { at: number; sig: string; kit: ThemeKit }>();
+const fileTime = (p: string) => {
+  try {
+    return statSync(p).mtimeMs;
+  } catch {
+    return 0;
+  }
+};
 export function kitFor(theme: Theme): ThemeKit {
   const key = theme.dir;
+  const sig = `${fileTime(join(theme.dir, 'theme.json'))}|${fileTime(join(theme.dir, 'templates', 'index.html'))}`;
   const hit = kits.get(key);
-  if (hit && Date.now() - hit.at < 30_000) return hit.kit;
+  if (hit && hit.sig === sig && Date.now() - hit.at < 30_000) return hit.kit;
   const kit = buildKit(theme);
-  kits.set(key, { at: Date.now(), kit });
+  kits.set(key, { at: Date.now(), sig, kit });
   return kit;
 }
 
