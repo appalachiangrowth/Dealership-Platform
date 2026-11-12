@@ -69,6 +69,8 @@ interface NavSlot {
   item: string; // {href} {label} {current}
   /** insert before this text inside the menu (e.g. the call button), otherwise at the end */
   before?: string;
+  /** the links sit in a list inside the menu element (e.g. "<ul"): they are added to that list */
+  inside?: string;
 }
 
 interface ThemeKit {
@@ -381,18 +383,123 @@ export const THEME_KITS: Record<string, ThemeKit> = {
   },
 };
 
-/**
- * Themes installed later: theme.json may describe its shell / links / menus ("custom_page"),
- * otherwise sensible guesses are used (a page with <main>, colours from design.colors).
+/* ============================================================================ any installed theme
+ * Custom pages must work in EVERY installed design — the built-in ones, a design uploaded later under a new id
+ * (Velocity), a new version of a design, or a design deleted and installed again. So a design is never matched by
+ * its id alone:
+ *   1. theme.json "custom_page" (if the theme describes itself) always wins;
+ *   2. otherwise the built-in kit whose layout the theme's markup actually uses (its own, or the one it was built
+ *      from — Velocity uses the Apex Drift header, menus and content area, so it gets the Apex kit);
+ *   3. otherwise the header + mobile menus are found in the theme's templates (detectNav) and the content area is
+ *      the theme's <main> (shellSource), so the pages still appear in the menu and inside the theme.
  */
-export function kitFor(theme: Theme): ThemeKit {
-  const known = THEME_KITS[theme.id];
-  const cp = (theme.manifest.custom_page || {}) as Partial<{ template: string; start: string; end: string; overlay_header: boolean; vars: Record<string, string>; nav: NavSlot[]; links: Partial<Record<'home' | 'inventory' | 'contact' | 'about' | 'category' | 'vehicle', string>> }>;
-  if (known && !theme.manifest.custom_page) return known;
+type CustomPageManifest = Partial<{
+  template: string;
+  start: string;
+  end: string;
+  overlay_header: boolean;
+  vars: Record<string, string>;
+  nav: NavSlot[];
+  links: Partial<Record<'home' | 'inventory' | 'contact' | 'about' | 'category' | 'vehicle', string>>;
+}>;
+
+/** a template with its {%include%} partials put in (themes like Classic keep the header in a partial) */
+function fullTemplate(theme: Theme, file: string): string {
+  let src = rawTemplate(theme, file);
+  for (let i = 0; i < 4 && src.includes('{%include'); i++) {
+    src = src.replace(/\{%include\s+([a-z0-9_\-\/]+\.html)\s*%\}/g, (_m, f: string) => rawTemplate(theme, 'partials/' + f.split('/').pop()));
+  }
+  return src;
+}
+
+/** the theme's markup uses this built-in kit's layout: same content area markers and at least one of its menus */
+function usesLayoutOf(theme: Theme, kit: ThemeKit): boolean {
+  const src = rawTemplate(theme, kit.shell.template);
+  if (!src) return false;
+  if (kit.shell.start && !src.includes(kit.shell.start)) return false;
+  if (kit.shell.end && !src.includes(kit.shell.end)) return false;
+  if (kit.shell.header && !kit.shell.header.test(src)) return false;
+  const full = fullTemplate(theme, kit.shell.template);
+  return kit.nav.some((s) => full.includes(s.open));
+}
+
+const MENU_HINT = /(^|[\s"'_-])(nav|navbar|navigation|menu|drawer|offcanvas|sidebar|mobile)/i;
+const NOT_A_MENU = /breadcrumb|pagination|pager|social|footer|tabs?\b|filter|sort/i;
+/** links to other pages of the website (not #anchors, phone, e-mail, outside sites or dealer links) */
+const PAGE_LINK = /<a\s[^>]*href="(?!#|tel:|mailto:|https?:|\{%)[^"]+"/gi;
+
+/**
+ * Finds the theme's header menu and mobile menu(s) in its templates, for designs that no kit knows.
+ * A menu is a <nav> (or an element whose class/id says nav/menu/drawer/mobile) above the footer that links to at
+ * least two pages of the website; the element that holds the links itself is used.
+ */
+function detectNav(theme: Theme, files: string[]): NavSlot[] {
+  const out: NavSlot[] = [];
+  const seen = new Set<string>();
+  for (const file of files) {
+    const src = fullTemplate(theme, file);
+    if (!src) continue;
+    const foot = src.search(/<footer\b/i);
+    const limit = foot < 0 ? src.length : foot;
+    const found: { s: number; e: number; open: string; tag: string }[] = [];
+    const re = /<(nav|ul|ol|div|aside)\b([^>]*)>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(src)) && m.index < limit) {
+      const tag = m[1].toLowerCase();
+      const attrs = m[2];
+      const idClass = (attrs.match(/\s(?:id|class)="[^"]*"/gi) || []).join(' ');
+      if (tag !== 'nav' && !MENU_HINT.test(idClass)) continue;
+      if (NOT_A_MENU.test(idClass) || /aria-label="[^"]*(breadcrumb|pagination)/i.test(attrs)) continue;
+      const e = closeOf(src, m.index, tag);
+      if (e < 0) continue;
+      if ((src.slice(m.index + m[0].length, e).match(PAGE_LINK) || []).length < 2) continue;
+      found.push({ s: m.index, e, open: m[0], tag });
+    }
+    // the element that holds the links itself (a <div class="menu"><nav>…</nav></div> → the <nav>)
+    const holders = found.filter((c) => !found.some((o) => o !== c && o.s > c.s && o.e <= c.e));
+    for (const c of holders) {
+      // the start of the opening tag up to the first template marker: it reads the same on the rendered page
+      let open = c.open;
+      const marker = open.indexOf('{%');
+      if (marker > 0) open = open.slice(0, marker);
+      if (open.length < 5 || seen.has(open)) continue;
+      // a bare <nav> / <ul> could be any menu on the page — it must be unique in the template
+      if (src.split(open).length - 1 !== 1) continue;
+      seen.add(open);
+      const body = src.slice(c.s + c.open.length, c.e);
+      // links inside a list: <ul><li><a>, or <nav><ul><li><a> (then they go into that list)
+      const list = c.tag === 'nav' || c.tag === 'div' || c.tag === 'aside' ? body.match(/^\s*<(ul|ol)\b/i) : null;
+      const inList = /^(ul|ol)$/.test(c.tag) || /^\s*<li\b/i.test(body) || !!list;
+      const anchors = body.match(/<a\s[^>]*>/gi) || [];
+      const plain = anchors.find((a) => !/class="[^"]*\b(btn|button|cta|logo)\b/i.test(a)) || '';
+      const cls = ((plain.match(/\sclass="([^"{]*)"/) || [])[1] || '').replace(/\b(active|is-active|current)\b/g, '').replace(/\s+/g, ' ').trim();
+      const a = `<a${cls ? ` class="${cls}"` : ''} href="{href}"{current}>{label}</a>`;
+      // a call / quote button at the end of the menu stays the last item
+      const last = anchors[anchors.length - 1] || '';
+      const btn = /class="[^"]*\b(btn|button|cta)\b/i.test(last) ? (last.match(/class="[^"]*"/i) || [])[0] : undefined;
+      out.push({ open, item: inList ? `<li>${a}</li>` : a, ...(btn ? { before: btn } : {}), ...(list ? { inside: '<' + list[1].toLowerCase() } : {}) });
+      if (out.length >= 4) return out;
+    }
+  }
+  return out;
+}
+
+/** the {c:--x} colour variables a value uses are all colours of this theme */
+const usesOwnColours = (value: string, names: Set<string>) => [...value.matchAll(/\{c:(--[a-z0-9-]+)\}/gi)].every((x) => names.has(x[1]));
+
+function buildKit(theme: Theme): ThemeKit {
+  const cp = (theme.manifest.custom_page || {}) as CustomPageManifest;
+  const own = THEME_KITS[theme.id];
+  // a built-in design, unchanged layout, nothing in theme.json: exactly as before
+  if (own && !theme.manifest.custom_page && usesLayoutOf(theme, own)) return own;
+  // the built-in layout this theme is made of (a new design built from Apex Drift, or a new version of a design)
+  const base = Object.values(THEME_KITS).find((k) => usesLayoutOf(theme, k));
+
   const pages = (theme.manifest.pages || []).map((p) => p.template);
   const has = (t: string) => pages.includes(t);
   const template = cp.template || ['pages.html', 'about-us.html', 'contact-us.html', 'inventory.html', 'index.html'].find(has) || 'index.html';
   const colors = theme.manifest.design?.colors || [];
+  const names = new Set(colors.flatMap((c) => [c.var, ...(Array.isArray(c.also) ? c.also : [])]));
   const pick = (re: RegExp) => colors.find((c) => re.test(c.var + ' ' + c.label));
   const primary = colors[0];
   const dark = pick(/dark|navy|night|asphalt/i);
@@ -404,11 +511,17 @@ export function kitFor(theme: Theme): ThemeKit {
     about: cp.links?.about || (has('about-us.html') ? 'about-us.html' : './#/about'),
     category: tpl(cp.links?.category, (c) => (has(`used-${c}.html`) ? `used-${c}.html` : has('inventory.html') ? 'inventory.html' : './#/inventory')),
     vehicle: cp.links?.vehicle ? (v) => cp.links!.vehicle!.replace('{id}', vid(v)) : has('vehicle.html') ? (v) => `vehicle.html?id=${vid(v)}` : (v) => `./#/vehicle/${vid(v)}`,
+    ...(has('inventory.html') ? { make: (m: string) => `inventory.html?make=${encodeURIComponent(m)}` } : {}),
   };
+  // menus: theme.json → the matching built-in layout → found in the templates → the old kit of this id
+  const detected = (cp.nav || base) ? [] : detectNav(theme, [template, 'index.html', ...pages.filter((p) => p !== template && p !== 'index.html')]);
+  const nav = cp.nav || base?.nav || (detected.length ? detected : own?.nav) || [];
+  // colours of the matching layout, as long as this theme has those colour variables
+  const baseVars = Object.fromEntries(Object.entries(base?.vars || own?.vars || {}).filter(([, v]) => usesOwnColours(v, names)));
   return {
-    shell: known && !cp.template ? known.shell : { template, start: cp.start || '', end: cp.end || '', overlayHeader: !!cp.overlay_header },
-    links: known && !cp.links ? known.links : links,
-    nav: cp.nav || known?.nav || [],
+    shell: cp.template || !base ? { template, start: cp.start || '', end: cp.end || '', overlayHeader: !!cp.overlay_header } : base.shell,
+    links: cp.links || !base ? links : base.links,
+    nav,
     vars: {
       ...THEME_KITS.classic.vars,
       '--pa-primary': primary ? `{c:${primary.var}}` : '#2563EB',
@@ -419,12 +532,24 @@ export function kitFor(theme: Theme): ThemeKit {
       '--pa-fh': 'inherit',
       '--pa-fb': 'inherit',
       '--pa-fe': 'inherit',
-      ...(known?.vars || {}),
+      ...baseVars,
       ...(cp.vars || {}),
     },
-    css: known?.css,
-    fonts: known?.fonts,
+    // the skin only where the markup is the one it was made for
+    css: base?.css,
+    fonts: base?.fonts,
   };
+}
+
+/** per installed design version; re-checked every 30 s so a design deleted and installed again is picked up */
+const kits = new Map<string, { at: number; kit: ThemeKit }>();
+export function kitFor(theme: Theme): ThemeKit {
+  const key = theme.dir;
+  const hit = kits.get(key);
+  if (hit && Date.now() - hit.at < 30_000) return hit.kit;
+  const kit = buildKit(theme);
+  kits.set(key, { at: Date.now(), kit });
+  return kit;
 }
 
 /* ============================================================================ the shell */
@@ -511,25 +636,43 @@ export function injectNav(html: string, theme: Theme, items: NavItem[], current 
   if (!items.length) return html;
   const kit = kitFor(theme);
   for (const slot of kit.nav) {
-    const at = html.indexOf(slot.open);
+    let at = html.indexOf(slot.open);
     if (at < 0) continue;
-    const tag = (slot.open.match(/^<([a-z0-9]+)/i) || [])[1];
+    let tag = (slot.open.match(/^<([a-z0-9]+)/i) || [])[1];
     if (!tag) continue;
-    const close = closeOf(html, at, tag);
+    let close = closeOf(html, at, tag);
     if (close < 0) continue;
+    if (slot.inside) {
+      // the list inside the menu element
+      const li = html.indexOf(slot.inside, at + 1);
+      const ltag = (slot.inside.match(/^<([a-z0-9]+)/i) || [])[1];
+      const lclose = li > at && li < close && ltag ? closeOf(html, li, ltag) : -1;
+      if (lclose > li && lclose <= close) {
+        at = li;
+        tag = ltag!;
+        close = lclose;
+      }
+    }
     const links = items
       .map((i) =>
         slot.item
           .replace(/\{href\}/g, h(i.slug))
           .replace(/\{slug\}/g, h(i.slug))
           .replace(/\{label\}/g, h(i.label))
-          .replace(/\{current\}/g, i.slug === current ? ' aria-current="page" class="active is-active"' : ''),
+          .replace(/\{current\}/g, i.slug === current ? ' aria-current="page" class="active is-active"' : '')
+          // one class attribute when the menu links have their own class
+          .replace(/(<a\b[^>]*?\sclass=")([^"]*)("[^>]*?) class="active is-active"/, '$1$2 active is-active$3'),
       )
       .join('');
     let at2 = close;
     if (slot.before) {
       const b = html.lastIndexOf(slot.before, close);
-      const tagStart = b > at ? html.lastIndexOf('<', b) : -1;
+      let tagStart = b > at ? html.lastIndexOf('<', b) : -1;
+      // list menus: before the button's <li>
+      if (tagStart > at && slot.item.startsWith('<li')) {
+        const liStart = html.lastIndexOf('<li', tagStart);
+        if (liStart > at && !html.slice(liStart, tagStart).includes('</li>')) tagStart = liStart;
+      }
       if (tagStart > at) at2 = tagStart;
     }
     html = html.slice(0, at2) + links + html.slice(at2);

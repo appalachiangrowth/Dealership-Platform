@@ -46,8 +46,15 @@ versions are never overwritten. See `INSTALL-THEME-ZIP-INSTALLER.md` for the ful
 ## Custom pages (Platform Admin › Pages & SEO)
 Custom pages are drawn inside your theme: the website takes one of your page templates, keeps its `<head>`, header,
 footer and scripts, and puts the page's sections where the main content was. The built-in themes are described in
-`frontend/lib/custom-pages.ts` (THEME_KITS). A new theme works without changes (it uses `<main>` or the space between
-`</header>` and the last `<footer>`, and its `design.colors`), or it can describe itself in theme.json:
+`frontend/lib/custom-pages.ts` (THEME_KITS). Custom pages follow EVERY installed design automatically — a new design,
+a new version, or a design deleted and installed again — without code changes:
+- a design built from one of the built-in ones (same header/menus/content area, e.g. Velocity from Apex Drift) is
+  recognised by its markup and gets that design's layout and styling;
+- any other design: its header menu and mobile menu are found in its templates (a `<nav>`, or an element whose
+  class/id says nav/menu/drawer/mobile, above the footer, linking to 2+ pages), the content goes inside its `<main>`
+  (or between `</header>` and the last `<footer>`), and the colours come from its `design.colors`.
+
+If a design's menus are unusual, it can describe itself in theme.json (this always wins):
 
 ```json
 "custom_page": {
