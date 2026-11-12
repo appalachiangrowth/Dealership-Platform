@@ -36,7 +36,8 @@ export interface RenderOverride {
 }
 
 /** Dealership Portal + Platform Admin addresses that may frame this site and drive the live preview (see lib/origins.ts). */
-export { adminOrigins } from './origins';
+import { adminOrigins } from './origins';
+export { adminOrigins };
 
 export function renderPage(ctx: ThemeContext, theme: Theme, r: string, origin: string, themePreview: boolean, live = false, override?: RenderOverride): string {
   const values: Record<string, string> = ctx.values || {};
