@@ -1,0 +1,71 @@
+{
+  "title": "Car Financing",
+  "slug": "financing",
+  "tenantId": "all",
+  "showInNav": true,
+  "navLabel": "Financing",
+  "navOrder": 10,
+  "seo": {
+    "title": "Car Financing | {name}",
+    "description": "Easy auto financing at {name} for every credit situation. Apply online in minutes.",
+    "image": "",
+    "noindex": false
+  },
+  "sections": [
+    {
+      "type": "hero",
+      "eyebrow": "Financing",
+      "title": "Drive today, pay *your way*",
+      "text": "Fast approvals at {name} — good credit, bad credit or no credit.",
+      "image": "",
+      "height": "m",
+      "buttons": [
+        { "label": "Apply now", "link": "contact" },
+        { "label": "Call us", "link": "call" }
+      ]
+    },
+    {
+      "type": "cards",
+      "tone": "page",
+      "eyebrow": "Why us",
+      "title": "Financing made *simple*",
+      "align": "center",
+      "columns": 3,
+      "items": [
+        { "icon": "✓", "title": "All credit welcome", "text": "We work with every credit situation." },
+        { "icon": "⚡", "title": "Quick decisions", "text": "Most answers the same day." },
+        { "icon": "$", "title": "Low payments", "text": "Terms that fit your budget." }
+      ]
+    },
+    {
+      "type": "html",
+      "tone": "alt",
+      "html": "<style>.pg-steps{counter-reset:s}.pg-step{position:relative;padding-left:72px}.pg-step::before{counter-increment:s;content:counter(s);position:absolute;left:24px;top:26px;width:36px;height:36px;display:grid;place-items:center;border-radius:50%;background:var(--pa-primary);color:var(--pa-on-primary);font:700 16px var(--pa-fh)}</style><div class=\"pa-head pa-center\"><p class=\"pa-eyebrow\">How it works</p><h2 class=\"pa-title\">Approved in <span class=\"pa-hl\">3 steps</span></h2></div><div class=\"pa-grid pa-cols-3 pg-steps\"><div class=\"pa-card pg-step\"><h3>Apply online</h3><p>Two minutes, any credit.</p></div><div class=\"pa-card pg-step\"><h3>Pick your car</h3><p>Choose from our inventory.</p></div><div class=\"pa-card pg-step\"><h3>Drive home</h3><p>Sign and go the same day.</p></div></div>"
+    },
+    {
+      "type": "inventory",
+      "title": "Cars under *$15k*",
+      "align": "center",
+      "limit": 6,
+      "columns": 3,
+      "filter": { "maxPrice": 15000, "sort": "price_asc" },
+      "buttonLabel": "View all inventory"
+    },
+    {
+      "type": "faq",
+      "title": "Common questions",
+      "items": [
+        { "q": "Do I need a down payment?", "a": "Not always. **Ask us** about zero-down options." },
+        { "q": "Can I finance with bad credit?", "a": "Yes — we work with many lenders.\n\n[Contact us](contact) to get started." }
+      ]
+    },
+    {
+      "type": "form",
+      "tone": "dark",
+      "title": "Get *pre-approved*",
+      "text": "Send us a few details and we will call you back.",
+      "topic": "Financing inquiry",
+      "buttonLabel": "Send"
+    }
+  ]
+}
