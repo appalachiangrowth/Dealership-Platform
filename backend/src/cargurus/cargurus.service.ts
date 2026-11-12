@@ -572,7 +572,8 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
   /** The approved feed that is sent / served to CarGurus. */
   async liveFeed(tenantId: string) {
     const sub = await this.prisma.cargurusSubmission.findFirst({ where: { tenantId, status: 'APPROVED' }, orderBy: { reviewedAt: 'desc' } });
-    return sub?.feedCsv ?? null;
+    // feeds approved before the fee wording was removed: clean the comments on the way out (prices unchanged)
+    return cg.scrubFeedCsv(sub?.feedCsv ?? null);
   }
 
   /** Uploads the live feed to the dealer's CarGurus FTP (when set). Used by Approve, Re-send and the daily job. */

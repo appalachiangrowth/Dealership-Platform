@@ -113,6 +113,63 @@ export const vehicleTemplate = () => COLUMNS.filter((c) => c[3] === 'vehicle').m
 export const columnsInfo = () => COLUMNS.map(([key, lab, mandatory, source]) => ({ key, label: lab, mandatory, source }));
 export const norm = (h: string) => String(h).trim().toLowerCase().replace(/[^a-z0-9#]/g, '');
 
+/**
+ * Dealer comments for CarGurus never mention the processing fee: it is already added to the Price column
+ * (exportValues / ingestRows), so a "Processing fee: $499." line would show a fee CarGurus has already counted.
+ * Removes the fee wording only (amounts, "plus $499 doc fee", whole fee sentences or lines) and tidies the
+ * punctuation and spacing left behind. The price is never touched here.
+ */
+const FEE_WORDS = String.raw`(?:processing|doc(?:ument(?:ation)?)?|dealer|admin(?:istrative)?|handling)[ \t]*fees?`;
+const MONEY = String.raw`\$?[ \t]*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?(?:[ \t]*(?:usd|dollars))?`;
+const FEE_INLINE = [
+  // "Processing fee: $499", "plus processing fee of $499", "Doc fee - $499", "processing fee is $499" (fee word first,
+  // so a base price written before it — "Price $20,000 processing fee $499" — is never taken)
+  new RegExp(String.raw`[ \t]*[(\[]?[ \t]*(?:,[ \t]*)?(?:(?:plus|and|with|incl(?:\.|uding)?)\b|\+)?[ \t]*(?:(?:a|an|the|our)[ \t]+)?${FEE_WORDS}[ \t]*(?:of|is|=|:|-|–|—)?[ \t]*${MONEY}[ \t]*[)\]]?`, 'gi'),
+  // "plus $499 processing fee", "+ $499 doc fee", "($499 dealer fee)" — only with a connector or bracket in front
+  new RegExp(String.raw`[ \t]*(?:,[ \t]*)?(?:[(\[]|(?:plus|and|with|incl(?:\.|uding)?)\b|\+)[ \t]*${MONEY}[ \t]*${FEE_WORDS}[ \t]*[)\]]?`, 'gi'),
+];
+const FEE_MENTION = new RegExp(String.raw`\b${FEE_WORDS}\b`, 'i');
+
+export function stripFeeText(input: unknown): string {
+  let s = String(input ?? '');
+  if (!s.trim() || !/fee/i.test(s)) return s.trim();
+  for (const re of FEE_INLINE) s = s.replace(re, ' ');
+  // any sentence / line that still talks about the fee goes as a whole
+  s = s
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .split(/(?<=[.!?])\s+/)
+        .filter((sentence) => !FEE_MENTION.test(sentence))
+        .join(' '),
+    )
+    .join('\n');
+  return s
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ +([.,;:!?)\]])/g, '$1') // "Price $20,000 ." -> "Price $20,000."
+    .replace(/([(\[]) +/g, '$1')
+    .replace(/\(\s*\)|\[\s*\]/g, '') // empty brackets
+    .replace(/([.,;:!?])(?:[ \t]*[.,;:])+/g, '$1') // ". ." / ", ." / ".," -> one mark
+    .replace(/[ \t]*([|•·\/]|\s-\s|\s–\s|\s—\s)[ \t]*(?:(?:[|•·\/]|-|–|—)[ \t]*)+/g, (_m, sep) => ` ${String(sep).trim()} `) // "a | | b" -> "a | b"
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l !== '' && !/^[-–—•*|·,.;:]+$/.test(l)) // empty lines and orphaned separator lines
+    .join('\n')
+    .replace(/^[\s\-–—•*|·,;:]+|[\s\-–—•*|·,;:]+$/g, '') // leading / trailing separators
+    .trim();
+}
+
+/** A stored CarGurus CSV with the processing fee wording taken out of "Dealer comments on vehicle" (prices untouched). */
+export function scrubFeedCsv(text: string | null | undefined): string | null {
+  if (text === null || text === undefined) return null;
+  if (!/fee/i.test(text)) return text;
+  const [h, rows] = parse(text);
+  const ic = h.findIndex((x) => norm(x) === norm('Dealer comments on vehicle'));
+  if (ic < 0 || !h.length) return text;
+  const out = [h, ...rows.map((r) => r.map((v, i) => (i === ic ? stripFeeText(v) : v)))];
+  return out.map((r) => r.map(csvCell).join(',')).join('\n') + '\n';
+}
+
 /** RFC-4180 style CSV line splitter for one delimiter (handles quotes and new lines inside quotes). */
 function parseDelimited(text: string, delim: string): string[][] {
   const rows: string[][] = [];
@@ -297,7 +354,7 @@ export function ingestRows(headers: string[] | null, rows: (string[] | Record<st
       mileage: m !== '' && !isNaN(+m) ? Math.trunc(+m) : 0,
       images: imgs,
       ext: raw.ext.replace(/\s+/g, ' '),
-      comments: raw.comments.replace(/\s+/g, ' ').trim(),
+      comments: stripFeeText(raw.comments).replace(/\s+/g, ' ').trim(),
       stock: st,
       trans: raw.trans.replace(/\s+/g, ' '),
       options: raw.options
@@ -365,7 +422,7 @@ export function exportValues(r: CgRecord, m: DealerMeta): string[] {
     String(Math.trunc(r.mileage)),
     r.images.map((u) => u.replace(/,/g, '%2C')).join(','),
     r.ext,
-    r.comments,
+    stripFeeText(r.comments),
     r.stock,
     r.trans,
     r.options,

@@ -178,7 +178,7 @@ export class FeedsService {
         mileage: v.mileage !== null ? String(v.mileage) : '',
         images: v.images.map((u) => this.absUrl(u, site)),
         ext: v.exteriorColor,
-        comments: v.description,
+        comments: cg.stripFeeText(v.description), // CarGurus Dealer Comments: no processing fee wording (it is in Price)
         stock: v.stockNumber,
         trans: v.transmission,
         options: [...v.features, ...v.safetyFeatures],
@@ -249,7 +249,7 @@ export class FeedsService {
           tag('dealLabel', v.dealLabel),
           tag('featured', v.featured ? 'true' : 'false'),
           tag('status', 'published'),
-          tag('description', v.description),
+          tag('description', cg.stripFeeText(v.description)), // the fee is in the price, never in the text
           list('features', 'feature', v.features),
           list('safetyFeatures', 'feature', v.safetyFeatures),
           tag('vehicleUrl', `${site}/index.html#/vehicle/${encodeURIComponent(v.legacyId || v.id)}`),
