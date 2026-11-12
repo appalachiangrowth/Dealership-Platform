@@ -66,3 +66,16 @@ If a design's menus are unusual, it can describe itself in theme.json (this alwa
   "vars": { "--pa-primary": "var(--brand)", "--pa-bg": "#fff", "--pa-fh": "var(--font-heading)" }
 }
 ```
+
+## Header menu & dropdowns (Platform Admin › Pages & SEO › Header menu)
+The custom pages can be arranged as top-level links and dropdowns (e.g. "Financing" with 3–4 pages under it). The
+website adds them after the theme's own links in every menu the custom pages use (see above):
+- desktop menus get a dropdown — the theme's own dropdown markup when its kit has one (`dd` in THEME_KITS, e.g. the
+  Apex Drift / Velocity `.nav-group` / `.nav-dropdown`), otherwise a shared `.pa-dd` dropdown whose colours are taken
+  from the header it sits in (opens on hover, keyboard focus and tap);
+- mobile / drawer menus (`mobile: true`, or detected by a class/id like mobile, drawer, offcanvas) list the dropdown's
+  entries indented under its title.
+A theme can describe its own dropdown in theme.json under `custom_page.nav[].dd`:
+`{ "wrap": "<div class=\"has-sub\">{trigger}<div class=\"sub\">{items}</div></div>", "trigger": "<a href=\"{href}\">{label}</a>", "child": "<a href=\"{href}\">{label}</a>" }`
+and mark its mobile menu with `"mobile": true`.
+

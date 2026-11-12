@@ -24,6 +24,35 @@ export const SECTION_DEFS: SectionDef[] = [
     make: () => ({ type: 'hero', eyebrow: '', title: 'Page *headline*', text: 'A short sentence that tells visitors what this page is about.', buttons: [{ label: 'Browse inventory', link: 'inventory' }], height: 'm', align: 'left', image: '', overlay: 55 }),
   },
   {
+    type: 'header',
+    label: 'Custom header',
+    icon: '🎨',
+    desc: 'A page header you design yourself: background colour, gradient or picture, text colour, alignment, height, buttons and custom HTML / CSS.',
+    make: () => ({
+      type: 'header',
+      eyebrow: '',
+      title: 'Your *custom* header',
+      subtitle: 'A short line under the heading.',
+      bg: 'gradient',
+      bgColor: '#0F172A',
+      gradFrom: '#0F172A',
+      gradTo: '#2563EB',
+      gradAngle: 135,
+      image: '',
+      imagePos: 'center',
+      overlay: 50,
+      textColor: 'auto',
+      accent: '',
+      align: 'left',
+      height: 'm',
+      width: 'narrow',
+      level: 'h1',
+      buttons: [{ label: 'Browse inventory', link: 'inventory' }],
+      html: '',
+      css: '',
+    }),
+  },
+  {
     type: 'text',
     label: 'Text',
     icon: '📝',
@@ -146,6 +175,30 @@ export const LINKS: [string, string][] = [
   ['category:trucks', 'Trucks'],
   ['category:wagons', 'Wagons'],
 ];
+
+/** Header menu: quick links that follow the theme (inventory page, body style pages …) */
+export const MENU_LINKS: [string, string][] = [
+  ['inventory', 'Inventory page'],
+  ['contact', 'Contact page'],
+  ['about', 'About page'],
+  ['home', 'Home page'],
+  ['category:cars', 'Used cars'],
+  ['category:sedans', 'Sedans'],
+  ['category:suvs', 'SUVs'],
+  ['category:trucks', 'Trucks'],
+  ['category:wagons', 'Wagons'],
+];
+
+/** one entry of a website's header menu (Pages & SEO › Header menu) */
+export type MenuItem = {
+  id: string;
+  type: 'page' | 'group' | 'link';
+  slug?: string;
+  url?: string;
+  label: string;
+  hidden: boolean;
+  children?: MenuItem[];
+};
 
 export const CATEGORIES: [string, string][] = [
   ['', 'All body styles'],

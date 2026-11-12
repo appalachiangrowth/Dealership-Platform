@@ -251,6 +251,7 @@ model Tenant {
   fbListings         FbListing[]
   fbPostRuns         FbPostRun[]
   sitePages          SitePage[]
+  siteMenu           SiteMenu?
 
   @@index([status])
 }
@@ -795,4 +796,19 @@ model SitePage {
 
   @@index([tenantId, status])
   @@index([slug])
+}
+
+/// Platform Admin › Pages & SEO › Header menu: how the custom pages are arranged in a website's header —
+/// top-level links and dropdowns. No row = automatic (every published page with "Show in the menu", by order).
+model SiteMenu {
+  id        String   @id @default(uuid())
+  /// null = the menu of every dealership that has no menu of its own
+  tenantId  String?  @unique
+  /// [{ id, type: "page" | "group" | "link", slug?, url?, label, hidden, children: [{ id, type: "page" | "link", … }] }]
+  items     Json     @default("[]")
+  updatedBy String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }

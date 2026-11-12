@@ -47,8 +47,28 @@ async function context(host: string, previewTheme?: string) {
   return { ctx: await res.json() };
 }
 
-/** menu links for the published custom pages (Platform Admin › Pages & SEO) that are "shown in the menu" */
+/**
+ * The header menu (Platform Admin › Pages & SEO › Header menu): top-level links and dropdowns. Without a saved menu
+ * (or from an older API): the published custom pages that are "shown in the menu", in their order.
+ */
 function navItems(ctx: ThemeContext): NavItem[] {
+  if (Array.isArray(ctx.menu)) {
+    const entry = (e: unknown, top: boolean): NavItem | null => {
+      if (!e || typeof e !== 'object') return null;
+      const o = e as { label?: unknown; slug?: unknown; url?: unknown; children?: unknown };
+      const label = String(o.label || '').trim();
+      if (!label) return null;
+      const item: NavItem = { label };
+      if (typeof o.slug === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(o.slug)) item.slug = o.slug;
+      else if (typeof o.url === 'string' && o.url) item.url = o.url;
+      if (top && Array.isArray(o.children)) {
+        const kids = o.children.map((c) => entry(c, false)).filter((c): c is NavItem => !!c && !!(c.slug || c.url));
+        if (kids.length) item.children = kids;
+      }
+      return item.slug || item.url || item.children ? item : null;
+    };
+    return ctx.menu.map((e) => entry(e, true)).filter((e): e is NavItem => !!e);
+  }
   return (ctx.pages || []).filter((p) => p.showInNav).map((p) => ({ slug: p.slug, label: p.navLabel || p.title }));
 }
 
@@ -156,7 +176,7 @@ async function page(req: Request, { params }: Ctx) {
   // ?pa_live=1 — live preview inside the Dealership Portal editors (texts / colours update while typing)
   const live = url.searchParams.get('pa_live') === '1';
   // menu links of the custom pages (not in the editor preview: the dealer edits the theme's own texts there)
-  const html = injectNav(renderPage(ctx, theme, r, originOf(req), themePreview, live), theme, live ? [] : navItems(ctx));
+  const html = injectNav(renderPage(ctx, theme, r, originOf(req), themePreview, live), theme, live ? [] : navItems(ctx), '', siteTokens(ctx.settings, originOf(req)));
   return new Response(html, {
     headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': themePreview || live ? 'no-store' : 'no-cache' }),
   });

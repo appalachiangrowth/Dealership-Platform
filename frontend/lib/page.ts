@@ -16,6 +16,16 @@ export interface ThemeContext {
   features: Record<string, boolean>;
   /** published custom pages (Platform Admin › Pages & SEO): menu links + sitemap */
   pages?: { slug: string; title: string; navLabel: string; showInNav: boolean; navOrder: number; noindex: boolean }[];
+  /** the header menu from Pages & SEO › Header menu: top-level entries and dropdowns (null / missing = automatic from `pages`) */
+  menu?: MenuEntry[] | null;
+}
+
+/** a header menu entry: a custom page (slug), an address or quick link (url), or a dropdown title; children = its dropdown */
+export interface MenuEntry {
+  label: string;
+  slug?: string;
+  url?: string;
+  children?: MenuEntry[];
 }
 
 /** Custom pages: render this template text instead of a theme file, at this address, with these extra values. */

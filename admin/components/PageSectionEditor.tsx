@@ -259,6 +259,95 @@ function Heading({ s, set, intro = true }: { s: Section; set: SetFn; intro?: boo
   );
 }
 
+/** a colour: picker + text box (#hex, rgb(), or a theme variable like var(--color-primary)) */
+function ColorField({ label, value, onChange, hint }: { label: string; value: string; onChange: (v: string) => void; hint?: string }) {
+  const hex = /^#[0-9a-f]{6}$/i.test(value || '') ? value : '#000000';
+  return (
+    <Field label={label} hint={hint}>
+      <div className="flex items-center gap-2">
+        <input type="color" value={hex} onChange={(e) => onChange(e.target.value)} className="h-9 w-11 shrink-0 cursor-pointer rounded-lg border border-slate-300 bg-white p-1" />
+        <Input value={value || ''} onChange={(e) => onChange(e.target.value)} placeholder="#0F172A" className="font-mono text-xs" />
+      </div>
+    </Field>
+  );
+}
+
+/** Custom header: background, text colour, layout, buttons, custom HTML / CSS */
+function CustomHeaderFields({ s, set }: { s: Section; set: SetFn }) {
+  const bg = s.bg || 'gradient';
+  return (
+    <>
+      <Txt s={s} k="eyebrow" set={set} label="Small text above the heading (optional)" />
+      <Txt s={s} k="title" set={set} label="Heading" hint="Put *stars* around a word to show it in the accent colour." />
+      <Area s={s} k="subtitle" set={set} label="Subtitle" rows={2} />
+
+      <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Background</div>
+        <Choice
+          label="Type"
+          value={bg}
+          onChange={(v) => set({ bg: v })}
+          options={[
+            ['theme', "Theme's dark header look"],
+            ['brand', 'Brand colour'],
+            ['color', 'One colour'],
+            ['gradient', 'Gradient'],
+            ['image', 'Picture'],
+          ]}
+        />
+        {bg === 'color' && <ColorField label="Colour" value={s.bgColor} onChange={(v) => set({ bgColor: v })} />}
+        {bg === 'gradient' && (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <ColorField label="From" value={s.gradFrom} onChange={(v) => set({ gradFrom: v })} />
+              <ColorField label="To" value={s.gradTo} onChange={(v) => set({ gradTo: v })} />
+            </div>
+            <Field label={`Direction: ${s.gradAngle ?? 135}°`}>
+              <input type="range" min={0} max={360} step={5} value={s.gradAngle ?? 135} onChange={(e) => set({ gradAngle: Number(e.target.value) })} className="w-full" />
+            </Field>
+          </>
+        )}
+        {bg === 'image' && (
+          <>
+            <ImageField value={s.image} onChange={(v) => set({ image: v })} label="Background picture" />
+            <Field label={`Darken the picture: ${s.overlay ?? 50}%`}>
+              <input type="range" min={0} max={90} value={s.overlay ?? 50} onChange={(e) => set({ overlay: Number(e.target.value) })} className="w-full" />
+            </Field>
+            <Choice label="Picture focus" value={s.imagePos || 'center'} onChange={(v) => set({ imagePos: v })} options={[['center', 'Centre'], ['top', 'Top'], ['bottom', 'Bottom']]} />
+          </>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Choice label="Text colour" value={s.textColor || 'auto'} onChange={(v) => set({ textColor: v })} options={[['auto', 'Automatic'], ['light', 'Light (white)'], ['dark', 'Dark']]} />
+        <ColorField label="Accent (optional)" value={s.accent} onChange={(v) => set({ accent: v })} hint="Starred word + small text. Empty = theme colour." />
+        <Choice label="Alignment" value={s.align || 'left'} onChange={(v) => set({ align: v })} options={[['left', 'Left'], ['center', 'Centre'], ['right', 'Right']]} />
+        <Choice label="Height" value={s.height || 'm'} onChange={(v) => set({ height: v })} options={[['s', 'Small'], ['m', 'Medium'], ['l', 'Large'], ['xl', 'Full screen']]} />
+        <Choice label="Text width" value={s.width || 'narrow'} onChange={(v) => set({ width: v })} options={[['narrow', 'Easy to read'], ['wide', 'Full width']]} />
+        <Choice label="Heading level (SEO)" value={s.level || 'h1'} onChange={(v) => set({ level: v })} options={[['h1', 'H1 — main heading'], ['h2', 'H2 — section heading']]} />
+      </div>
+
+      <Buttons s={s} set={set} />
+
+      <details className="rounded-lg border border-slate-200 p-3">
+        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-500">Custom HTML &amp; CSS (advanced)</summary>
+        <div className="mt-3 space-y-3">
+          <Area s={s} k="html" set={set} label="Extra HTML (shown under the buttons)" rows={4} mono hint="Badges, a short form, an embed… Shown as-is: only paste code you trust." />
+          <Area
+            s={s}
+            k="css"
+            set={set}
+            label="Custom CSS (this header only)"
+            rows={5}
+            mono
+            hint={'"&" is this header: & h1 { letter-spacing: 0 }  & .pa-btn { border-radius: 4px }. Plain declarations (min-height: 70vh) style the header box.'}
+          />
+        </div>
+      </details>
+    </>
+  );
+}
+
 /* ───────────────────────── the form of each section type ───────────────────────── */
 
 function Fields({ s, set }: { s: Section; set: SetFn }) {
@@ -282,6 +371,8 @@ function Fields({ s, set }: { s: Section; set: SetFn }) {
           <Buttons s={s} set={set} />
         </>
       );
+    case 'header':
+      return <CustomHeaderFields s={s} set={set} />;
     case 'text':
       return (
         <>
@@ -443,7 +534,7 @@ function Fields({ s, set }: { s: Section; set: SetFn }) {
 
 /** a short line shown on a closed section */
 function summary(s: Section) {
-  const t = String(s.title || s.eyebrow || s.text || s.body || '').replace(/[*#\[\]]/g, '').trim();
+  const t = String(s.title || s.eyebrow || s.text || s.subtitle || s.body || '').replace(/[*#\[\]]/g, '').trim();
   if (s.type === 'inventory') {
     const f = (s.filter || {}) as Record<string, string>;
     return [f.category || 'all vehicles', f.make, f.featured ? 'featured' : '', `${s.limit || 6} cars`].filter(Boolean).join(' · ');
@@ -509,7 +600,7 @@ export function SectionCard({
       {open && (
         <div className="space-y-4 border-t border-slate-100 px-4 py-4">
           <Fields s={s} set={set} />
-          {s.type !== 'spacer' && (
+          {s.type !== 'spacer' && s.type !== 'header' && (
             <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-4">
               <Choice label="Background" value={s.tone || ''} onChange={(v) => set({ tone: v })} options={TONES} />
               <Choice label="Space above & below" value={s.pad || 'm'} onChange={(v) => set({ pad: v })} options={[['s', 'Small'], ['m', 'Medium'], ['l', 'Large'], ['none', 'None']]} />

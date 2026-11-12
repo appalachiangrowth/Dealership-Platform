@@ -23,9 +23,13 @@ export interface CustomPage {
   sections: Block[];
   seo?: { title?: string; description?: string; image?: string; noindex?: boolean };
 }
+/** a header menu entry: a custom page (slug), any address (url — quick links like "inventory" follow the theme), or a
+ *  dropdown title (neither); `children` are the entries of its dropdown */
 export interface NavItem {
-  slug: string;
+  slug?: string;
+  url?: string;
   label: string;
+  children?: NavItem[];
 }
 /** a vehicle as /inventory.json publishes it */
 export type InvVehicle = Record<string, any>;
@@ -71,6 +75,21 @@ interface NavSlot {
   before?: string;
   /** the links sit in a list inside the menu element (e.g. "<ul"): they are added to that list */
   inside?: string;
+  /** a mobile / drawer menu: dropdowns are shown as their title followed by indented entries */
+  mobile?: boolean;
+  /** the theme's own dropdown markup for this menu (otherwise the shared .pa-dd dropdown is used) */
+  dd?: NavDropdown;
+}
+
+interface NavDropdown {
+  /** {trigger} {items} */
+  wrap: string;
+  /** the dropdown title: {href} {label} {current} */
+  trigger: string;
+  /** one entry: {href} {label} {current} */
+  child: string;
+  /** use it only on pages that ship the theme's dropdown CSS (contains this text) */
+  requires?: string;
 }
 
 interface ThemeKit {
@@ -178,6 +197,14 @@ const VROOMFOX_SKIN =
   '.pa-page .pa-card,.pa-page .pa-car,.pa-page .pa-stat,.pa-page .pa-form{box-shadow:0 18px 40px -28px rgba(14,26,51,.35)}' +
   '.pa-page .pa-hero:not(.pa-hero--img){background:linear-gradient(120deg,#0E1A33,color-mix(in srgb,var(--pa-primary) 45%,#0E1A33))}';
 
+/** Apex Drift / Velocity: the theme's own header dropdown (.nav-group / .nav-dropdown / .nav-chevron) */
+const APEX_DD: NavDropdown = {
+  wrap: '<div class="nav-group pa-dd-native">{trigger}<div class="nav-dropdown">{items}</div></div>',
+  trigger: '<a href="{href}"{current} aria-haspopup="true">{label} <span class="nav-chevron" aria-hidden="true">▾</span></a>',
+  child: '<a href="{href}"{current}>{label}</a>',
+  requires: 'nav-dropdown{',
+};
+
 const MULTI_PAGE_LINKS: Links = {
   home: 'index.html',
   inventory: 'inventory.html',
@@ -224,7 +251,7 @@ export const THEME_KITS: Record<string, ThemeKit> = {
     },
     nav: [
       { open: '<div class="nav-links" id="navLinks">', item: '<a href="{href}" data-nav="pa-{slug}"{current}>{label}</a>' },
-      { open: '<div class="mobile-menu" id="mobileMenu">', item: '<a href="{href}">{label}</a>', before: 'class="btn btn-primary btn-block"' },
+      { open: '<div class="mobile-menu" id="mobileMenu">', item: '<a href="{href}">{label}</a>', before: 'class="btn btn-primary btn-block"', mobile: true },
     ],
     vars: {
       '--pa-primary': '{c:--color-primary}',
@@ -255,8 +282,8 @@ export const THEME_KITS: Record<string, ThemeKit> = {
     shell: { template: 'pages.html', start: '<main class="apx-main">', end: '<footer class="apx-home-footer"' },
     links: MULTI_PAGE_LINKS,
     nav: [
-      { open: '<nav class="nav" aria-label="Main">', item: '<a href="{href}"{current}>{label}</a>' },
-      { open: '<div class="apx-mobile-nav" id="apxMobileNav"', item: '<a href="{href}">{label}</a>' },
+      { open: '<nav class="nav" aria-label="Main">', item: '<a href="{href}"{current}>{label}</a>', dd: APEX_DD },
+      { open: '<div class="apx-mobile-nav" id="apxMobileNav"', item: '<a href="{href}">{label}</a>', mobile: true },
     ],
     vars: APEX_VARS,
     css: APEX_SKIN,
@@ -265,11 +292,11 @@ export const THEME_KITS: Record<string, ThemeKit> = {
     shell: { template: 'pages.html', start: '<main class="apx-main">', end: '<footer class="apx-home-footer"' },
     links: MULTI_PAGE_LINKS,
     nav: [
-      { open: '<nav class="nav" aria-label="Main">', item: '<a href="{href}"{current}>{label}</a>' },
-      { open: '<div class="apx-mobile-nav" id="apxMobileNav"', item: '<a href="{href}">{label}</a>' },
+      { open: '<nav class="nav" aria-label="Main">', item: '<a href="{href}"{current}>{label}</a>', dd: APEX_DD },
+      { open: '<div class="apx-mobile-nav" id="apxMobileNav"', item: '<a href="{href}">{label}</a>', mobile: true },
       // the Atelier home page has its own header
       { open: '<nav class="desktop-nav"', item: '<a href="{href}">{label}</a>' },
-      { open: '<nav class="mobile-nav" id="mobileNav"', item: '<a href="{href}">{label} <span>↗</span></a>', before: 'class="mobile-nav-bottom"' },
+      { open: '<nav class="mobile-nav" id="mobileNav"', item: '<a href="{href}">{label} <span>↗</span></a>', before: 'class="mobile-nav-bottom"', mobile: true },
     ],
     vars: {
       '--pa-primary': '{c:--color-primary}',
@@ -303,7 +330,7 @@ export const THEME_KITS: Record<string, ThemeKit> = {
     links: MULTI_PAGE_LINKS,
     nav: [
       { open: '<nav class="sr-topnav"', item: '<a href="{href}"{current}>{label}</a>' },
-      { open: '<div class="mobile-nav" id="mobileNav"', item: '<a href="{href}">{label} <span>↗</span></a>' },
+      { open: '<div class="mobile-nav" id="mobileNav"', item: '<a href="{href}">{label} <span>↗</span></a>', mobile: true },
     ],
     vars: {
       '--pa-primary': '{c:--sr-accent}',
@@ -477,7 +504,8 @@ function detectNav(theme: Theme, files: string[]): NavSlot[] {
       // a call / quote button at the end of the menu stays the last item
       const last = anchors[anchors.length - 1] || '';
       const btn = /class="[^"]*\b(btn|button|cta)\b/i.test(last) ? (last.match(/class="[^"]*"/i) || [])[0] : undefined;
-      out.push({ open, item: inList ? `<li>${a}</li>` : a, ...(btn ? { before: btn } : {}), ...(list ? { inside: '<' + list[1].toLowerCase() } : {}) });
+      const mobile = /(^|[\s"'_-])(mobile|drawer|offcanvas|off-canvas|sidebar|burger|hamburger)/i.test(open) || /\bhidden\b/.test(c.open);
+      out.push({ open, item: inList ? `<li>${a}</li>` : a, ...(btn ? { before: btn } : {}), ...(list ? { inside: '<' + list[1].toLowerCase() } : {}), ...(mobile ? { mobile } : {}) });
       if (out.length >= 4) return out;
     }
   }
@@ -631,10 +659,135 @@ function shellSource(theme: Theme, kit: ThemeKit): string {
 
 /* ============================================================================ menu links on every page */
 
-/** Adds the published custom pages that are "shown in the menu" to the theme's desktop + mobile menus. */
-export function injectNav(html: string, theme: Theme, items: NavItem[], current = ''): string {
+/** the opening <a …> of a template gets one more class */
+function addClass(html: string, cls: string): string {
+  return html.replace(/<a\b([^>]*?)>/, (m: string, attrs: string) =>
+    /\sclass="/.test(attrs) ? m.replace(/\sclass="([^"]*)"/, ` class="$1 ${cls}"`) : `<a class="${cls}"${attrs}>`,
+  );
+}
+
+/** an <a> template as a plain label (a dropdown title without a page of its own, in mobile menus) */
+const asLabel = (html: string) =>
+  addClass(html, 'pa-nav-label')
+    .replace(/<a\b/, '<span role="presentation"')
+    .replace(/\shref="[^"]*"/, '')
+    .replace(/<\/a>/, '</span>');
+
+/** the <a>…</a> part of an item template (list menus wrap it in <li>) */
+const anchorOf = (tpl: string) => (tpl.match(/<a\b[\s\S]*<\/a>/) || [tpl])[0];
+
+interface NavCtx {
+  kit: ThemeKit;
+  t: Tokens;
+  current: string;
+}
+
+/** where a menu entry goes: a custom page, a quick link that follows the theme (inventory, category:suvs …) or an address */
+function navHref(i: NavItem, c: NavCtx): string {
+  if (i.slug) return i.slug;
+  if (i.url) return link(i.url, c.kit.links, c.t);
+  return '#';
+}
+
+function fill(tpl: string, i: NavItem, c: NavCtx, opts: { current?: boolean } = {}): string {
+  const href = navHref(i, c);
+  const cur = opts.current ?? (!!i.slug && i.slug === c.current);
+  let out = tpl
+    .replace(/\{href\}/g, h(href))
+    .replace(/\{slug\}/g, h(i.slug || slugOf(i.label)))
+    .replace(/\{label\}/g, h(i.label))
+    .replace(/\{current\}/g, cur ? ' aria-current="page" class="active is-active"' : '')
+    // one class attribute when the menu links have their own class
+    .replace(/(<a\b[^>]*?\sclass=")([^"]*)("[^>]*?) class="active is-active"/, '$1$2 active is-active$3')
+    .replace(/(<a\b[^>]*?) class="active is-active"([^>]*?\sclass=")([^"]*)"/, '$1$2$3 active is-active"');
+  if (/^https?:\/\//i.test(href)) out = out.replace(/<a\b/, '<a target="_blank" rel="noopener"');
+  return out;
+}
+
+/** a dropdown in a desktop menu: the theme's own markup, or the shared .pa-dd dropdown styled from the theme's links */
+function dropdown(slot: NavSlot, i: NavItem, kids: NavItem[], c: NavCtx, html: string): string {
+  const open = kids.some((k) => k.slug && k.slug === c.current);
+  const group = !i.slug && !i.url;
+  if (slot.dd && (!slot.dd.requires || html.includes(slot.dd.requires))) {
+    const trig = fill(slot.dd.trigger, group ? { ...i, url: '#' } : i, c);
+    return slot.dd.wrap
+      .replace('{trigger}', group ? trig.replace(/<a\b/, '<a data-pa-dd-toggle') : trig)
+      .replace('{items}', kids.map((k) => fill(slot.dd!.child, k, c)).join(''));
+  }
+  const caret = '<span class="pa-dd-caret" aria-hidden="true"></span>';
+  let trig = fill(anchorOf(slot.item), i, c, { current: open || (!!i.slug && i.slug === c.current) });
+  trig = addClass(trig, 'pa-dd-trigger')
+    .replace(/<a\b/, `<a aria-haspopup="true" aria-expanded="false"${group ? ' data-pa-dd-toggle' : ''}`)
+    .replace(/<\/a>(?![\s\S]*<\/a>)/, `${caret}</a>`);
+  const menu = `<span class="pa-dd-menu" role="menu">${kids.map((k) => addClass(fill(anchorOf(slot.item), k, c), 'pa-dd-link').replace(/<a\b/, '<a role="menuitem"')).join('')}</span>`;
+  if (/^\s*<li\b/i.test(slot.item)) {
+    const li = (slot.item.match(/^\s*<li\b[^>]*>/i) || ['<li>'])[0];
+    const liOpen = /\sclass="/.test(li) ? li.replace(/\sclass="([^"]*)"/, ' class="$1 pa-dd"') : li.replace(/<li\b/i, '<li class="pa-dd"');
+    return `${liOpen}${trig}${menu}</li>`;
+  }
+  return `<span class="pa-dd">${trig}${menu}</span>`;
+}
+
+/** one menu entry (and its dropdown) for one of the theme's menus */
+function navEntry(slot: NavSlot, i: NavItem, c: NavCtx, html: string): string {
+  const kids = (i.children || []).filter((k) => k && k.label);
+  const group = !i.slug && !i.url;
+  if (!kids.length) return group ? '' : fill(slot.item, i, c);
+  if (!slot.mobile) return dropdown(slot, i, kids, c, html);
+  // mobile / drawer menus: the title (a link, or a label for a dropdown without a page) + indented entries
+  const head = group ? asLabel(fill(slot.item, { ...i, url: '#' }, c)) : fill(slot.item, i, c);
+  return addClass(head, 'pa-nav-parent') + kids.map((k) => addClass(fill(slot.item, k, c), 'pa-nav-sub')).join('');
+}
+
+const NAV_CSS =
+  '<style id="pa-nav-style">' +
+  '.pa-dd{position:relative;display:inline-flex;align-items:center}li.pa-dd{display:list-item;list-style:none}' +
+  '.pa-dd-trigger{display:inline-flex!important;align-items:center;gap:.4em}' +
+  '.pa-dd-caret{display:inline-block;width:.42em;height:.42em;margin:-.2em .1em 0 .15em;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(45deg);transition:transform .2s;opacity:.8}' +
+  '.pa-dd:hover>.pa-dd-trigger .pa-dd-caret,.pa-dd.pa-open>.pa-dd-trigger .pa-dd-caret{transform:translateY(.15em) rotate(225deg)}' +
+  '.pa-dd-menu{display:none;position:absolute;top:100%;left:-10px;z-index:1000;min-width:220px;margin-top:8px;padding:8px;border-radius:12px;background:var(--pa-dd-bg,#fff);color:var(--pa-dd-fg,#111827);box-shadow:0 18px 44px rgba(0,0,0,.22),0 0 0 1px rgba(127,127,127,.16);flex-direction:column;gap:2px;text-align:left;text-transform:none;letter-spacing:normal}' +
+  '.pa-dd-menu::before{content:"";position:absolute;left:0;right:0;top:-12px;height:12px}' +
+  '.pa-dd:hover>.pa-dd-menu,.pa-dd:focus-within>.pa-dd-menu,.pa-dd.pa-open>.pa-dd-menu{display:flex}' +
+  '.pa-dd-menu .pa-dd-link{display:block!important;margin:0!important;padding:10px 12px!important;border-radius:8px;white-space:nowrap;color:inherit!important;text-decoration:none;background:none;border:0;box-shadow:none;height:auto;line-height:1.3;opacity:1}' +
+  '.pa-dd-menu .pa-dd-link::before,.pa-dd-menu .pa-dd-link::after{display:none!important}' +
+  '.pa-dd-menu .pa-dd-link:hover,.pa-dd-menu .pa-dd-link:focus-visible,.pa-dd-menu .pa-dd-link[aria-current]{background:color-mix(in srgb,currentColor 10%,transparent)!important}' +
+  '.pa-nav-sub{padding-left:calc(.6em + 18px)!important;font-size:max(.62em,15px)!important;line-height:1.35!important;opacity:.88}' +
+  '.pa-nav-label{cursor:default;opacity:.72;pointer-events:none}' +
+  '.pa-dd-native .nav-dropdown a[aria-current]{color:var(--sodium,inherit)}' +
+  '@media (hover:none),(max-width:900px){.pa-dd{flex-direction:column;align-items:stretch}.pa-dd:hover>.pa-dd-menu,.pa-dd:focus-within>.pa-dd-menu{display:none}.pa-dd.pa-open>.pa-dd-menu{display:flex;position:static;margin:4px 0 0;padding:0 0 0 14px;min-width:0;box-shadow:none;background:transparent;color:inherit}}' +
+  '</style>';
+
+/** the shared dropdown: colours from the header it sits in, tap / click / keyboard to open on touch screens */
+const NAV_JS = `<script id="pa-nav-script">(function(){
+function rgb(c){var m=String(c).match(/rgba?\\(([^)]+)\\)/);if(!m)return null;var p=m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number);return{r:p[0],g:p[1],b:p[2],a:p.length>3?p[3]:1};}
+function light(c){return c?(0.299*c.r+0.587*c.g+0.114*c.b)>150:false;}
+function paint(dd){var t=dd.querySelector('.pa-dd-trigger');if(!t)return;var fg=rgb(getComputedStyle(t).color),bg=null;
+for(var e=dd.parentElement;e&&e!==document.documentElement;e=e.parentElement){var c=rgb(getComputedStyle(e).backgroundColor);if(c&&c.a>0.6){bg=c;break;}}
+var m=dd.querySelector('.pa-dd-menu');if(!m)return;
+if(bg&&fg&&light(bg)!==light(fg)){m.style.setProperty('--pa-dd-bg','rgb('+bg.r+','+bg.g+','+bg.b+')');m.style.setProperty('--pa-dd-fg','rgb('+fg.r+','+fg.g+','+fg.b+')');}
+else if(fg&&light(fg)){m.style.setProperty('--pa-dd-bg','#11151c');m.style.setProperty('--pa-dd-fg','#ffffff');}
+else{m.style.setProperty('--pa-dd-bg','#ffffff');m.style.setProperty('--pa-dd-fg',fg?'rgb('+fg.r+','+fg.g+','+fg.b+')':'#111827');}}
+function closeAll(x){document.querySelectorAll('.pa-dd.pa-open').forEach(function(d){if(d!==x){d.classList.remove('pa-open');var t=d.querySelector('.pa-dd-trigger');if(t)t.setAttribute('aria-expanded','false');}});}
+var touch=window.matchMedia&&matchMedia('(hover: none)').matches;
+document.querySelectorAll('.pa-dd').forEach(function(dd){var t=dd.querySelector('.pa-dd-trigger');if(!t)return;
+dd.addEventListener('mouseenter',function(){paint(dd);});dd.addEventListener('focusin',function(){paint(dd);});
+t.addEventListener('click',function(ev){var small=innerWidth<=900;if(t.hasAttribute('data-pa-dd-toggle')||((touch||small)&&!dd.classList.contains('pa-open'))){ev.preventDefault();ev.stopPropagation();var o=!dd.classList.contains('pa-open');closeAll(dd);paint(dd);dd.classList.toggle('pa-open',o);t.setAttribute('aria-expanded',o?'true':'false');}},true);});
+document.querySelectorAll('[data-pa-dd-toggle]').forEach(function(t){if(t.classList.contains('pa-dd-trigger'))return;t.addEventListener('click',function(ev){ev.preventDefault();ev.stopPropagation();var g=t.parentElement;if(g)g.classList.toggle('pa-open');},true);});
+document.addEventListener('click',function(ev){if(!ev.target.closest||!ev.target.closest('.pa-dd'))closeAll(null);});
+document.addEventListener('keydown',function(ev){if(ev.key==='Escape')closeAll(null);});
+})();</script>`;
+
+/**
+ * Adds the header menu from Pages & SEO to the theme's desktop + mobile menus on every page: top-level links and
+ * dropdowns, after the theme's own links. Desktop menus get dropdowns (the theme's own dropdown where it has one,
+ * otherwise a dropdown in the colours of the header); mobile / drawer menus list a dropdown's entries indented under
+ * its title.
+ */
+export function injectNav(html: string, theme: Theme, items: NavItem[], current = '', t: Tokens = {}): string {
   if (!items.length) return html;
   const kit = kitFor(theme);
+  const c: NavCtx = { kit, t, current };
+  let usesShared = false;
   for (const slot of kit.nav) {
     let at = html.indexOf(slot.open);
     if (at < 0) continue;
@@ -653,17 +806,9 @@ export function injectNav(html: string, theme: Theme, items: NavItem[], current 
         close = lclose;
       }
     }
-    const links = items
-      .map((i) =>
-        slot.item
-          .replace(/\{href\}/g, h(i.slug))
-          .replace(/\{slug\}/g, h(i.slug))
-          .replace(/\{label\}/g, h(i.label))
-          .replace(/\{current\}/g, i.slug === current ? ' aria-current="page" class="active is-active"' : '')
-          // one class attribute when the menu links have their own class
-          .replace(/(<a\b[^>]*?\sclass=")([^"]*)("[^>]*?) class="active is-active"/, '$1$2 active is-active$3'),
-      )
-      .join('');
+    const links = items.map((i) => navEntry(slot, i, c, html)).join('');
+    if (links.includes('class="pa-dd') || links.includes(' pa-dd"')) usesShared = true;
+    if (links.includes('pa-nav-sub') || links.includes('pa-nav-label') || links.includes('data-pa-dd-toggle')) usesShared = true;
     let at2 = close;
     if (slot.before) {
       const b = html.lastIndexOf(slot.before, close);
@@ -676,6 +821,10 @@ export function injectNav(html: string, theme: Theme, items: NavItem[], current 
       if (tagStart > at) at2 = tagStart;
     }
     html = html.slice(0, at2) + links + html.slice(at2);
+  }
+  if (usesShared && !html.includes('id="pa-nav-style"')) {
+    html = /<\/head>/i.test(html) ? html.replace(/<\/head>/i, NAV_CSS + '</head>') : NAV_CSS + html;
+    html = /<\/body>/i.test(html) ? html.replace(/<\/body>(?![\s\S]*<\/body>)/i, NAV_JS + '</body>') : html + NAV_JS;
   }
   return html;
 }
@@ -862,7 +1011,90 @@ function items(b: Block): Record<string, any>[] {
   return (Array.isArray(b.items) ? b.items : []).filter((x) => x && typeof x === 'object');
 }
 
+/** a colour typed in the editor: #hex, rgb()/rgba()/hsl()/hsla(), or a theme variable var(--x) */
+function cssColor(v: unknown): string {
+  const s = String(v ?? '').trim();
+  if (/^#[0-9a-f]{3,8}$/i.test(s)) return s;
+  if (/^(rgb|rgba|hsl|hsla)\(\s*[0-9.,%\s/deg-]{3,60}\)$/i.test(s)) return s;
+  if (/^var\(--[a-z0-9-]{1,40}\)$/i.test(s)) return s;
+  return '';
+}
+
+/** light text on this background? (#hex only; anything else counts as dark) */
+function isDarkColour(c: string): boolean {
+  const m = c.match(/^#([0-9a-f]{6}|[0-9a-f]{3})(?:[0-9a-f]{1,2})?$/i);
+  if (!m) return true;
+  const x = m[1].length === 3 ? m[1].split('').map((d) => d + d).join('') : m[1];
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(x.slice(i, i + 2), 16));
+  return 0.299 * r + 0.587 * g + 0.114 * b < 150;
+}
+
+/**
+ * Custom CSS of one Custom Header: "&" is the header itself ("& h1{…}"); plain declarations ("letter-spacing:0")
+ * style the header box; selectors without "&" are kept inside the header. Trusted like the HTML section.
+ */
+function scopedCss(css: unknown, scope: string): string {
+  let src = String(css ?? '').replace(/<\/?style/gi, '').replace(/<!--|-->/g, '').trim();
+  if (!src) return '';
+  if (!src.includes('{')) return `${scope}{${src}}`;
+  src = src.replace(/(^|\})\s*([^{}@]+)\{/g, (_m, end: string, sel: string) =>
+    `${end}${sel
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .map((x) => (x.includes('&') ? x.replace(/&/g, scope) : `${scope} ${x}`))
+      .join(',')}{`,
+  );
+  return src;
+}
+
+/** a Custom Header's background kind and text colour (light / dark / brand) */
+function headerLook(b: Block): { kind: string; fg: 'light' | 'dark' | 'brand' } {
+  const kind = ['theme', 'brand', 'color', 'gradient', 'image'].includes(b.bg) ? b.bg : img(b.image) ? 'image' : 'theme';
+  const color = cssColor(b.bgColor) || '#111827';
+  const fg = b.textColor === 'light' || b.textColor === 'dark' ? b.textColor : kind === 'color' ? (isDarkColour(color) ? 'light' : 'dark') : kind === 'brand' ? 'brand' : 'light';
+  return { kind, fg };
+}
+
 const SECTIONS: Record<string, (b: Block, rc: Rc) => string> = {
+  /** Custom Header: a page header with its own background (theme, brand, colour, gradient or picture), text colour,
+   *  alignment, height, buttons, extra HTML and CSS */
+  header(b, rc) {
+    const id = 'pa-ch-' + (String(b.id || '').replace(/[^A-Za-z0-9_-]/g, '') || Math.random().toString(36).slice(2, 8));
+    const pic = img(b.image);
+    const { kind, fg } = headerLook(b);
+    const overlay = Math.min(90, Math.max(0, b.overlay === undefined || b.overlay === '' ? 50 : Number(b.overlay))) / 100;
+    const color = cssColor(b.bgColor) || '#111827';
+    const from = cssColor(b.gradFrom) || 'var(--pa-dark)';
+    const to = cssColor(b.gradTo) || 'var(--pa-primary)';
+    const angle = Math.round(Math.min(360, Math.max(0, Number(b.gradAngle ?? 135) || 0)));
+    const bg =
+      kind === 'image' && pic
+        ? `linear-gradient(rgba(0,0,0,${overlay}),rgba(0,0,0,${overlay})),url('${h(pic)}') ${b.imagePos === 'top' ? 'center top' : b.imagePos === 'bottom' ? 'center bottom' : 'center'}/cover no-repeat`
+        : kind === 'color'
+          ? color
+          : kind === 'gradient'
+            ? `linear-gradient(${angle}deg,${from},${to})`
+            : kind === 'brand'
+              ? 'var(--pa-primary)'
+              : 'radial-gradient(60% 90% at 85% 0%,color-mix(in srgb,var(--pa-primary) 40%,transparent),transparent 70%),linear-gradient(135deg,var(--pa-dark),color-mix(in srgb,var(--pa-dark) 75%,var(--pa-primary)))';
+    const align = ['left', 'center', 'right'].includes(b.align) ? b.align : 'left';
+    const height = ['s', 'm', 'l', 'xl'].includes(b.height) ? b.height : 'm';
+    const accent = cssColor(b.accent);
+    const style = `--pa-ch-bg:${bg}${accent ? `;--pa-ch-accent:${accent}` : ''}`;
+    const tag = b.level === 'h2' ? 'h2' : 'h1';
+    return (
+      (b.css ? `<style>${scopedCss(b.css, '#' + id)}</style>` : '') +
+      `<div class="pa-ch pa-ch--${height} pa-ch--${align}${b.width === 'wide' ? ' pa-ch--wide' : ''}" id="${id}" data-fg="${fg}" style="${h(style)}"><div class="pa-wrap"><div class="pa-ch-inner">` +
+      (b.eyebrow ? `<p class="pa-eyebrow">${txt(b.eyebrow, rc.t)}</p>` : '') +
+      (b.title ? `<${tag} class="pa-title pa-title--xl">${headline(b.title, rc.t)}</${tag}>` : '') +
+      (b.subtitle ? `<p class="pa-lead">${txt(b.subtitle, rc.t)}</p>` : '') +
+      buttons(b.buttons, rc) +
+      // trusted: only platform owners can create pages
+      (b.html ? `<div class="pa-ch-html">${String(b.html)}</div>` : '') +
+      '</div></div></div>'
+    );
+  },
   hero(b, rc) {
     const pic = img(b.image);
     const overlay = Math.min(90, Math.max(0, b.overlay === undefined || b.overlay === '' ? 55 : Number(b.overlay)));
@@ -995,8 +1227,10 @@ export function renderSections(sections: Block[], rc: Rc): string {
   if (!list.length) return '<section class="pa-sec" data-tone="page"><div class="pa-wrap pa-narrow pa-center"><p class="pa-muted">This page has no sections yet.</p></div></section>';
   return list
     .map((b, i) => {
-      let tone = b.tone && TONES.includes(b.tone) ? b.tone : b.type === 'hero' ? 'dark' : b.type === 'cta' ? 'brand' : 'page';
+      let tone = b.tone && TONES.includes(b.tone) ? b.tone : b.type === 'hero' || b.type === 'header' ? 'dark' : b.type === 'cta' ? 'brand' : 'page';
       if (b.type === 'hero' && img(b.image)) tone = 'dark';
+      // the Custom Header paints its own background; its text colour decides the tone the theme skin styles it for
+      if (b.type === 'header') tone = { light: 'dark', dark: 'page', brand: 'brand' }[headerLook(b).fg];
       const pad = b.pad && ['s', 'm', 'l', 'none'].includes(b.pad) ? b.pad : 'm';
       const anchor = ` id="${b.anchor ? h(slugOf(b.anchor)) : `pa-s-${i}`}"`;
       return `<section class="pa-sec pa-sec--${h(b.type)}" data-tone="${tone}" data-pad="${pad}" data-i="${i}"${anchor}>${SECTIONS[b.type](b, rc)}</section>`;
@@ -1046,6 +1280,26 @@ const BASE_CSS = `
 .pa-hero:not(.pa-hero--img)::before{content:"";position:absolute;inset:0;background:radial-gradient(60% 80% at 85% 10%,color-mix(in srgb,var(--pa-primary) 38%,transparent),transparent 70%),radial-gradient(40% 60% at 5% 100%,color-mix(in srgb,var(--pa-accent) 22%,transparent),transparent 70%);pointer-events:none}
 .pa-hero .pa-title{max-width:900px}.pa-hero.pa-center .pa-title{margin-left:auto;margin-right:auto}
 .pa-hero .pa-lead{color:rgba(255,255,255,.82)}
+.pa-sec--header{padding:0!important;background:transparent}
+.pa-ch{position:relative;background:var(--pa-ch-bg);padding:clamp(56px,8vw,120px) 0;display:flex;align-items:center;overflow:hidden}
+.pa-ch--s{padding:clamp(36px,5vw,64px) 0}.pa-ch--l{padding:clamp(96px,13vw,190px) 0}.pa-ch--xl{min-height:calc(100vh - var(--pa-top,0px));padding:clamp(80px,10vw,150px) 0}
+.pa-ch>.pa-wrap{width:min(1200px,100% - 40px)}
+.pa-ch-inner{max-width:820px}.pa-ch--wide .pa-ch-inner{max-width:none}
+.pa-ch--center .pa-ch-inner{margin:0 auto;text-align:center}.pa-ch--center .pa-btns{justify-content:center}.pa-ch--center .pa-lead{margin-left:auto;margin-right:auto}
+.pa-ch--right .pa-ch-inner{margin-left:auto;text-align:right}.pa-ch--right .pa-btns{justify-content:flex-end}.pa-ch--right .pa-lead{margin-left:auto}
+.pa-ch[data-fg="light"]{--pa-head:#FFFFFF;--pa-text:rgba(255,255,255,.9);--pa-muted:rgba(255,255,255,.8);--pa-line:rgba(255,255,255,.3);color:var(--pa-text)}
+.pa-ch[data-fg="dark"]{--pa-head:#0B0F17;--pa-text:#1F2633;--pa-muted:#4A5263;--pa-line:rgba(11,15,23,.22);color:var(--pa-text)}
+.pa-ch[data-fg="brand"]{--pa-head:var(--pa-on-primary);--pa-text:var(--pa-on-primary);--pa-muted:color-mix(in srgb,var(--pa-on-primary) 82%,transparent);--pa-line:color-mix(in srgb,var(--pa-on-primary) 30%,transparent);color:var(--pa-text)}
+.pa-ch .pa-lead{color:var(--pa-muted)}
+.pa-page .pa-ch .pa-title{color:var(--pa-head);max-width:none}
+.pa-page .pa-ch .pa-eyebrow,.pa-page .pa-ch .pa-hl{color:var(--pa-ch-accent,var(--pa-accent-dark,var(--pa-accent)))}
+.pa-page .pa-ch[data-fg="dark"] .pa-eyebrow,.pa-page .pa-ch[data-fg="dark"] .pa-hl{color:var(--pa-ch-accent,var(--pa-primary))}
+.pa-page .pa-ch[data-fg="brand"] .pa-eyebrow,.pa-page .pa-ch[data-fg="brand"] .pa-hl{color:var(--pa-ch-accent,inherit)}
+.pa-page .pa-ch[data-fg="dark"] .pa-btn--ghost{color:#0B0F17!important;border-color:rgba(11,15,23,.3);background:transparent}
+.pa-page .pa-ch[data-fg="light"] .pa-btn--ghost{color:#fff!important;border-color:rgba(255,255,255,.45);background:rgba(255,255,255,.06)}
+.pa-page .pa-ch[data-fg="brand"] .pa-btn{background:var(--pa-on-primary);color:var(--pa-primary)!important}
+.pa-page .pa-ch[data-fg="brand"] .pa-btn--ghost{background:transparent;color:var(--pa-on-primary)!important;border:2px solid currentColor}
+.pa-ch-html{margin-top:24px}
 .pa-split{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(28px,5vw,72px);align-items:center}
 .pa-split--left .pa-split-media{order:-1}
 .pa-split-media img,.pa-ph{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--pa-radius);box-shadow:0 30px 60px -30px rgba(0,0,0,.45)}
@@ -1117,8 +1371,11 @@ a.pa-card:hover{transform:translateY(-4px);border-color:color-mix(in srgb,var(--
  */
 const TOP_CSS =
   '.pa-page>.pa-sec:first-child{padding-top:calc(var(--pa-top) + clamp(40px,6vw,80px))}' +
-  '.pa-page>.pa-sec:first-child:not([data-tone="dark"]):not(.pa-sec--hero){box-shadow:inset 0 var(--pa-top) 0 var(--pa-dark)}' +
-  '.pa-page>.pa-sec--hero:first-child{padding-top:var(--pa-top)}.pa-page>.pa-sec--spacer:first-child{padding-top:var(--pa-top)!important}';
+  '.pa-page>.pa-sec:first-child:not([data-tone="dark"]):not(.pa-sec--hero):not(.pa-sec--header){box-shadow:inset 0 var(--pa-top) 0 var(--pa-dark)}' +
+  '.pa-page>.pa-sec--hero:first-child{padding-top:var(--pa-top)}.pa-page>.pa-sec--spacer:first-child{padding-top:var(--pa-top)!important}' +
+  // the Custom Header's own background runs up behind a floating theme header
+  '.pa-page>.pa-sec--header:first-child{padding-top:0!important}.pa-page>.pa-sec--header:first-child .pa-ch{padding-top:calc(var(--pa-top) + clamp(56px,8vw,120px))}' +
+  '.pa-page>.pa-sec--header:first-child .pa-ch--s{padding-top:calc(var(--pa-top) + clamp(36px,5vw,64px))}.pa-page>.pa-sec--header:first-child .pa-ch--l{padding-top:calc(var(--pa-top) + clamp(96px,13vw,190px))}';
 
 /** buttons on a brand-coloured section stay readable whatever the theme skin does */
 const BRAND_CSS =
@@ -1206,5 +1463,5 @@ export function renderCustomPage(ctx: ThemeContext, theme: Theme, page: CustomPa
       '<div style="position:fixed;left:12px;bottom:12px;z-index:99999;background:#1d4ed8;color:#fff;font:600 12px/1 system-ui,sans-serif;padding:9px 12px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.25);pointer-events:none">Draft preview — not published</div>';
   }
   const html = renderPage(ctx, theme, 'index.html', origin, !!opts.themePreview, false, { source: shellSource(theme, kit), path: page.slug, raw });
-  return injectNav(html, theme, opts.navPages, page.slug);
+  return injectNav(html, theme, opts.navPages, page.slug, t);
 }

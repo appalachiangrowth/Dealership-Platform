@@ -313,6 +313,13 @@ export default function PageEditor() {
                     desc="On by default: when you publish, the page appears in the website header next to Home, Inventory… and in the mobile menu, styled like the theme's own links."
                   />
                 </div>
+                <p className="text-xs text-slate-500">
+                  To put this page in a dropdown (e.g. under “Financing”), rename it in the menu or change the order, use{' '}
+                  <Link href={`/platform/pages?dealer=${p.tenantId || '__shared'}&view=menu`} className="font-semibold text-blue-700 hover:underline">
+                    Pages &amp; SEO › Header menu
+                  </Link>
+                  . The settings below are used until a header menu is saved.
+                </p>
                 {p.showInNav && (
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Menu text">

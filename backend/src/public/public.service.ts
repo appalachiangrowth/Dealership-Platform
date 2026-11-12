@@ -5,7 +5,7 @@ import { ContentService } from '../content/content.service.js';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service.js';
 import { clean } from '../common/util.js';
 import type { Prisma, Tenant } from '../generated/prisma/client.js';
-import { publishedPagesFor } from '../site-pages/site-pages.service.js';
+import { publishedMenuFor, publishedPagesFor } from '../site-pages/site-pages.service.js';
 
 /** Vehicle categories used by the category pages (/used-sedans …). */
 export const CATEGORIES: Record<string, { label: string; match: string[] }> = {
@@ -184,6 +184,7 @@ export class PublicService {
       if (th) theme = { id: th.id, name: th.name, version: th.stableVersion, colorSlots: th.colorSlots as unknown[] };
     }
     const values = await this.content.values(t.id);
+    const pages = await publishedPagesFor(this.prisma, t.id);
     const saved = await this.prisma.designColors.findUnique({ where: { tenantId_themeId: { tenantId: t.id, themeId: theme.id } } });
     const settings: Record<string, unknown> = {};
     for (const k of PUBLIC_SETTINGS) settings[k] = s ? (s as Record<string, unknown>)[k] : '';
@@ -195,7 +196,9 @@ export class PublicService {
       colors: (saved?.colors ?? {}) as Record<string, string>,
       features: await this.tenants.features(t),
       /** custom pages from Platform Admin › Pages & SEO (menu links + sitemap) */
-      pages: await publishedPagesFor(this.prisma, t.id),
+      pages,
+      /** the header menu from Pages & SEO › Header menu (top-level links + dropdowns); null = automatic from `pages` */
+      menu: await publishedMenuFor(this.prisma, t.id, pages),
     };
   }
 

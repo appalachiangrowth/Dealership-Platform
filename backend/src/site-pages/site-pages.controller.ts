@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Patch, Post, Put, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { SitePagesService } from './site-pages.service.js';
@@ -28,6 +28,24 @@ export class SitePagesController {
   media(@UploadedFile() file: { buffer: Buffer; originalname: string; size: number } | undefined, @CurrentUser() u: AuthUser) {
     if (!file) throw new BadRequestException('No file');
     return this.pages.saveImage(file, u);
+  }
+
+  /** Header menu: ?scope=<dealership id> | all */
+  @Get('menu')
+  menu(@Query('scope') scope: string) {
+    return this.pages.getMenu(scope);
+  }
+
+  /** { scope, items: [{ id, type: page | group | link, slug?, url?, label, hidden, children? }] } */
+  @Put('menu')
+  saveMenu(@Body() b: Record<string, unknown>, @CurrentUser() u: AuthUser) {
+    return this.pages.saveMenu(b, u);
+  }
+
+  /** a dealership goes back to the menu for every dealership; "all" goes back to the automatic menu */
+  @Delete('menu')
+  resetMenu(@Query('scope') scope: string, @CurrentUser() u: AuthUser) {
+    return this.pages.resetMenu(scope, u);
   }
 
   @Get(':id')
