@@ -42,8 +42,13 @@ import {
 } from '@/components/ui';
 import { dateTime } from '@/lib/format';
 
+type FeedCheck = { id: string; label: string; ok: boolean; detail?: string };
+
 type DryRunReport = {
   status: 'READY_TO_SYNC' | 'ACTION_REQUIRED';
+  /** why the file cannot be sent yet (empty = ready) */
+  blockers: string[];
+  mode: 'pending-batch' | 'live-feed';
   summary: {
     totalEvaluated: number;
     validCount: number;
@@ -51,6 +56,7 @@ type DryRunReport = {
     allPassed: boolean;
     dealershipProfileComplete: boolean;
     profileIssues: string[];
+    excludedFromFile: number;
   };
   fileGeneration: {
     success: boolean;
@@ -58,14 +64,22 @@ type DryRunReport = {
     format: string;
     estimatedSizeBytes: number;
     rowsCount: number;
+    sha256: string;
+    checks: FeedCheck[];
+    warnings: string[];
+    preview: string[];
   };
   sftpStaging: {
+    protocol: 'sftp' | 'ftp';
     targetHost: string;
     targetPort: number;
     targetFileName: string;
     targetDirectory: string;
+    remotePath: string;
     simulatedPayloadSizeBytes: number;
     configured: boolean;
+    missing: string[];
+    warnings: string[];
   };
   flaggedList: {
     row: number;
@@ -83,8 +97,22 @@ type ConnectionStatus = {
   latencyMs?: number;
   message?: string;
   reason?: string;
+  stage?: string;
   timestamp?: string;
+  /** 'saved' = the dealership's stored settings were tested (the ones every real upload uses) */
+  credentialsSource?: 'saved' | 'custom';
+  protocol?: string;
+  host?: string;
+  port?: number;
+  remotePath?: string;
+  hostFingerprint?: string;
+  fingerprintPinned?: boolean;
+  warnings?: string[];
+  directory?: { path: string; exists: boolean; listable: boolean; entries?: number; error?: string };
+  write?: { tested: boolean; ok?: boolean; probeFile?: string; cleanedUp?: boolean; error?: string };
 };
+
+const fmtBytes = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(2)} MB` : n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} bytes`);
 
 export default function CargurusAudit() {
   const { tenantId, id } = useParams<{ tenantId: string; id: string }>();
@@ -114,16 +142,22 @@ export default function CargurusAudit() {
     password: '',
     passphrase: '',
     privateKey: '',
+    remoteDir: '',
+    remoteName: 'inventory.csv',
   });
+  const [savingSftp, setSavingSftp] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
     tested: false,
     success: false,
   });
+  const [checkWrite, setCheckWrite] = useState(false);
 
   // Dry-Run Modal & Report States
   const [dryRunModalOpen, setDryRunModalOpen] = useState(false);
   const [runningDryRun, setRunningDryRun] = useState(false);
   const [dryRunReport, setDryRunReport] = useState<DryRunReport | null>(null);
+  /** the "include vehicles with problems" choice the dry run was made with (the approval must use the same file) */
+  const [dryRunIncludeInvalid, setDryRunIncludeInvalid] = useState(false);
 
   // Auto-populate SFTP form once data is loaded
   useEffect(() => {
@@ -133,6 +167,12 @@ export default function CargurusAudit() {
         host: data.sftpSettings.host || 'ftp.cargurus.com',
         port: data.sftpSettings.port || 2122,
         username: data.sftpSettings.username || '',
+        remoteDir: data.sftpSettings.remoteDir || '',
+        remoteName: data.sftpSettings.remoteName || 'inventory.csv',
+        // never pre-filled: an empty password / key means "use the saved one"
+        password: '',
+        passphrase: '',
+        privateKey: '',
       }));
     }
   }, [data]);
@@ -155,9 +195,13 @@ export default function CargurusAudit() {
   const pageRows = rows.slice((page - 1) * 25, page * 25);
 
   // Guard condition for "Approve & Sync"
-  const isConnOk = connectionStatus.tested && connectionStatus.success;
-  const isDryRunOk = dryRunReport !== null && dryRunReport.status === 'READY_TO_SYNC' && dryRunReport.summary.blockedCount === 0;
+  // the upload always uses the SAVED settings: only a successful test of those counts
+  const isConnOk = connectionStatus.tested && connectionStatus.success && connectionStatus.credentialsSource === 'saved';
+  // vehicles with problems are left out of the file (or included on purpose); the FILE itself must pass every check
+  const isDryRunOk = dryRunReport !== null && dryRunReport.status === 'READY_TO_SYNC';
   const canApproveAndSync = isConnOk && isDryRunOk && s.profile.complete;
+  const sftp = data.sftpSettings || {};
+  const last = sub.dispatchResult as any;
 
   const handleTestConnection = async () => {
     setTestingConn(true);
@@ -172,25 +216,31 @@ export default function CargurusAudit() {
           password: sftpForm.password || undefined,
           passphrase: sftpForm.passphrase || undefined,
           privateKey: sftpForm.privateKey || undefined,
+          remoteDir: sftpForm.remoteDir,
+          checkWrite,
         },
       });
-
+      const detail = {
+        credentialsSource: res.credentialsSource,
+        protocol: res.protocol,
+        host: res.host,
+        port: res.port,
+        remotePath: res.remotePath,
+        hostFingerprint: res.hostFingerprint,
+        fingerprintPinned: res.fingerprintPinned,
+        warnings: res.warnings || [],
+        directory: res.directory,
+        write: res.write,
+        stage: res.stage,
+        latencyMs: res.latencyMs,
+        timestamp: new Date().toLocaleTimeString(),
+      };
       if (res.success) {
-        setConnectionStatus({
-          tested: true,
-          success: true,
-          latencyMs: res.latencyMs,
-          message: res.message || 'Connection & authentication verified successfully',
-          timestamp: new Date().toLocaleTimeString(),
-        });
-        toast.ok(res.message || 'SFTP connection verified');
+        setConnectionStatus({ tested: true, success: true, message: res.message || 'Connection & authentication verified', ...detail });
+        if (res.credentialsSource === 'custom') toast.error('Connected, but with details that are NOT saved — uploads use the saved settings. Save them in the dealership first.');
+        else toast.ok(res.message || 'SFTP connection verified');
       } else {
-        setConnectionStatus({
-          tested: true,
-          success: false,
-          reason: res.reason || 'Authentication or connection handshake failed',
-          timestamp: new Date().toLocaleTimeString(),
-        });
+        setConnectionStatus({ tested: true, success: false, reason: res.reason || 'Authentication or connection handshake failed', ...detail });
         toast.error(res.reason || 'SFTP connection failed');
       }
     } catch (e: any) {
@@ -207,6 +257,34 @@ export default function CargurusAudit() {
     }
   };
 
+  /** Saves host / port / username / folder / file name (+ the password when one was typed) as the dealership's CarGurus settings. */
+  const handleSaveSftp = async () => {
+    if (sftpForm.privateKey.trim()) {
+      toast.error('Private keys cannot be saved: CarGurus uploads use the username and password.');
+      return;
+    }
+    setSavingSftp(true);
+    try {
+      const patch: Record<string, unknown> = {
+        cargurusFtpHost: sftpForm.host.trim(),
+        cargurusFtpPort: Number(sftpForm.port) || 2122,
+        cargurusFtpUser: sftpForm.username.trim(),
+        cargurusRemoteDir: sftpForm.remoteDir.trim(),
+        cargurusRemoteName: sftpForm.remoteName.trim() || 'inventory.csv',
+      };
+      if (sftpForm.password) patch.cargurusFtpPass = sftpForm.password;
+      await api('/dealer/settings', { method: 'PATCH', body: patch, tenant: tenantId });
+      setSftpForm((f) => ({ ...f, password: '' }));
+      setConnectionStatus({ tested: false, success: false });
+      toast.ok('Saved as this dealership\'s CarGurus settings. Run the connection test again (it now tests the saved settings).');
+      reload();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSavingSftp(false);
+    }
+  };
+
   const handleRunDryRun = async () => {
     setRunningDryRun(true);
     try {
@@ -215,14 +293,16 @@ export default function CargurusAudit() {
         body: {
           tenantId,
           submissionId: id,
+          includeInvalid,
         },
       });
       setDryRunReport(report);
+      setDryRunIncludeInvalid(includeInvalid);
       setDryRunModalOpen(true);
       if (report.status === 'READY_TO_SYNC') {
-        toast.ok(`Dry-run passed: ${report.summary.validCount} vehicle(s) ready`);
+        toast.ok(`Dry run passed: ${report.fileGeneration.rowsCount} vehicle(s) in the file`);
       } else {
-        toast.error(`Dry-run requires attention: ${report.summary.blockedCount} issue(s) detected`);
+        toast.error(`Dry run: ${report.blockers.length} problem(s) must be fixed before sending`);
       }
     } catch (e: any) {
       toast.error(`Dry-run failed: ${e?.message || 'Validation error'}`);
@@ -313,8 +393,15 @@ export default function CargurusAudit() {
               <Button
                 variant="secondary"
                 onClick={async () => {
-                  const r = await api(`/platform/cargurus/${tenantId}/resend`, { method: 'POST' });
-                  r.sent ? toast.ok('Feed sent to CarGurus') : toast.error(r.reason);
+                  try {
+                    const r = await api(`/platform/cargurus/${tenantId}/resend`, { method: 'POST' });
+                    if (r.sent) toast.ok(`Uploaded ${r.rows} vehicle(s) · ${fmtBytes(r.bytes)} to ${r.remotePath}${r.attempts > 1 ? ` (after ${r.attempts} attempts)` : ''}`);
+                    else toast.error(`Not sent: ${r.reason}`);
+                  } catch (e) {
+                    toast.error((e as Error).message);
+                  } finally {
+                    reload();
+                  }
                 }}
               >
                 Re-send
@@ -331,7 +418,7 @@ export default function CargurusAudit() {
             <div>
               <h2 className="text-sm font-bold text-slate-800">Pre-Flight Guard & Validation Pipeline</h2>
               <p className="text-xs text-slate-500">
-                To safeguard feeds before upload to <span className="font-mono text-slate-700">ftp.cargurus.com:2122</span>, both SFTP authentication and pre-flight feed simulation must pass.
+                Before anything is sent to <span className="font-mono text-slate-700">{(sftp.protocol || 'sftp').toUpperCase()} {sftp.host || 'ftp.cargurus.com'}:{sftp.port || 2122}/{sftp.remotePath || 'inventory.csv'}</span>, a login test with the SAVED settings and the dry run of the exact file must both pass.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -376,16 +463,18 @@ export default function CargurusAudit() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between">
                   <b className="text-xs font-bold text-slate-800">1. SFTP Auth Check</b>
-                  <Badge color={connectionStatus.tested ? (connectionStatus.success ? 'green' : 'red') : 'slate'}>
-                    {connectionStatus.tested ? (connectionStatus.success ? 'STATUS: OK' : 'FAILED') : 'NOT TESTED'}
+                  <Badge color={connectionStatus.tested ? (isConnOk ? 'green' : connectionStatus.success ? 'amber' : 'red') : 'slate'}>
+                    {connectionStatus.tested ? (isConnOk ? 'STATUS: OK' : connectionStatus.success ? 'NOT SAVED' : 'FAILED') : 'NOT TESTED'}
                   </Badge>
                 </div>
                 <p className="mt-1 line-clamp-1 text-xs text-slate-600">
                   {connectionStatus.tested
                     ? connectionStatus.success
-                      ? `${connectionStatus.latencyMs}ms · Verified`
+                      ? connectionStatus.credentialsSource === 'custom'
+                        ? 'Unsaved details tested — test the saved settings'
+                        : `${connectionStatus.latencyMs}ms · saved settings verified`
                       : connectionStatus.reason
-                    : 'Verify credentials & port 2122 handshake'}
+                    : `Log in to ${sftp.host || 'ftp.cargurus.com'}:${sftp.port || 2122} with the saved settings`}
                 </p>
               </div>
             </div>
@@ -423,8 +512,10 @@ export default function CargurusAudit() {
                 </div>
                 <p className="mt-1 line-clamp-1 text-xs text-slate-600">
                   {dryRunReport
-                    ? `${dryRunReport.summary.validCount} valid · ${dryRunReport.summary.blockedCount} blocked`
-                    : 'Simulate full schema, images & feed builder'}
+                    ? dryRunReport.status === 'READY_TO_SYNC'
+                      ? `${dryRunReport.fileGeneration.rowsCount} in file · ${dryRunReport.summary.excludedFromFile} left out · ${fmtBytes(dryRunReport.fileGeneration.estimatedSizeBytes)}`
+                      : dryRunReport.blockers[0]
+                    : 'Build and check the exact file CarGurus would receive'}
                 </p>
               </div>
             </div>
@@ -497,6 +588,40 @@ export default function CargurusAudit() {
           )}
         </Card>
       </div>
+
+      {last && (
+        <div
+          className={cx(
+            'mb-4 rounded-2xl border p-4 text-xs',
+            last.sent ? 'border-emerald-200 bg-emerald-50/60 text-emerald-950' : last.status === 'not_configured' ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-red-200 bg-red-50 text-red-950'
+          )}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            {last.sent ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
+            <b className="text-sm">
+              {last.sent ? 'Last upload to CarGurus succeeded' : last.status === 'not_configured' ? 'Approved feed is waiting: CarGurus SFTP not set up' : 'Last upload to CarGurus FAILED'}
+            </b>
+            <span className="ml-auto text-slate-500">{last.at ? dateTime(last.at) : ''} · trigger: {last.trigger}</span>
+          </div>
+          <div className="mt-2 grid gap-x-6 gap-y-1 font-mono text-[11px] sm:grid-cols-2">
+            {last.protocol && <span>Destination: {String(last.protocol).toUpperCase()} {last.host}:{last.port}</span>}
+            {last.remotePath && <span>File: {last.remotePath}</span>}
+            {last.rows !== undefined && <span>Vehicles in file: {last.rows}</span>}
+            {last.bytes !== undefined && <span>Size: {fmtBytes(last.bytes)}</span>}
+            {last.attempts !== undefined && <span>Attempts: {last.attempts}{last.durationMs !== undefined ? ` · ${(last.durationMs / 1000).toFixed(1)}s` : ''}</span>}
+            {last.sent && <span>Size check on server: {last.verified ? 'matched' : last.verifyNote || 'not available'}</span>}
+            {last.hostFingerprint && <span className="sm:col-span-2">Host key: {last.hostFingerprint}</span>}
+            {last.sha256 && <span className="sm:col-span-2 truncate">SHA-256: {last.sha256}</span>}
+          </div>
+          {!last.sent && last.reason && (
+            <p className="mt-2 font-semibold">
+              {last.stage ? `[${last.stage}] ` : ''}
+              {last.reason}
+            </p>
+          )}
+          {!last.sent && last.error && <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded-lg bg-white/70 p-2 text-[10px] text-slate-700">{last.error}</pre>}
+        </div>
+      )}
 
       {sub.reviewNote && <p className="mb-4 rounded-lg bg-slate-100 p-3 text-sm">Review note: {sub.reviewNote}</p>}
 
@@ -625,11 +750,14 @@ export default function CargurusAudit() {
         footer={
           <div className="flex w-full items-center justify-between">
             <div className="text-xs text-slate-500">
-              Target: <span className="font-mono font-semibold">{sftpForm.host}:{sftpForm.port}</span>
+              Saved target: <span className="font-mono font-semibold">{(sftp.protocol || 'sftp').toUpperCase()} {sftp.host}:{sftp.port}/{sftp.remotePath}</span>
             </div>
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => setConnModalOpen(false)}>
                 Close
+              </Button>
+              <Button variant="secondary" loading={savingSftp} onClick={handleSaveSftp} title="Store these details as the dealership's CarGurus upload settings">
+                Save as dealership settings
               </Button>
               <Button variant="primary" loading={testingConn} onClick={handleTestConnection}>
                 <Wifi className="h-4 w-4" /> Run Connection Test
@@ -638,9 +766,22 @@ export default function CargurusAudit() {
           </div>
         }
       >
-        <p className="mb-4 text-xs text-slate-600">
-          Verify SSH/SFTP handshake with CarGurus endpoints before pushing live inventory. You may test with existing database credentials or test custom SSH credentials below.
+        <p className="mb-3 text-xs text-slate-600">
+          Logs in for real and checks the target folder. Leave the password empty to test the <b>saved</b> settings — the only ones the
+          real upload uses. Typing other details tests them without saving them.
         </p>
+        {(sftp.warnings || []).length > 0 && (
+          <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            {sftp.warnings.map((w: string, i: number) => (
+              <div key={i}>⚠ {w}</div>
+            ))}
+          </div>
+        )}
+        {!sftp.configured && (
+          <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-900">
+            The dealership has no saved CarGurus {!sftp.username ? 'username' : 'password'}: uploads cannot run until it is saved in the dealership&apos;s settings.
+          </div>
+        )}
 
         {connectionStatus.tested && (
           <div
@@ -665,6 +806,46 @@ export default function CargurusAudit() {
             <p className="mt-1 pl-6">
               {connectionStatus.success ? connectionStatus.message : connectionStatus.reason}
             </p>
+            <div className="mt-2 space-y-0.5 pl-6 font-mono text-[11px] text-slate-700">
+              {connectionStatus.protocol && (
+                <div>
+                  {connectionStatus.protocol.toUpperCase()} {connectionStatus.host}:{connectionStatus.port} · file {connectionStatus.remotePath}
+                </div>
+              )}
+              <div>
+                Credentials tested:{' '}
+                {connectionStatus.credentialsSource === 'custom' ? (
+                  <b className="text-amber-700">typed in here (NOT saved — uploads will not use them)</b>
+                ) : (
+                  <b className="text-emerald-700">saved dealership settings</b>
+                )}
+              </div>
+              {connectionStatus.directory && (
+                <div>
+                  Folder {connectionStatus.directory.path}: {connectionStatus.directory.exists ? 'found' : 'NOT FOUND'}
+                  {connectionStatus.directory.exists && (connectionStatus.directory.listable ? `, ${connectionStatus.directory.entries} item(s)` : ', cannot be listed')}
+                  {connectionStatus.directory.error && !connectionStatus.directory.exists ? ` — ${connectionStatus.directory.error}` : ''}
+                </div>
+              )}
+              {connectionStatus.write?.tested && (
+                <div>
+                  Write test: {connectionStatus.write.ok ? 'passed' : 'FAILED'}
+                  {connectionStatus.write.ok && (connectionStatus.write.cleanedUp ? ', test file removed' : ` — test file ${connectionStatus.write.probeFile} could NOT be removed`)}
+                  {!connectionStatus.write.ok && connectionStatus.write.error ? ` — ${connectionStatus.write.error}` : ''}
+                </div>
+              )}
+              {connectionStatus.hostFingerprint && (
+                <div>
+                  Host key: {connectionStatus.hostFingerprint} {connectionStatus.fingerprintPinned ? '(pinned ✓)' : '(not pinned)'}
+                </div>
+              )}
+              {connectionStatus.stage && !connectionStatus.success && <div>Failed at: {connectionStatus.stage}</div>}
+              {(connectionStatus.warnings || []).map((w, i) => (
+                <div key={i} className="text-amber-700">
+                  ⚠ {w}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -700,6 +881,15 @@ export default function CargurusAudit() {
           </Field>
         </div>
 
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <Field label="Remote folder" hint="Empty = the login's home folder (normal for CarGurus)">
+            <Input value={sftpForm.remoteDir} onChange={(e) => setSftpForm({ ...sftpForm, remoteDir: e.target.value })} placeholder="(home folder)" />
+          </Field>
+          <Field label="Remote file name" hint="The name CarGurus gave you, e.g. inventory.csv">
+            <Input value={sftpForm.remoteName} onChange={(e) => setSftpForm({ ...sftpForm, remoteName: e.target.value })} placeholder="inventory.csv" />
+          </Field>
+        </div>
+
         <div className="mt-3">
           <Field label="Password / Passphrase" hint="Used for SFTP account password or to decrypt the private key">
             <div className="relative">
@@ -707,7 +897,7 @@ export default function CargurusAudit() {
                 type={showPassword ? 'text' : 'password'}
                 value={sftpForm.password}
                 onChange={(e) => setSftpForm({ ...sftpForm, password: e.target.value })}
-                placeholder="SFTP account password (or leave blank if using saved database password)"
+                placeholder={sftp.hasPassword ? 'Leave empty to test the saved password' : 'No password saved for this dealership'}
               />
               <button
                 type="button"
@@ -730,6 +920,14 @@ export default function CargurusAudit() {
               className="font-mono text-xs"
             />
           </Field>
+        </div>
+
+        <div className="mt-3">
+          <Toggle
+            checked={checkWrite}
+            onChange={setCheckWrite}
+            label="Also check write permission (writes a tiny hidden .pa-connection-test file and deletes it at once)"
+          />
         </div>
 
         {sftpForm.privateKey.trim() && (
@@ -804,20 +1002,27 @@ export default function CargurusAudit() {
                 </span>
               </div>
               <p className="mt-1 text-xs opacity-90">
-                {dryRunReport.status === 'READY_TO_SYNC'
-                  ? 'Simulated payload generated cleanly and conforms to CarGurus specifications without errors.'
-                  : 'Vehicles missing mandatory CarGurus fields or dealership profile gaps must be reviewed before sync.'}
+                {dryRunReport.mode === 'live-feed'
+                  ? 'Checked the live feed exactly as Re-send / the daily upload sends it.'
+                  : `Checked the exact file "Approve & Sync" would upload${dryRunIncludeInvalid ? ' (vehicles with problems INCLUDED)' : ' (vehicles with problems left out)'}. Nothing was uploaded.`}
               </p>
+              {dryRunReport.blockers.length > 0 && (
+                <ul className="mt-2 list-disc space-y-0.5 pl-5 font-semibold">
+                  {dryRunReport.blockers.map((b, i) => (
+                    <li key={i}>{b}</li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             {/* Itemized Stats Breakdown */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Evaluated</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Vehicles in file</span>
                 <b className="mt-1 block text-2xl font-extrabold text-slate-900">
-                  {dryRunReport.summary.totalEvaluated}
+                  {dryRunReport.fileGeneration.rowsCount}
                 </b>
-                <span className="text-[11px] text-slate-500">Cars in submission</span>
+                <span className="text-[11px] text-slate-500">of {dryRunReport.summary.totalEvaluated} in the batch</span>
               </div>
 
               <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3">
@@ -840,13 +1045,13 @@ export default function CargurusAudit() {
                 <b className="mt-1 block text-2xl font-extrabold">
                   {dryRunReport.summary.blockedCount}
                 </b>
-                <span className="text-[11px] opacity-80">Missing mandatory fields</span>
+                <span className="text-[11px] opacity-80">{dryRunReport.summary.excludedFromFile} left out of the file</span>
               </div>
 
               <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Simulated Payload</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700">File size</span>
                 <b className="mt-1 block text-2xl font-extrabold text-blue-700">
-                  {(dryRunReport.fileGeneration.estimatedSizeBytes / 1024).toFixed(1)} KB
+                  {fmtBytes(dryRunReport.fileGeneration.estimatedSizeBytes)}
                 </b>
                 <span className="text-[11px] text-blue-600">{dryRunReport.fileGeneration.format}</span>
               </div>
@@ -864,33 +1069,73 @@ export default function CargurusAudit() {
               </div>
             )}
 
-            {/* Staging Destination Info */}
+            {/* Destination */}
             <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs">
-              <b className="text-slate-800">Simulated SFTP Staging Target:</b>
-              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-slate-600">
-                <span>Endpoint: {dryRunReport.sftpStaging.targetHost}:{dryRunReport.sftpStaging.targetPort}</span>
-                <span>Target File: {dryRunReport.sftpStaging.targetFileName}</span>
-                <span>Payload Size: {dryRunReport.sftpStaging.simulatedPayloadSizeBytes} bytes</span>
+              <b className="text-slate-800">Would be uploaded to:</b>
+              <div className="mt-1 grid gap-x-4 gap-y-1 font-mono text-[11px] text-slate-600 sm:grid-cols-2">
                 <span>
-                  Status:{' '}
+                  {dryRunReport.sftpStaging.protocol.toUpperCase()} {dryRunReport.sftpStaging.targetHost}:{dryRunReport.sftpStaging.targetPort}
+                </span>
+                <span>Folder: {dryRunReport.sftpStaging.targetDirectory}</span>
+                <span>File: {dryRunReport.sftpStaging.targetFileName}</span>
+                <span>Size: {dryRunReport.sftpStaging.simulatedPayloadSizeBytes} bytes</span>
+                <span className="sm:col-span-2 truncate">SHA-256: {dryRunReport.fileGeneration.sha256}</span>
+                <span className="sm:col-span-2">
+                  Credentials:{' '}
                   {dryRunReport.sftpStaging.configured ? (
-                    <span className="text-emerald-700">Configured in Dealership Settings</span>
+                    <span className="text-emerald-700">saved for this dealership</span>
                   ) : (
-                    <span className="text-amber-700">Using Default CarGurus Endpoint</span>
+                    <span className="text-red-700">MISSING {dryRunReport.sftpStaging.missing.join(' and ')}</span>
                   )}
                 </span>
               </div>
+              {dryRunReport.sftpStaging.warnings.map((w, i) => (
+                <div key={i} className="mt-1 text-amber-700">
+                  ⚠ {w}
+                </div>
+              ))}
             </div>
+
+            {/* File checks */}
+            <div>
+              <b className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-700">File checks (read back like CarGurus reads it)</b>
+              <div className="rounded-xl border border-slate-200 bg-white divide-y divide-slate-100 text-xs">
+                {dryRunReport.fileGeneration.checks.map((c) => (
+                  <div key={c.id} className="flex items-start gap-2 p-2">
+                    {c.ok ? <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" /> : <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600" />}
+                    <div>
+                      <span className={c.ok ? 'text-slate-700' : 'font-semibold text-red-800'}>{c.label}</span>
+                      {c.detail && <div className="mt-0.5 font-mono text-[11px] text-red-700">{c.detail}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* First lines of the file */}
+            {dryRunReport.fileGeneration.preview.length > 0 && (
+              <div>
+                <b className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-700">First lines of the file</b>
+                <pre className="max-h-48 overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-3 text-[10px] leading-relaxed text-slate-100">
+                  {dryRunReport.fileGeneration.preview.join('\n')}
+                </pre>
+              </div>
+            )}
 
             {/* Detailed Flag List */}
             <div>
               <b className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-700">
-                Itemized Flag List ({dryRunReport.flaggedList.length})
+                Vehicles with problems ({dryRunReport.flaggedList.length}){' '}
+                {dryRunReport.flaggedList.length > 0 && (
+                  <span className="font-normal normal-case text-slate-500">
+                    — {dryRunIncludeInvalid ? 'INCLUDED in the file on purpose' : 'left out of the file; fix them in Inventory'}
+                  </span>
+                )}
               </b>
               {dryRunReport.flaggedList.length === 0 ? (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 text-center text-xs text-emerald-800">
                   <CheckCircle2 className="mx-auto mb-1 h-5 w-5 text-emerald-600" />
-                  No vehicles flagged. Every vehicle satisfies the CarGurus 12 mandatory attribute schema.
+                  No vehicles flagged: every vehicle passes the 12 mandatory CarGurus checks.
                 </div>
               ) : (
                 <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100 text-xs">
@@ -930,11 +1175,19 @@ export default function CargurusAudit() {
           <Button
             variant="success"
             loading={busy}
+            disabled={!canApproveAndSync || includeInvalid !== dryRunIncludeInvalid}
+            title={includeInvalid !== dryRunIncludeInvalid ? 'The dry run was made with the other choice: run it again' : undefined}
             onClick={async () => {
               setBusy(true);
               try {
                 const r = await api(`/platform/cargurus/${tenantId}/${id}/approve`, { body: { includeInvalid, note } });
-                toast.ok(`${r.vehicles} vehicles approved. ${r.dispatch.sent ? 'Sent to CarGurus via SFTP.' : r.dispatch.reason}`);
+                const d = r.dispatch || {};
+                if (d.sent) {
+                  toast.ok(`${r.vehicles} vehicles approved and uploaded: ${d.rows} rows · ${fmtBytes(d.bytes)} → ${d.remotePath}${d.attempts > 1 ? ` (after ${d.attempts} attempts)` : ''}`);
+                } else {
+                  // approved, but CarGurus did NOT get the file: never shown as a success
+                  toast.error(`Approved, but the upload FAILED${d.stage ? ` [${d.stage}]` : ''}: ${d.reason || 'unknown error'} — fix it and use Re-send.`);
+                }
                 setApprove(false);
                 reload();
               } catch (e) {
@@ -957,12 +1210,23 @@ export default function CargurusAudit() {
             <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Pre-Flight Requirements Satisfied
           </div>
           <div className="mt-1 text-[11px] text-emerald-800 space-y-0.5">
-            <div>✓ SFTP Connection Status: OK ({connectionStatus.latencyMs}ms)</div>
-            <div>✓ Dry Run Simulation: Passed ({dryRunReport?.summary.validCount} valid vehicles)</div>
+            <div>✓ Login with the saved settings: OK ({connectionStatus.latencyMs}ms)</div>
+            <div>
+              ✓ Dry run: {dryRunReport?.fileGeneration.rowsCount} vehicle(s) · {fmtBytes(dryRunReport?.fileGeneration.estimatedSizeBytes || 0)} →{' '}
+              {dryRunReport?.sftpStaging.remotePath}
+            </div>
           </div>
         </div>
 
         {s.invalid > 0 && <Toggle checked={includeInvalid} onChange={setIncludeInvalid} label="Include vehicles with problems anyway" />}
+        {includeInvalid !== dryRunIncludeInvalid && (
+          <div className="mt-2 flex items-center gap-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
+            The dry run was made {dryRunIncludeInvalid ? 'with' : 'without'} the vehicles with problems: run it again for this file.
+            <Button size="sm" variant="secondary" loading={runningDryRun} onClick={handleRunDryRun}>
+              Run dry run again
+            </Button>
+          </div>
+        )}
         <Field label="Note (optional)" className="mt-3">
           <Input value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>

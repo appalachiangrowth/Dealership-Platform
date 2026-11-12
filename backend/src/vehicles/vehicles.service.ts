@@ -106,6 +106,7 @@ export class VehiclesService {
       this.prisma.vehicle.count({ where }),
       this.prisma.vehicle.groupBy({ by: ['status'], where: { tenantId }, _count: true }),
     ]);
+    const channelsP = this.cargurus.channels(tenantId);
     let cargurusOn: boolean;
     let ready: CgReady;
     let rows: Awaited<ReturnType<typeof pageQueries>>[0];
@@ -130,7 +131,8 @@ export class VehiclesService {
     const byStatus = Object.fromEntries(counts.map((c) => [c.status, c._count]));
     // vehicles switched off for CarGurus are not in its feed: no CarGurus status for them
     const items = rows.map((v) => ({ ...this.serialize(v), cargurus: cargurusOn && v.status === 'PUBLISHED' && v.syndicateCargurus !== false ? { issues: ready.get(v.id) ?? [] } : null }));
-    return { items, total, page, pageSize, cargurusOn, counts: { PUBLISHED: 0, DRAFT: 0, SOLD: 0, ...byStatus, cgReady, cgExcluded } };
+    // channels = Business details › "Where your vehicles are sent" (the import only runs the checks of the channels that are on)
+    return { items, total, page, pageSize, cargurusOn, channels: await channelsP, counts: { PUBLISHED: 0, DRAFT: 0, SOLD: 0, ...byStatus, cgReady, cgExcluded } };
   }
 
   async get(tenantId: string, id: string) {
@@ -240,6 +242,9 @@ export class VehiclesService {
 
   /**
    * Import (CSV / TSV / XML read and checked in the portal, 3 steps like the old platform).
+   * Only the website's own save rules apply here (a name to save it under, a believable year): CarGurus and
+   * Facebook Marketplace requirements never block or skip a row, whichever channels are on. Channel checks happen
+   * in the portal preview (for the channels switched on) and later in each channel's own feed / posting step.
    * Existing vehicles are matched by VIN, then stock number, and updated with the non-empty values of the row;
    * their other fields (and photos when the row has none) are kept. New vehicles: the row's status when the file
    * has one, otherwise published when they have photos and saved as drafts when they have none.
@@ -299,10 +304,11 @@ export class VehiclesService {
       }
     }
     await this.audit.record('vehicle.import', { tenantId, actor: user.login, detail: { created: res.created, updated: res.updated, skipped: res.skipped.length } });
+    const channels = await this.cargurus.channels(tenantId).catch(() => null);
     if (res.created || res.updated) {
       if (await this.prisma.vehicle.count({ where: { tenantId, status: 'PUBLISHED' } })) await this.tenants.setOnboarding(tenantId, 'first_vehicle');
       await this.changed(tenantId, user);
     }
-    return res;
+    return { ...res, channels };
   }
 }

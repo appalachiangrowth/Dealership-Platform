@@ -9,7 +9,7 @@ import { TenantsService } from '../tenants/tenants.service.js';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service.js';
 import * as cg from './ingestion.js';
 import { cleanMl } from '../common/util.js';
-import { testSftpConnection, uploadViaSftp, SftpConnectionOptions } from './sftp.util.js';
+import { isCargurusHost, resolveCargurusTarget, SftpError, testSftpConnection, uploadViaSftp, type SftpTestResult } from './sftp.util.js';
 import type { AuthUser } from '../common/auth.types.js';
 import type { CargurusSubmission } from '../generated/prisma/client.js';
 
@@ -135,154 +135,199 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
 
   // ───────── SFTP Connection Test & Pre-Flight Dry Run ─────────
 
+  /** Saved transport settings of a dealership, resolved the same way the real upload resolves them. */
+  private async transport(tenantId: string) {
+    const s = await this.prisma.tenantSettings.findUnique({ where: { tenantId } });
+    const target = resolveCargurusTarget(s || {});
+    const missing: string[] = [];
+    if (!s?.cargurusFtpUser) missing.push('username');
+    if (!s?.cargurusFtpPass) missing.push('password');
+    return { s, target, configured: missing.length === 0, missing };
+  }
+
+  /**
+   * Real login to the CarGurus server (SFTP 2122, or FTP for a non-CarGurus host) + folder checks.
+   * Fields left empty use the saved dealership settings; credentialsSource says which were tested, because
+   * the real upload ALWAYS uses the saved settings.
+   */
   async testConnection(
     tenantId?: string,
-    body?: { host?: string; port?: number; username?: string; password?: string; passphrase?: string; privateKey?: string },
+    body?: { host?: string; port?: number; username?: string; password?: string; passphrase?: string; privateKey?: string; remoteDir?: string; checkWrite?: boolean },
   ) {
     const s = tenantId ? await this.prisma.tenantSettings.findUnique({ where: { tenantId } }) : null;
-    const host = body?.host || s?.cargurusFtpHost || 'ftp.cargurus.com';
-    const port = Number(body?.port || s?.cargurusFtpPort || 2122);
+    const saved = resolveCargurusTarget(s || {});
+    const custom = !!(
+      (body?.host && body.host.trim() && body.host.trim() !== saved.host) ||
+      (body?.port && Number(body.port) !== saved.port && !(isCargurusHost(body?.host || saved.host) && Number(body.port) === 21)) ||
+      (body?.username && body.username !== (s?.cargurusFtpUser || '')) ||
+      (body?.password && body.password !== (s?.cargurusFtpPass || '')) ||
+      body?.privateKey ||
+      (body?.remoteDir !== undefined && body.remoteDir.replace(/\/+$/, '') !== saved.remoteDir)
+    );
+    const target = resolveCargurusTarget({
+      cargurusFtpHost: body?.host || s?.cargurusFtpHost,
+      cargurusFtpPort: Number(body?.port) || s?.cargurusFtpPort,
+      cargurusRemoteDir: body?.remoteDir !== undefined ? body.remoteDir : s?.cargurusRemoteDir,
+      cargurusRemoteName: s?.cargurusRemoteName,
+    });
     const username = body?.username || s?.cargurusFtpUser || '';
     const password = body?.password || s?.cargurusFtpPass || '';
-    const passphrase = body?.passphrase || '';
-    const privateKey = body?.privateKey || '';
-
-    if (!username) {
-      return {
-        success: false,
-        reason: 'Username is required to test SFTP connection',
-        host,
-        port,
-      };
-    }
-
-    const res = await testSftpConnection({
-      host,
-      port,
+    const base = {
+      host: target.host,
+      port: target.port,
+      protocol: target.protocol,
       username,
-      password,
-      passphrase,
-      privateKey,
-      timeout: 15000,
-    });
+      remotePath: target.remotePath,
+      warnings: target.warnings,
+      credentialsSource: custom ? ('custom' as const) : ('saved' as const),
+      savedConfigured: !!(s?.cargurusFtpUser && s?.cargurusFtpPass),
+      testedAt: new Date().toISOString(),
+    };
+    if (!username) return { ...base, success: false, stage: 'config', reason: 'The SFTP username is missing (dealership settings › CarGurus).' };
+
+    let res: SftpTestResult;
+    if (target.protocol === 'sftp') {
+      res = await testSftpConnection({
+        host: target.host,
+        port: target.port,
+        username,
+        password,
+        passphrase: body?.passphrase || '',
+        privateKey: body?.privateKey || '',
+        remoteDir: target.remoteDir,
+        checkWrite: !!body?.checkWrite,
+        timeout: 15000,
+      });
+    } else {
+      const start = Date.now();
+      const client = new FtpClient(15_000);
+      try {
+        await client.access({ host: target.host, port: target.port, user: username, password, secure: !!s?.cargurusFtpSsl });
+        if (target.remoteDir) await client.cd(target.remoteDir);
+        const list = await client.list();
+        res = { success: true, latencyMs: Date.now() - start, filesCount: list.length, message: `FTP login to ${target.host}:${target.port} succeeded (${list.length} items in the folder)` };
+      } catch (e) {
+        res = { success: false, reason: `FTP: ${(e as Error).message}`, latencyMs: Date.now() - start };
+      } finally {
+        client.close();
+      }
+    }
 
     if (tenantId) {
       await this.log2(tenantId, res.success ? 'sftp.test_connection.ok' : 'sftp.test_connection.failed', {
-        host,
-        port,
+        host: target.host,
+        port: target.port,
+        protocol: target.protocol,
         username,
+        credentialsSource: base.credentialsSource,
         success: res.success,
         reason: res.reason,
+        stage: res.stage,
         latencyMs: res.latencyMs,
+        hostFingerprint: res.hostFingerprint,
+        directory: res.directory,
+        write: res.write,
       });
     }
-
-    return {
-      ...res,
-      host,
-      port,
-      username,
-    };
+    return { ...res, ...base };
   }
 
-  async dryRun(tenantId: string, submissionId?: string) {
+  /**
+   * Dry run: builds EXACTLY the file that Approve (pending batch) or Re-send / the daily job (live feed) would upload,
+   * re-reads it like CarGurus would and checks it, and shows where it would go. Nothing is uploaded or saved.
+   */
+  async dryRun(tenantId: string, submissionId?: string, opts: { includeInvalid?: boolean } = {}) {
     let sub = submissionId
       ? await this.prisma.cargurusSubmission.findFirst({ where: { id: submissionId, tenantId } })
       : await this.prisma.cargurusSubmission.findFirst({ where: { tenantId, status: 'PENDING' }, orderBy: { createdAt: 'desc' } });
-
-    if (!sub) {
-      sub = await this.prisma.cargurusSubmission.findFirst({ where: { tenantId }, orderBy: { createdAt: 'desc' } });
-    }
-
-    if (!sub) {
-      throw new NotFoundException('No CarGurus inventory submission found for this dealership');
-    }
+    if (!sub) sub = await this.prisma.cargurusSubmission.findFirst({ where: { tenantId }, orderBy: { createdAt: 'desc' } });
+    if (!sub) throw new NotFoundException('No CarGurus inventory submission found for this dealership');
 
     const meta = await this.meta(tenantId);
     const records = (sub.records || []) as unknown as cg.CgRecord[];
     const profile = cg.profile(meta);
+    const live = await this.liveSub(tenantId);
+    const isLive = sub.status === 'APPROVED' && live?.id === sub.id;
+    const includeInvalid = !!opts.includeInvalid;
 
-    let feedCsv = '';
+    let payload = '';
     let csvGenerationError: string | null = null;
     try {
-      feedCsv = cg.csv(records, meta, false, true);
+      // the very same call as approve() / liveFeed(): this is the file CarGurus would receive
+      payload = isLive ? (await this.liveFeed(tenantId)) || '' : cg.csv(records, meta, !includeInvalid);
     } catch (e: any) {
-      csvGenerationError = e?.message || 'CSV feed generation stream failure';
+      csvGenerationError = e?.message || 'CSV generation failed';
     }
 
     const flaggedList: { row: number; vin: string; stock: string; name: string; reasons: string[] }[] = [];
     let validCount = 0;
-    let blockedCount = 0;
-
     for (const r of records) {
-      const issues = r._issues || {};
-      const reasons: string[] = [];
-      for (const [col, msgs] of Object.entries(issues)) {
-        for (const m of msgs || []) {
-          reasons.push(m);
-        }
-      }
-
-      if (reasons.length > 0) {
-        blockedCount++;
-        const carName = [r.year || '', r.make || '', r.model || '', r.trim || ''].join(' ').replace(/\s+/g, ' ').trim();
-        flaggedList.push({
-          row: r._row,
-          vin: r.vin || '',
-          stock: r.stock || '',
-          name: carName || `Car #${r._row}`,
-          reasons,
-        });
-      } else {
+      const reasons = Object.values(r._issues || {}).flat() as string[];
+      if (!reasons.length) {
         validCount++;
+        continue;
       }
+      const carName = [r.year || '', r.make || '', r.model || '', r.trim || ''].join(' ').replace(/\s+/g, ' ').trim();
+      flaggedList.push({ row: r._row, vin: r.vin || '', stock: r.stock || '', name: carName || `Car #${r._row}`, reasons });
     }
+    const blockedCount = records.length - validCount;
 
-    const payloadSizeBytes = Buffer.byteLength(feedCsv || '', 'utf8');
-    const isProfileReady = profile.complete;
-    const isFeedReady = !csvGenerationError && blockedCount === 0 && isProfileReady;
-    const status: 'READY_TO_SYNC' | 'ACTION_REQUIRED' = isFeedReady ? 'READY_TO_SYNC' : 'ACTION_REQUIRED';
-
-    const s = await this.prisma.tenantSettings.findUnique({ where: { tenantId } });
-    const sftpStaging = {
-      targetHost: s?.cargurusFtpHost || 'ftp.cargurus.com',
-      targetPort: s?.cargurusFtpPort || 2122,
-      targetFileName: s?.cargurusRemoteName || 'inventory.csv',
-      targetDirectory: s?.cargurusRemoteDir || '/',
-      simulatedPayloadSizeBytes: payloadSizeBytes,
-      configured: !!(s?.cargurusFtpHost && s?.cargurusFtpUser),
-    };
+    const check = csvGenerationError ? null : cg.validateFeedPayload(payload);
+    const { target, configured, missing } = await this.transport(tenantId);
+    const sizeBytes = Buffer.byteLength(payload, 'utf8');
+    const blockers = [
+      csvGenerationError ? `The file could not be generated: ${csvGenerationError}` : '',
+      !profile.complete ? 'The dealership profile is incomplete (Dealer ID, name, address, ZIP or CRM email).' : '',
+      !configured ? `CarGurus SFTP is not set up for this dealership (missing ${missing.join(' and ')}).` : '',
+      check && check.dataRows === 0 ? 'The file has no vehicles: uploading it would remove every listing from CarGurus.' : '',
+      ...(check?.errors || []),
+    ].filter(Boolean);
+    const status: 'READY_TO_SYNC' | 'ACTION_REQUIRED' = blockers.length ? 'ACTION_REQUIRED' : 'READY_TO_SYNC';
 
     const report = {
       status,
+      blockers,
+      mode: isLive ? 'live-feed' : 'pending-batch',
+      submission: { id: sub.id, status: sub.status, createdAt: sub.createdAt },
       summary: {
         totalEvaluated: records.length,
         validCount,
         blockedCount,
+        /** vehicles with problems are left out of the file unless "include vehicles with problems" is chosen */
+        excludedFromFile: isLive ? 0 : includeInvalid ? 0 : blockedCount,
         allPassed: blockedCount === 0,
-        dealershipProfileComplete: isProfileReady,
+        dealershipProfileComplete: profile.complete,
         profileIssues: profile.missing.map((m) => m.issue),
       },
       fileGeneration: {
         success: !csvGenerationError,
         error: csvGenerationError,
-        format: 'CarGurus 20-Column CSV / Master Specification',
-        estimatedSizeBytes: payloadSizeBytes,
-        rowsCount: records.length,
+        format: 'CarGurus CSV · 20 columns · UTF-8 · comma-separated · RFC 4180 quoting',
+        estimatedSizeBytes: sizeBytes,
+        rowsCount: check?.dataRows ?? 0,
+        sha256: createHash('sha256').update(payload).digest('hex'),
+        header: check?.header || [],
+        checks: check?.checks || [],
+        warnings: check?.warnings || [],
+        preview: payload.split('\n').slice(0, 6).map((l) => (l.length > 600 ? l.slice(0, 600) + '…' : l)),
       },
-      sftpStaging,
+      sftpStaging: {
+        protocol: target.protocol,
+        targetHost: target.host,
+        targetPort: target.port,
+        targetFileName: target.remoteName,
+        targetDirectory: target.remoteDir || '(login home folder)',
+        remotePath: target.remotePath,
+        simulatedPayloadSizeBytes: sizeBytes,
+        configured,
+        missing,
+        warnings: target.warnings,
+      },
       flaggedList,
       timestamp: new Date().toISOString(),
     };
 
-    await this.log2(tenantId, 'sftp.dry_run', {
-      submissionId: sub.id,
-      status,
-      validCount,
-      blockedCount,
-      sizeBytes: payloadSizeBytes,
-    });
-
+    await this.log2(tenantId, 'sftp.dry_run', { submissionId: sub.id, mode: report.mode, status, rows: report.fileGeneration.rowsCount, blockedCount, sizeBytes, sha256: report.fileGeneration.sha256, blockers });
     return report;
   }
 
@@ -298,6 +343,22 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
       return activePlatforms.includes('cargurus');
     }
     return true;
+  }
+
+  /**
+   * Business details › "Where your vehicles are sent": which syndication channels are switched on.
+   * A channel counts only when the platform also has its feature on for this dealership.
+   * Not set yet = both (the default); "website" = neither. Used by the inventory import to decide which checks apply.
+   */
+  async channels(tenantId: string): Promise<{ cargurus: boolean; marketplace: boolean; websiteOnly: boolean }> {
+    const t = await this.tenants.get(tenantId);
+    const f = await this.tenants.features(t);
+    const s = await this.prisma.tenantSettings.findUnique({ where: { tenantId }, select: { feedOperation: true } });
+    const op = String(s?.feedOperation || '').trim().toLowerCase();
+    const list = op ? op.split(',').map((x) => x.trim()).filter(Boolean) : ['cargurus', 'marketplace'];
+    const cargurus = !!f.cargurus && list.includes('cargurus');
+    const marketplace = !!f.facebook && list.includes('marketplace');
+    return { cargurus, marketplace, websiteOnly: !cargurus && !marketplace };
   }
 
   private async liveSub(tenantId: string) {
@@ -505,14 +566,21 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
       extraColumns,
       dealer: meta,
       dealerIssues,
-      sftpSettings: {
-        host: s?.cargurusFtpHost || 'ftp.cargurus.com',
-        port: s?.cargurusFtpPort || 2122,
-        username: s?.cargurusFtpUser || '',
-        hasPassword: !!s?.cargurusFtpPass,
-        remoteDir: s?.cargurusRemoteDir || '',
-        remoteName: s?.cargurusRemoteName || 'inventory.csv',
-      },
+      sftpSettings: (() => {
+        const t = resolveCargurusTarget(s || {});
+        return {
+          protocol: t.protocol,
+          host: t.host,
+          port: t.port,
+          username: s?.cargurusFtpUser || '',
+          hasPassword: !!s?.cargurusFtpPass,
+          remoteDir: t.remoteDir,
+          remoteName: t.remoteName,
+          remotePath: t.remotePath,
+          warnings: t.warnings,
+          configured: !!(s?.cargurusFtpUser && s?.cargurusFtpPass),
+        };
+      })(),
       rows: records.map((r) => ({
         row: r._row,
         valid: cg.recordValid(r),
@@ -576,65 +644,89 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
     return cg.scrubFeedCsv(sub?.feedCsv ?? null);
   }
 
-  /** Uploads the live feed to the dealer's CarGurus FTP (when set). Used by Approve, Re-send and the daily job. */
+  /** one upload at a time per dealership (an inventory change and the daily job must never write the file together) */
+  private readonly dispatchLocks = new Map<string, Promise<unknown>>();
+
+  /** Uploads the live feed to the dealer's CarGurus server. Used by Approve, Re-send, inventory removals and the daily job. */
   async dispatch(tenantId: string, trigger: string) {
+    const prev = this.dispatchLocks.get(tenantId) ?? Promise.resolve();
+    const run = prev.catch(() => undefined).then(() => this.dispatchNow(tenantId, trigger));
+    this.dispatchLocks.set(tenantId, run);
+    try {
+      return await run;
+    } finally {
+      if (this.dispatchLocks.get(tenantId) === run) this.dispatchLocks.delete(tenantId);
+    }
+  }
+
+  private async dispatchNow(tenantId: string, trigger: string): Promise<Record<string, unknown>> {
+    const live = await this.liveSub(tenantId);
     const csv = await this.liveFeed(tenantId);
-    if (!csv) return { sent: false, reason: 'No approved feed yet' };
-    const s = await this.prisma.tenantSettings.findUnique({ where: { tenantId } });
-    if (!s?.cargurusFtpHost || !s.cargurusFtpUser || !s.cargurusFtpPass) {
-      const r = { sent: false, status: 'not_configured', reason: 'CarGurus FTP is not set up for this dealership (feed approved, waiting for FTP details)', at: new Date().toISOString(), trigger };
-      await this.prisma.cargurusSubmission.updateMany({ where: { tenantId, status: 'APPROVED' }, data: { dispatchResult: r } });
-      await this.log2(tenantId, 'dispatch.skipped', r);
+    if (!live || !csv) return { sent: false, status: 'no_feed', reason: 'No approved feed yet', at: new Date().toISOString(), trigger };
+    const { s, target, configured, missing } = await this.transport(tenantId);
+    const rows = Math.max(0, cg.parse(csv)[1].length);
+    const bytes = Buffer.byteLength(csv, 'utf8');
+    const sha256 = createHash('sha256').update(csv).digest('hex');
+    const base = {
+      trigger,
+      submissionId: live.id,
+      protocol: target.protocol,
+      host: target.host,
+      port: target.port,
+      fileName: target.remoteName,
+      remotePath: target.remotePath,
+      rows,
+      bytes,
+      sha256,
+      warnings: target.warnings,
+    };
+    const save = async (r: Record<string, unknown>, ok: boolean) => {
+      // only the live batch carries the result of the upload (older approved batches keep their own history)
+      await this.prisma.cargurusSubmission.update({ where: { id: live.id }, data: ok ? { dispatchedAt: new Date(), dispatchResult: r as never } : { dispatchResult: r as never } });
+      await this.log2(tenantId, ok ? 'dispatch.ok' : r.status === 'not_configured' ? 'dispatch.skipped' : 'dispatch.failed', r);
+    };
+
+    if (!configured || !s) {
+      const r = { ...base, sent: false, status: 'not_configured', reason: `CarGurus SFTP is not set up for this dealership (missing ${missing.join(' and ')}); the approved feed is waiting.`, at: new Date().toISOString() };
+      await save(r, false);
       return r;
     }
-    const isSftp = s.cargurusFtpPort === 2122 || (s.cargurusFtpHost && s.cargurusFtpHost.includes('cargurus.com'));
-    if (isSftp) {
+
+    const started = Date.now();
+    if (target.protocol === 'sftp') {
       try {
-        const sftpRes = await uploadViaSftp(
-          {
-            host: s.cargurusFtpHost,
-            port: s.cargurusFtpPort || 2122,
-            username: s.cargurusFtpUser,
-            password: s.cargurusFtpPass,
-            timeout: 30000,
-          },
-          s.cargurusRemoteName || 'inventory.csv',
-          csv,
-          s.cargurusRemoteDir || undefined,
-        );
-        const r = { sent: true, status: 'uploaded', at: new Date().toISOString(), bytes: sftpRes.bytes, trigger, protocol: 'sftp' };
-        await this.prisma.cargurusSubmission.updateMany({ where: { tenantId, status: 'APPROVED' }, data: { dispatchedAt: new Date(), dispatchResult: r } });
-        await this.log2(tenantId, 'dispatch.ok', r);
+        const up = await uploadViaSftp({ host: target.host, port: target.port, username: s.cargurusFtpUser, password: s.cargurusFtpPass, timeout: 20000 }, target.remoteName, csv, target.remoteDir || undefined, 3);
+        const r = { ...base, sent: true, status: 'uploaded', at: new Date().toISOString(), bytes: up.bytes, attempts: up.attempts, durationMs: up.durationMs, verified: up.verified, verifyNote: up.verifyNote, hostFingerprint: up.hostFingerprint };
+        await save(r, true);
         return r;
       } catch (e) {
-        const r = { sent: false, status: 'failed', reason: (e as Error).message, at: new Date().toISOString(), trigger, protocol: 'sftp' };
-        await this.prisma.cargurusSubmission.updateMany({ where: { tenantId, status: 'APPROVED' }, data: { dispatchResult: r } });
-        await this.log2(tenantId, 'dispatch.failed', r);
-        this.log.warn(`dispatch SFTP ${tenantId} failed: ${r.reason}`);
+        const err = e as SftpError & { attempts?: number };
+        const r = { ...base, sent: false, status: 'failed', reason: err.message, stage: err.stage || 'unknown', code: err.code, attempts: err.attempts ?? 1, durationMs: Date.now() - started, error: String(err.stack || err.message).split('\n').slice(0, 6).join('\n'), at: new Date().toISOString() };
+        await save(r, false);
+        this.log.warn(`dispatch SFTP ${tenantId} ${target.host}:${target.port} failed at ${r.stage}: ${r.reason}`);
         return r;
       }
     }
 
     const client = new FtpClient(30_000);
     try {
-      await client.access({
-        host: s.cargurusFtpHost,
-        port: s.cargurusFtpPort || 21,
-        user: s.cargurusFtpUser,
-        password: s.cargurusFtpPass,
-        secure: s.cargurusFtpSsl,
-      });
-      if (s.cargurusRemoteDir) await client.ensureDir(s.cargurusRemoteDir);
-      await client.uploadFrom(Readable.from([Buffer.from(csv, 'utf8')]), s.cargurusRemoteName || 'inventory.csv');
-      const r = { sent: true, status: 'uploaded', at: new Date().toISOString(), bytes: csv.length, trigger };
-      await this.prisma.cargurusSubmission.updateMany({ where: { tenantId, status: 'APPROVED' }, data: { dispatchedAt: new Date(), dispatchResult: r } });
-      await this.log2(tenantId, 'dispatch.ok', r);
+      await client.access({ host: target.host, port: target.port, user: s.cargurusFtpUser, password: s.cargurusFtpPass, secure: s.cargurusFtpSsl });
+      if (target.remoteDir) await client.ensureDir(target.remoteDir);
+      await client.uploadFrom(Readable.from([Buffer.from(csv, 'utf8')]), target.remoteName);
+      let verified = false;
+      try {
+        verified = (await client.size(target.remoteName)) === bytes;
+      } catch {
+        /* some servers do not support SIZE */
+      }
+      const r = { ...base, sent: true, status: 'uploaded', at: new Date().toISOString(), attempts: 1, durationMs: Date.now() - started, verified };
+      await save(r, true);
       return r;
     } catch (e) {
-      const r = { sent: false, status: 'failed', reason: (e as Error).message, at: new Date().toISOString(), trigger };
-      await this.prisma.cargurusSubmission.updateMany({ where: { tenantId, status: 'APPROVED' }, data: { dispatchResult: r } });
-      await this.log2(tenantId, 'dispatch.failed', r);
-      this.log.warn(`dispatch ${tenantId} failed: ${r.reason}`);
+      const err = e as Error;
+      const r = { ...base, sent: false, status: 'failed', reason: err.message, stage: 'ftp', attempts: 1, durationMs: Date.now() - started, error: String(err.stack || err.message).split('\n').slice(0, 6).join('\n'), at: new Date().toISOString() };
+      await save(r, false);
+      this.log.warn(`dispatch FTP ${tenantId} failed: ${r.reason}`);
       return r;
     } finally {
       client.close();
@@ -674,7 +766,7 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
   async runAll() {
     if (!(await this.platform.get('feeds', 'cargurusCron', true))) return { skipped: 'paused in Platform settings' };
     const tenants = await this.prisma.tenant.findMany({
-      where: { status: 'ACTIVE', settings: { cargurusFtpHost: { not: '' } }, cargurusSubmission: { some: { status: 'APPROVED' } } },
+      where: { status: 'ACTIVE', settings: { cargurusFtpUser: { not: '' } }, cargurusSubmission: { some: { status: 'APPROVED' } } },
     });
     const results: Record<string, unknown> = {};
     for (const t of tenants) {

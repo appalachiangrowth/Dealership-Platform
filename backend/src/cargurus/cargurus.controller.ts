@@ -6,27 +6,25 @@ import { FeedsService } from '../feeds/feeds.service.js';
 import { CurrentUser, Perms, PlatformOnly, TenantId } from '../common/decorators.js';
 import type { AuthUser } from '../common/auth.types.js';
 
+/** Platform Admin tools (also platform-only by the global guard's default; stated here so it can never be opened by accident) */
 @Controller('api/cargurus')
+@PlatformOnly()
 export class ApiCargurusController {
   constructor(private readonly cg: CargurusService) {}
 
   @Post('test-connection')
   testConnection(
-    @Body() b: { tenantId?: string; host?: string; port?: number; username?: string; password?: string; passphrase?: string; privateKey?: string },
-    @TenantId() t?: string,
+    @Body() b: { tenantId?: string; host?: string; port?: number; username?: string; password?: string; passphrase?: string; privateKey?: string; remoteDir?: string; checkWrite?: boolean },
   ) {
-    const tenant = b?.tenantId || t || undefined;
-    return this.cg.testConnection(tenant, b);
+    return this.cg.testConnection(b?.tenantId || undefined, b);
   }
 
   @Post('dry-run')
   dryRun(
-    @Body() b: { tenantId?: string; submissionId?: string },
-    @TenantId() t?: string,
+    @Body() b: { tenantId?: string; submissionId?: string; includeInvalid?: boolean },
   ) {
-    const tenant = b?.tenantId || t;
-    if (!tenant) throw new BadRequestException('tenantId is required for dry-run validation');
-    return this.cg.dryRun(tenant, b?.submissionId);
+    if (!b?.tenantId) throw new BadRequestException('tenantId is required for dry-run validation');
+    return this.cg.dryRun(b.tenantId, b?.submissionId, { includeInvalid: !!b?.includeInvalid });
   }
 }
 
@@ -142,7 +140,7 @@ export class PlatformCargurusController {
   @Post(':tenantId/test-connection')
   testConnectionPlatform(
     @Param('tenantId') t: string,
-    @Body() b: { host?: string; port?: number; username?: string; password?: string; passphrase?: string; privateKey?: string },
+    @Body() b: { host?: string; port?: number; username?: string; password?: string; passphrase?: string; privateKey?: string; remoteDir?: string; checkWrite?: boolean },
   ) {
     return this.cg.testConnection(t, b);
   }
@@ -151,7 +149,8 @@ export class PlatformCargurusController {
   dryRunPlatform(
     @Param('tenantId') t: string,
     @Param('id') id: string,
+    @Body() b: { includeInvalid?: boolean },
   ) {
-    return this.cg.dryRun(t, id);
+    return this.cg.dryRun(t, id, { includeInvalid: !!b?.includeInvalid });
   }
 }

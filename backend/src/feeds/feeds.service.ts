@@ -176,7 +176,8 @@ export class FeedsService {
         price: rawPrice > 0 ? String(rawPrice) : (v.price !== null ? String(v.price) : ''),
         processing_fee: fee > 0 ? String(fee) : '',
         mileage: v.mileage !== null ? String(v.mileage) : '',
-        images: v.images.map((u) => this.absUrl(u, site)),
+        // , ; | separate photos in the CarGurus file: inside one address they are percent-encoded so a link is never split
+        images: v.images.map((u) => this.absUrl(u, site).replace(/,/g, '%2C').replace(/;/g, '%3B').replace(/\|/g, '%7C')),
         ext: v.exteriorColor,
         comments: cg.stripFeeText(v.description), // CarGurus Dealer Comments: no processing fee wording (it is in Price)
         stock: v.stockNumber,

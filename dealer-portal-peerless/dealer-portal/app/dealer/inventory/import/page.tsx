@@ -13,15 +13,23 @@ import { Button, Input, LinkButton, cx } from '@/components/ui';
 import { money, vehicleName } from '@/lib/format';
 
 /* ================= INVENTORY IMPORT (CSV / TSV / XML) — same flow as the old portal =================
-   Reads the file in the browser, matches its columns to vehicle fields, checks every vehicle against the
-   CarGurus rules, then adds new vehicles and updates existing ones (matched by VIN, then stock number). */
+   Reads the file in the browser, matches its columns to vehicle fields and checks every vehicle, then adds new
+   vehicles and updates existing ones (matched by VIN, then stock number).
+   Which checks run follows Business details › "Where your vehicles are sent":
+     website only → only the website's own checks · CarGurus on → + CarGurus rules · Marketplace on → + Marketplace fields */
 
 type Rec = Record<string, string>;
 type Parsed = { headers: string[]; records: Rec[] };
 type V = Record<string, any>;
-type Problem = { f: string; m: string; w?: boolean };
-/** ok = CarGurus ready; mp = Marketplace fields this vehicle is missing (empty = Marketplace ready) */
-type Row = { row: number; v: V; ex: V | null; by: string; probs: Problem[]; ok: boolean; mp: string[] };
+/** ch: 'core' = needed to save the vehicle on the website · 'cg' = CarGurus only (checked only when CarGurus is on) */
+type Problem = { f: string; m: string; w?: boolean; ch: 'core' | 'cg' };
+/**
+ * coreOk = can be saved on the website · ok = CarGurus ready (only meaningful when CarGurus is on) ·
+ * mp = Marketplace fields this vehicle is missing (always empty when Marketplace is off) · good = passes every check that is on
+ */
+type Row = { row: number; v: V; ex: V | null; by: string; probs: Problem[]; coreOk: boolean; ok: boolean; mp: string[]; good: boolean };
+/** Business details › "Where your vehicles are sent" */
+type Channels = { cargurus: boolean; marketplace: boolean };
 
 /** [field, label, header names it is found under] */
 const IMP_FIELDS: [string, string, string[]][] = [
@@ -210,44 +218,85 @@ function impVehicle(rec: Rec, map: Record<string, string>): V {
   return v;
 }
 
-/** every problem of one vehicle, in plain words */
-function impProblems(v: V, rec: Rec, cols: Record<string, string>, seen: { vin: Record<string, number>; stock: Record<string, number> }, row: number): Problem[] {
+/**
+ * every problem of one vehicle, in plain words.
+ * Website checks (ch 'core') always run: values that ARE given must make sense (a year the website accepts,
+ * a numeric price / mileage), and one file must not hold the same VIN or stock number twice.
+ * CarGurus checks (ch 'cg') only run when CarGurus is on: every mandatory CarGurus field, the strict VIN and
+ * year rules, and the photo formats CarGurus accepts.
+ */
+function impProblems(
+  v: V,
+  rec: Rec,
+  cols: Record<string, string>,
+  seen: { vin: Record<string, number>; stock: Record<string, number> },
+  row: number,
+  checkCg: boolean,
+): Problem[] {
   const P: Problem[] = [];
-  const add = (f: string, m: string, w?: boolean) => P.push({ f, m, w: !!w });
+  const core = (f: string, m: string, w?: boolean) => P.push({ f, m, w: !!w, ch: 'core' });
+  const cg = (f: string, m: string, w?: boolean) => {
+    if (checkCg) P.push({ f, m, w: !!w, ch: 'cg' });
+  };
   const raw = (f: string) => (cols[f] ? String(rec[cols[f]] || '').trim() : '');
-  const maxY = new Date().getFullYear() + 1;
-  if (!v.vin) add('VIN', 'Missing VIN');
-  else if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(v.vin)) add('VIN', `VIN "${v.vin}" is not valid: it must be 17 letters/digits, without I, O or Q`);
-  else if (seen.vin[v.vin]) add('VIN', `Same VIN as row ${seen.vin[v.vin]}`);
+  const thisYear = new Date().getFullYear();
+
+  // VIN: the same VIN twice in one file would update one vehicle twice (website) · CarGurus needs a valid 17-character VIN
+  if (!v.vin) cg('VIN', 'Missing VIN');
+  else if (seen.vin[v.vin]) core('VIN', `Same VIN as row ${seen.vin[v.vin]}`);
+  else if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(v.vin)) cg('VIN', `VIN "${v.vin}" is not valid: it must be 17 letters/digits, without I, O or Q`);
   if (v.vin && !seen.vin[v.vin]) seen.vin[v.vin] = row;
-  if (!v.make) add('Make', 'Missing Make');
-  if (!v.model) add('Model', 'Missing Model');
-  if (!raw('year')) add('Year', 'Missing Year');
-  else if (!(v.year >= 1980 && v.year <= maxY)) add('Year', `Year "${raw('year')}" must be 4 digits between 1980 and ${maxY}`);
-  if (!raw('price')) add('Price', 'Missing Price');
-  else if (!(v.price > 0)) add('Price', `Price "${raw('price')}" must be a number above 0`);
-  if (!raw('mileage')) add('Mileage', 'Missing Mileage');
+
+  // name of the vehicle on the website
+  if (!v.make) core('Make', 'Missing Make');
+  if (!v.model) core('Model', 'Missing Model');
+
+  // Year: the website accepts 1900 … next year + 1 · CarGurus needs one, between 1980 and next year
+  if (!raw('year')) cg('Year', 'Missing Year');
+  else if (!(v.year >= 1900 && v.year <= thisYear + 2)) core('Year', `Year "${raw('year')}" must be 4 digits between 1900 and ${thisYear + 2}`);
+  else if (!(v.year >= 1980 && v.year <= thisYear + 1)) cg('Year', `Year "${raw('year')}" must be between 1980 and ${thisYear + 1} for CarGurus`);
+
+  // Price / Mileage: when given they must be numbers (website) · CarGurus needs them
+  if (!raw('price')) cg('Price', 'Missing Price');
+  else if (!(v.price > 0)) core('Price', `Price "${raw('price')}" must be a number above 0`);
+  if (!raw('mileage')) cg('Mileage', 'Missing Mileage');
   else if (v.mileage === '' || isNaN(v.mileage) || !/^[\d,.\s]*(mi|miles|km)?\.?$/i.test(raw('mileage')) || /\.\d*[1-9]/.test(raw('mileage').replace(/,/g, '')))
-    add('Mileage', `Mileage "${raw('mileage')}" must be a whole number`);
-  if (!raw('trim')) add('Trim', 'Missing Trim');
-  if (!raw('exteriorColor')) add('Exterior Color', 'Missing Exterior Color');
-  if (!raw('description')) add('Dealer comments on vehicle', 'Missing Dealer comments on vehicle');
-  if (!raw('transmission')) add('Transmission Type', 'Missing Transmission Type');
+    core('Mileage', `Mileage "${raw('mileage')}" must be a whole number`);
+
+  // the other mandatory CarGurus fields
+  if (!raw('trim')) cg('Trim', 'Missing Trim');
+  if (!raw('exteriorColor')) cg('Exterior Color', 'Missing Exterior Color');
+  if (!raw('description')) cg('Dealer comments on vehicle', 'Missing Dealer comments on vehicle');
+  if (!raw('transmission')) cg('Transmission Type', 'Missing Transmission Type');
+
+  // Stock number: the same one twice in one file (website) · CarGurus needs one
   const sk = String(v.stockNumber || '').toLowerCase();
-  if (!v.stockNumber) add('Stock Number', 'Missing Stock Number');
-  else if (seen.stock[sk]) add('Stock Number', `Same Stock Number as row ${seen.stock[sk]}`);
+  if (!v.stockNumber) cg('Stock Number', 'Missing Stock Number');
+  else if (seen.stock[sk]) core('Stock Number', `Same Stock Number as row ${seen.stock[sk]}`);
   if (v.stockNumber && !seen.stock[sk]) seen.stock[sk] = row;
+
+  // Photos: the website only needs links (no photo = saved as a draft) · CarGurus needs JPG / PNG / GIF links
   const imgs: string[] = v.images || [];
-  if (!raw('images')) add('Image URLs', 'Missing Image URLs (photo links)');
-  else if (!imgs.length) add('Image URLs', 'No valid photo link: links must start with http:// or https://');
+  if (!raw('images')) cg('Image URLs', 'Missing Image URLs (photo links)');
+  else if (!imgs.length) core('Image URLs', 'No valid photo link (links must start with http:// or https://): saved as a draft without photos', true);
   for (const u of imgs) {
     const ext = photoExt(u);
     const short = u.length > 60 ? u.slice(0, 57) + '…' : u;
-    if (ext && !CG_IMG_OK.includes(ext)) add('Image URLs', `Image format not supported (.${ext}): use JPG, PNG or GIF · ${short}`);
-    else if (!ext) add('Image URLs', `Photo format cannot be confirmed (link has no .jpg/.png ending) · ${short}`, true);
+    if (ext && !CG_IMG_OK.includes(ext)) cg('Image URLs', `Image format not supported by CarGurus (.${ext}): use JPG, PNG or GIF · ${short}`);
+    else if (!ext) cg('Image URLs', `Photo format cannot be confirmed (link has no .jpg/.png ending) · ${short}`, true);
   }
   return P;
 }
+
+/** "website,cargurus" / "cargurus,marketplace" / "website" (= neither) / "" (not chosen yet = both) */
+function channelsFrom(op: unknown): Channels {
+  const s = String(op ?? '').trim().toLowerCase();
+  if (!s) return { cargurus: true, marketplace: true };
+  const list = s.split(',').map((x) => x.trim());
+  return { cargurus: list.includes('cargurus'), marketplace: list.includes('marketplace') };
+}
+
+const channelNames = (c: Channels) => [c.cargurus && 'CarGurus', c.marketplace && 'Facebook Marketplace'].filter(Boolean).join(' & ') || 'Website only';
 
 function downloadTemplate() {
   // CarGurus columns + the two more Facebook Marketplace needs
@@ -267,57 +316,16 @@ function downloadTemplate() {
   }, 300);
 }
 
-type Platform = 'cargurus' | 'marketplace';
-
-function PlatformToggle({ value, onChange }: { value: Platform[]; onChange: (v: Platform[]) => void }) {
-  const toggle = (p: Platform) => {
-    if (value.includes(p)) {
-      const next = value.filter((x) => x !== p);
-      if (next.length > 0) onChange(next);
-    } else {
-      onChange([...value, p]);
-    }
-  };
-  return (
-    <div className="flex gap-2">
-      {(['cargurus', 'marketplace'] as Platform[]).map((p) => {
-        const active = value.includes(p);
-        const label = p === 'cargurus' ? 'CarGurus' : 'Marketplace';
-        return (
-          <button
-            key={p}
-            type="button"
-            onClick={() => toggle(p)}
-            className={cx(
-              'flex items-center gap-2 rounded-lg border-2 px-4 py-2 text-sm font-semibold transition',
-              active ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300',
-            )}
-          >
-            <span className={cx('inline-flex h-4 w-4 items-center justify-center rounded border-2', active ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white')}>
-              {active && (
-                <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 10 10" fill="none">
-                  <path d="M1.5 5.5L4 8L8.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
-            </span>
-            {label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export default function ImportPage() {
   const toast = useToast();
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [platforms, setPlatforms] = useState<Platform[]>(['cargurus', 'marketplace']);
+  /** the dealership's channels (Business details › "Where your vehicles are sent"); null until loaded */
+  const [channels, setChannels] = useState<Channels | null>(null);
   const [P, setP] = useState<Parsed | null>(null);
   const [fileName, setFileName] = useState('');
   const [map, setMap] = useState<Record<string, string>>({});
   const [cols, setCols] = useState<Record<string, string>>({});
   const [inv, setInv] = useState<V[]>([]);
-  const [cgOn, setCgOn] = useState(true);
   const [filter, setFilter] = useState<'all' | 'bad' | 'ok' | 'mp' | 'dup'>('all');
   const [dupMode, setDupMode] = useState<'update' | 'skip'>('update');
   const [over, setOver] = useState(false);
@@ -331,20 +339,17 @@ export default function ImportPage() {
     api('/dealer/vehicles?pageSize=500')
       .then((r) => {
         setInv(r.items);
-        setCgOn(!!r.cargurusOn);
-      })
-      .catch(() => { });
-
-    api('/dealer/settings')
-      .then((r) => {
-        const op = r?.settings?.feedOperation;
-        if (op && typeof op === 'string') {
-          const list = op.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean) as Platform[];
-          const valid = list.filter((p) => p === 'cargurus' || p === 'marketplace');
-          if (valid.length > 0) setPlatforms(valid);
+        // the server's answer (also counts the platform's features); older servers: read Business details instead
+        if (r.channels && typeof r.channels === 'object') {
+          setChannels({ cargurus: !!r.channels.cargurus, marketplace: !!r.channels.marketplace });
+          return;
         }
+        return api('/dealer/settings').then((s) => {
+          const ch = channelsFrom(s?.settings?.feedOperation);
+          setChannels({ cargurus: ch.cargurus && r.cargurusOn !== false, marketplace: ch.marketplace });
+        });
       })
-      .catch(() => { });
+      .catch(() => setChannels((c) => c ?? { cargurus: true, marketplace: true }));
   }, []);
 
   function read(file: File) {
@@ -382,7 +387,8 @@ export default function ImportPage() {
 
   /** check every row against the CarGurus rules; split into new / update, ready / with problems */
   const R = useMemo(() => {
-    if (!P) return null;
+    // wait for the channels: checking first with the wrong ones would flash checks that do not apply
+    if (!P || !channels) return null;
     const byVin: Record<string, V> = {};
     const byStock: Record<string, V> = {};
     for (const v of inv) {
@@ -390,11 +396,15 @@ export default function ImportPage() {
       if (v.stockNumber) byStock[String(v.stockNumber).toLowerCase()] = v;
     }
     const seen = { vin: {}, stock: {} };
-    const missReq = IMP_CG.filter((c) => c[2] === 'req' && !cols[c[0]]);
+    const cgOn = !!channels?.cargurus;
+    const mpOn = !!channels?.marketplace;
+    // CarGurus columns the file lacks (only when CarGurus is on)
+    const missReq = cgOn ? IMP_CG.filter((c) => c[2] === 'req' && !cols[c[0]]) : [];
     const absent = new Set(IMP_CG.filter((c) => !cols[c[0]]).map((c) => c[1]));
-    // Marketplace columns the file does not have at all
-    const mpMissCols = MP_FIELDS.filter(([f]) => !cols[f] && !(f === 'bodyStyle' && cols.vehicleType));
-    const out = { rows: [] as Row[], ready: 0, bad: 0, mpReady: 0, add: 0, upd: 0, skip: [] as number[], missReq, mpMissCols };
+    // Marketplace columns the file does not have at all (only when Marketplace is on)
+    const mpMissCols = mpOn ? MP_FIELDS.filter(([f]) => !cols[f] && !(f === 'bodyStyle' && cols.vehicleType)) : [];
+    /** ready = CarGurus ready · mpReady = Marketplace ready · bad = fails a check of the website or of a channel that is on */
+    const out = { rows: [] as Row[], ready: 0, bad: 0, mpReady: 0, add: 0, upd: 0, skip: [] as number[], missReq, mpMissCols, cgOn, mpOn };
     P.records.forEach((rec, i) => {
       const row = i + 2;
       const v = impVehicle(rec, map);
@@ -402,23 +412,26 @@ export default function ImportPage() {
         out.skip.push(row);
         return;
       }
-      const probs = impProblems(v, rec, cols, seen, row).filter((p) => !absent.has(p.f));
+      // a column the file does not have is reported once (above the list), not on every vehicle
+      const probs = impProblems(v, rec, cols, seen, row, cgOn).filter((p) => !(p.ch === 'cg' && absent.has(p.f)));
       const errs = probs.filter((p) => !p.w);
+      const coreOk = !errs.some((p) => p.ch === 'core');
       const exV = v.vin && byVin[v.vin];
       const exS = !exV && v.stockNumber && byStock[String(v.stockNumber).toLowerCase()];
       const ex = exV || exS || null;
       // a vehicle is only CarGurus-ready when the file has every required column too
-      const ok = !errs.length && !missReq.length;
-      const mp = mpMissing(v);
-      out.rows.push({ row, v, ex, by: exV ? 'VIN' : exS ? 'stock number' : '', probs, ok, mp });
+      const ok = cgOn && !errs.length && !missReq.length;
+      const mp = mpOn ? mpMissing(v) : [];
+      const good = coreOk && (!cgOn || ok) && (!mpOn || !mp.length);
+      out.rows.push({ row, v, ex, by: exV ? 'VIN' : exS ? 'stock number' : '', probs, coreOk, ok, mp, good });
       if (ok) out.ready++;
-      if (!mp.length) out.mpReady++;
-      else out.bad++;
+      if (mpOn && !mp.length) out.mpReady++;
+      if (!good) out.bad++;
       if (ex) out.upd++;
       else out.add++;
     });
     return out;
-  }, [P, map, cols, inv]);
+  }, [P, map, cols, inv, channels]);
 
   async function run(rows: Row[], which: string) {
     setBusy(which);
@@ -432,7 +445,8 @@ export default function ImportPage() {
         return o;
       });
       const res = await api('/dealer/vehicles/import', { body: { rows: body } });
-      const bad = rows.filter((r) => !r.ok).length;
+      // "bad" = imported vehicles that CarGurus will not take yet (only counted when CarGurus is on)
+      const bad = channels?.cargurus ? rows.filter((r) => !r.ok).length : 0;
       setDone({ add: res.created, upd: res.updated, left: (R?.rows.length || 0) - rows.length, bad, ready: rows.length - bad, skipped: res.skipped || [] });
       setStep(3);
       toast.ok(`Imported: ${res.created} added, ${res.updated} updated`);
@@ -523,27 +537,67 @@ export default function ImportPage() {
           </div>
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="font-heading text-base font-bold text-slate-900">What your file needs</h3>
-            <p className="mt-1 text-sm text-slate-500">One row per vehicle, column names in the first row. These are the columns CarGurus needs (blue = required):</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {IMP_CG.map((c) => (
-                <span key={c[0]} className={cx('rounded-full px-3 py-1 text-xs font-semibold', c[2] === 'req' ? 'bg-blue-50 text-blue-800 ring-1 ring-blue-200' : 'bg-slate-100 text-slate-600')}>
-                  {c[1]}
-                  {c[2] === 'opt' && ' · optional'}
-                </span>
-              ))}
-            </div>
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              Checks for: Website{channels?.cargurus ? ' · CarGurus' : ''}
+              {channels?.marketplace ? ' · Facebook Marketplace' : ''}{' '}
+              <Link href="/dealer/business" className="font-normal text-blue-600 hover:underline">
+                (change where your vehicles are sent in Business details)
+              </Link>
+            </p>
+            {channels?.cargurus ? (
+              <>
+                <p className="mt-1 text-sm text-slate-500">One row per vehicle, column names in the first row. These are the columns CarGurus needs (blue = required):</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {IMP_CG.map((c) => (
+                    <span key={c[0]} className={cx('rounded-full px-3 py-1 text-xs font-semibold', c[2] === 'req' ? 'bg-blue-50 text-blue-800 ring-1 ring-blue-200' : 'bg-slate-100 text-slate-600')}>
+                      {c[1]}
+                      {c[2] === 'opt' && ' · optional'}
+                    </span>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="mt-1 text-sm text-slate-500">
+                One row per vehicle, column names in the first row. Only <b>Make</b> and <b>Model</b> are required; Year, Price, Mileage, VIN, Stock number,
+                colours, description and photo links are imported when your file has them.
+              </p>
+            )}
+            {channels?.marketplace && (
+              <p className="mt-3 text-sm text-slate-600">
+                <FacebookIcon className="mr-1 inline h-3.5 w-3.5 text-[#1877F2]" />
+                Facebook Marketplace needs: {MP_FIELDS.map((f) => f[1]).join(', ')}.
+              </p>
+            )}
             <ul className="mt-4 list-disc space-y-1.5 pl-5 text-sm text-slate-600">
+              {channels?.cargurus && (
+                <li>
+                  All columns are <b>required by CarGurus</b> except Installed Options: every vehicle needs a <b>Trim</b>, <b>Exterior Color</b>, <b>Transmission Type</b> and <b>Dealer comments</b> too.
+                </li>
+              )}
               <li>
-                All columns are <b>required by CarGurus</b> except Installed Options: every vehicle needs a <b>Trim</b>, <b>Exterior Color</b>, <b>Transmission Type</b> and <b>Dealer comments</b> too.
+                {channels?.cargurus ? (
+                  <>
+                    <b>VIN</b>: 17 letters/digits (no I, O, Q) · <b>Year</b>: 4 digits · <b>Price</b>: above 0 · <b>Mileage</b>: whole number
+                  </>
+                ) : (
+                  <>
+                    When given: <b>Year</b>: 4 digits · <b>Price</b>: a number above 0 · <b>Mileage</b>: a whole number
+                  </>
+                )}
               </li>
               <li>
-                <b>VIN</b>: 17 letters/digits (no I, O, Q) · <b>Year</b>: 4 digits · <b>Price</b>: above 0 · <b>Mileage</b>: whole number
+                <b>Image URLs</b>: full links (https://…), separated by | or commas
+                {channels?.cargurus ? (
+                  <>
+                    , ending in <b>.jpg, .jpeg, .png or .gif</b> (no .webp)
+                  </>
+                ) : (
+                  '. Vehicles without photos are saved as drafts.'
+                )}
               </li>
               <li>
-                <b>Image URLs</b>: full links (https://…), separated by | or commas, ending in <b>.jpg, .jpeg, .png or .gif</b> (no .webp)
-              </li>
-              <li>
-                Vehicles you already have (same VIN or stock number) are <b>updated</b>, not added twice. Your dealer details are added for CarGurus automatically.
+                Vehicles you already have (same VIN or stock number) are <b>updated</b>, not added twice.
+                {channels?.cargurus && ' Your dealer details are added for CarGurus automatically.'}
               </li>
             </ul>
             <Button variant="secondary" size="sm" className="mt-4" onClick={downloadTemplate}>
@@ -554,28 +608,19 @@ export default function ImportPage() {
       )}
 
       {/* ---------- step 2: check ---------- */}
+      {step === 2 && P && !R && <p className="mt-6 text-sm text-slate-500">Loading where your vehicles are sent…</p>}
       {step === 2 && P && R && (() => {
         const total = R.rows.length;
         const blocking = !cols.make || !cols.model;
         const extra = P.headers.filter((h) => map[h] && !IMP_CG.some((c) => c[0] === map[h]));
         const kept = extraColumns(P.headers, map);
         const dups = R.rows.filter((r) => r.ex);
-        const list = R.rows.filter((r) => (filter === 'all' ? true : filter === 'bad' ? !r.ok : filter === 'dup' ? !!r.ex : filter === 'mp' ? !r.mp.length : r.ok));
+        const list = R.rows.filter((r) => (filter === 'all' ? true : filter === 'bad' ? !r.good : filter === 'dup' ? !!r.ex : filter === 'mp' ? R.mpOn && !r.mp.length : r.ok));
         const keep = (r: Row) => !(dupMode === 'skip' && r.ex);
         const sk = dupMode === 'skip' ? dups.length : 0;
-        const skR = dupMode === 'skip' ? dups.filter((r) => r.ok).length : 0;
         const fT = total - sk;
-        const fReady = R.ready - skR;
-        const fBad = R.bad - (sk - skR);
-        const fMp = R.mpReady - (dupMode === 'skip' ? dups.filter((r) => !r.mp.length).length : 0);
-        // why vehicles are not Marketplace ready: columns the file lacks, otherwise the fields most vehicles miss
-        const mpWhy = (() => {
-          if (R.mpMissCols.length) return `${R.mpMissCols.map((c) => c[1]).join(', ')} ${R.mpMissCols.length === 1 ? 'is' : 'are'} missing`;
-          const n: Record<string, number> = {};
-          for (const r of R.rows) if (keep(r)) for (const m of r.mp) n[m] = (n[m] || 0) + 1;
-          const top = Object.entries(n).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([m, c]) => `${m} (${c})`);
-          return top.length ? `missing ${top.join(', ')}` : '';
-        })();
+        const ch: Channels = { cargurus: R.cgOn, marketplace: R.mpOn };
+        const coreBad = R.rows.filter((r) => !r.coreOk).length;
         return (
           <div className="mt-6 space-y-5">
             <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm">
@@ -605,28 +650,53 @@ export default function ImportPage() {
                 They are listed below. Fix them in your file and upload it again, or import only the ready vehicles now.
               </Verdict>
             ) : (
-              <Verdict tone="ok" title={`✓ All ${total} vehicle${total === 1 ? ' is' : 's are'} ready`}>Every CarGurus column is there and every vehicle passed the checks.</Verdict>
+              <Verdict tone="ok" title={`✓ All ${total} vehicle${total === 1 ? ' is' : 's are'} ready`}>
+                {R.cgOn ? 'Every CarGurus column is there and every vehicle passed the checks.' : `Every vehicle passed the checks for: ${channelNames(ch)}.`}
+              </Verdict>
             )}
 
-            {/* numbers */}
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {/* numbers — only the channels that are switched on */}
+            <div className={cx('grid gap-3 sm:grid-cols-2', R.cgOn && R.mpOn ? 'lg:grid-cols-4' : 'lg:grid-cols-3')}>
               <Card3 n={total} label={`vehicle${total === 1 ? '' : 's'} in file`} sub={`${R.add} new · ${R.upd} already in your inventory`} />
-              <Card3 tone="ok" n={R.ready} label="ready for CarGurus" sub={`Meets all ${CG_REQ_N} CarGurus mandatory criteria. Ready to syndicate.`} />
+              {R.cgOn && <Card3 tone="ok" n={R.ready} label="ready for CarGurus" sub={`Meets all ${CG_REQ_N} CarGurus mandatory criteria. Ready to syndicate.`} />}
+              {R.mpOn && (
+                <Card3
+                  tone="fb"
+                  n={R.mpReady}
+                  label="ready for Marketplace"
+                  sub={R.mpMissCols.length ? `Your file has no ${R.mpMissCols.map((c) => c[1]).join(', ')} column${R.mpMissCols.length === 1 ? '' : 's'}.` : `Has all ${MP_REQ_N} Facebook Marketplace fields. The FB button lists them on Marketplace.`}
+                />
+              )}
+              {!R.cgOn && !R.mpOn && <Card3 tone="ok" n={total - coreBad} label="ready for your website" sub="Website only: CarGurus and Marketplace checks are switched off in Business details." />}
               <Card3
-                tone="fb"
-                n={R.mpReady}
-                label="ready for Marketplace"
-                sub={R.mpMissCols.length ? `Your file has no ${R.mpMissCols.map((c) => c[1]).join(', ')} column${R.mpMissCols.length === 1 ? '' : 's'}.` : `Has all ${MP_REQ_N} Facebook Marketplace fields. The FB button lists them on Marketplace.`}
+                tone={R.bad ? 'bad' : undefined}
+                n={R.bad}
+                label={R.cgOn || R.mpOn ? 'with issues' : 'with problems'}
+                sub={
+                  R.cgOn && R.mpOn
+                    ? 'Fail a website, CarGurus or Marketplace check.'
+                    : R.cgOn
+                      ? 'Will be imported to your website, but cannot be listed on CarGurus until the issues are fixed.'
+                      : R.mpOn
+                        ? 'Miss a Facebook Marketplace field (or fail a website check).'
+                        : 'Values your website cannot use (see below).'
+                }
               />
-              <Card3 tone={R.bad ? 'bad' : undefined} n={R.bad} label="website only (issues)" sub="Will be imported to your website, but cannot be listed on CarGurus until the issues are fixed." />
             </div>
-            <p className="-mt-2 text-xs text-slate-500">
-              <FacebookIcon className="mr-1 inline h-3.5 w-3.5 text-[#1877F2]" />
-              Marketplace needs: {MP_FIELDS.map((f) => f[1]).join(', ')}.
-            </p>
+            {R.mpOn && (
+              <p className="-mt-2 text-xs text-slate-500">
+                <FacebookIcon className="mr-1 inline h-3.5 w-3.5 text-[#1877F2]" />
+                Marketplace needs: {MP_FIELDS.map((f) => f[1]).join(', ')}.
+              </p>
+            )}
 
             {/* columns */}
-            {IMP_CG.every((c) => cols[c[0]]) ? (
+            {!R.cgOn ? (
+              <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                <b>✓ Columns found:</b> {IMP_FIELDS.filter(([f]) => cols[f]).map(([, l]) => l).join(', ') || 'none'}
+                <span className="block text-xs text-emerald-700">CarGurus is switched off in Business details, so its columns are not checked.</span>
+              </div>
+            ) : IMP_CG.every((c) => cols[c[0]]) ? (
               <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
                 ✓ All {IMP_CG.length} CarGurus columns found in your file
                 {extra.length > 0 && ` · also imported to your website: ${extra.join(', ')}`}
@@ -658,7 +728,7 @@ export default function ImportPage() {
             {kept.length > 0 && (
               <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
                 <b>{kept.length} additional column{kept.length === 1 ? '' : 's'} kept with your vehicles:</b> {kept.join(', ')}.{' '}
-                <span className="text-blue-800">They are not checked by CarGurus and are added at the end of the CarGurus master CSV.</span>
+                <span className="text-blue-800">{R.cgOn ? 'They are not checked by CarGurus and are added at the end of the CarGurus master CSV.' : 'They are saved with each vehicle.'}</span>
               </div>
             )}
 
@@ -709,14 +779,14 @@ export default function ImportPage() {
               <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
                   <h3 className="font-heading text-base font-bold text-slate-900">Vehicles</h3>
-                  {(R.bad > 0 || dups.length > 0 || R.mpReady !== total) && (
+                  {(R.bad > 0 || dups.length > 0 || (R.mpOn && R.mpReady !== total)) && (
                     <div className="flex rounded-lg bg-slate-100 p-1 text-xs font-semibold">
                       {(
                         [
                           ['all', `All ${total}`],
                           ['bad', `Problems ${R.bad}`],
-                          ['ok', `CarGurus ready ${R.ready}`],
-                          ['mp', `Marketplace ready ${R.mpReady}`],
+                          ...(R.cgOn ? ([['ok', `CarGurus ready ${R.ready}`]] as const) : []),
+                          ...(R.mpOn ? ([['mp', `Marketplace ready ${R.mpReady}`]] as const) : []),
                           ...(dups.length ? ([['dup', `Already in inventory ${dups.length}`]] as const) : []),
                         ] as [typeof filter, string][]
                       ).map(([k, l]) => (
@@ -734,7 +804,7 @@ export default function ImportPage() {
                     return (
                       <div key={r.row} className="px-5 py-3">
                         <div className="flex items-start gap-3">
-                          <span className={cx('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold', r.ok ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>{r.ok ? '✓' : '!'}</span>
+                          <span className={cx('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold', r.good ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>{r.good ? '✓' : '!'}</span>
                           <div className="min-w-0 flex-1">
                             <b className="text-slate-900">{vehicleName(r.v) || `Row ${r.row}`}</b>
                             <small className="block text-xs text-slate-500">
@@ -750,6 +820,7 @@ export default function ImportPage() {
                           >
                             {r.ex ? (dupMode === 'skip' ? 'In inventory · skipped' : 'In inventory · will update') : 'New'}
                           </span>
+                          {R.mpOn && (
                           <span
                             title={r.mp.length ? `Facebook Marketplace needs: ${r.mp.join(', ')}` : 'Has every Facebook Marketplace field'}
                             className={cx('inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold', r.mp.length ? 'bg-slate-100 text-slate-500' : 'bg-blue-50 text-[#1877F2] ring-1 ring-blue-200')}
@@ -757,6 +828,7 @@ export default function ImportPage() {
                             <FacebookIcon className="h-3 w-3" />
                             {r.mp.length ? (r.mp.length <= 2 ? `Marketplace: needs ${r.mp.join(', ')}` : `Marketplace: ${r.mp.length} missing`) : 'Marketplace ready'}
                           </span>
+                          )}
                         </div>
                         {(errs.length > 0 || warns.length > 0) && (
                           <ul className="ml-9 mt-2 space-y-1 text-sm">
@@ -894,10 +966,8 @@ export default function ImportPage() {
             {/* actions */}
             <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-[#f4f6fb]/95 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8">
               <div className="flex items-center gap-2 text-xs text-slate-500">
-                <span>Configured platforms:</span>
-                <span className="font-semibold text-slate-800">
-                  {platforms.map((p) => (p === 'cargurus' ? 'CarGurus' : 'Marketplace')).join(' & ')}
-                </span>
+                <span>Checked for:</span>
+                <span className="font-semibold text-slate-800">{channelNames(ch)}</span>
                 <Link href="/dealer/business" className="ml-1 text-blue-600 hover:underline">
                   (change in Business details)
                 </Link>
@@ -907,30 +977,16 @@ export default function ImportPage() {
                   Cancel
                 </LinkButton>
                 {!blocking && (() => {
-                  // Determine which rows to import based on platform selection
-                  const cgOnly = platforms.includes('cargurus') && !platforms.includes('marketplace');
-                  const mpOnly = platforms.includes('marketplace') && !platforms.includes('cargurus');
-                  const both = platforms.includes('cargurus') && platforms.includes('marketplace');
-
-                  // Missing required columns for each platform
-                  const cgMissingCols = IMP_CG.filter((c) => c[2] === 'req' && !cols[c[0]]).map((c) => c[1]);
-                  const mpMissingCols = MP_FIELDS.filter(([f]) => !cols[f] && !(f === 'bodyStyle' && cols.vehicleType)).map(([, l]) => l);
-
-                  const needsCg = platforms.includes('cargurus');
-                  const needsMp = platforms.includes('marketplace');
-                  const missingForPlatforms: string[] = [
-                    ...(needsCg ? cgMissingCols : []),
-                    ...(needsMp ? mpMissingCols.filter((l) => !cgMissingCols.includes(l)) : []),
-                  ].filter((v, i, a) => a.indexOf(v) === i);
+                  // only the channels switched on in Business details decide what is required
+                  const needsCg = R.cgOn;
+                  const needsMp = R.mpOn;
+                  const cgMissingCols = needsCg ? IMP_CG.filter((c) => c[2] === 'req' && !cols[c[0]]).map((c) => c[1]) : [];
+                  const mpMissingCols = needsMp ? MP_FIELDS.filter(([f]) => !cols[f] && !(f === 'bodyStyle' && cols.vehicleType)).map(([, l]) => l) : [];
+                  const missingForPlatforms: string[] = [...cgMissingCols, ...mpMissingCols.filter((l) => !cgMissingCols.includes(l))].filter((v, i, a) => a.indexOf(v) === i);
 
                   const importDisabled = missingForPlatforms.length > 0 || fT === 0;
-                  const rowsToImport = R.rows.filter((r) => {
-                    if (!keep(r)) return false;
-                    if (cgOnly) return r.ok;
-                    if (mpOnly) return r.mp.length === 0;
-                    if (both) return r.ok && r.mp.length === 0;
-                    return true;
-                  });
+                  // website only: every vehicle the website can save · with channels: the vehicles ready for every channel that is on
+                  const rowsToImport = R.rows.filter((r) => keep(r) && r.good);
                   const qualifiedCount = rowsToImport.length;
                   const allCount = R.rows.filter(keep).length;
 
@@ -951,7 +1007,7 @@ export default function ImportPage() {
                       )}
                       {missingForPlatforms.length === 0 && qualifiedCount === 0 && allCount > 0 && (
                         <small className="text-[11px] font-semibold text-amber-600">
-                          No vehicles meet all requirements for the selected platform(s)
+                          No vehicles meet all requirements for: {channelNames(ch)}
                         </small>
                       )}
                     </span>
@@ -997,7 +1053,7 @@ export default function ImportPage() {
               excluded from the CarGurus feed until the mandatory fields are added. They are marked “CarGurus: issues” in your inventory; click the mark to fix them.
             </div>
           )}
-          {done.ready > 0 && cgOn && (
+          {done.ready > 0 && channels?.cargurus && (
             <div className="mx-auto mt-3 max-w-xl rounded-xl bg-blue-50 p-3 text-left text-sm text-blue-900">
               {done.ready} CarGurus-ready vehicle{done.ready === 1 ? ' is' : 's are'} now queued for CarGurus (sent after the platform team verifies them).
             </div>
@@ -1006,10 +1062,12 @@ export default function ImportPage() {
             View inventory
           </LinkButton>
 
-          {/* Where do you want to post options */}
+          {/* Where do you want to post options (only the channels switched on) */}
+          {(channels?.cargurus || channels?.marketplace) && (
           <div className="mx-auto mt-6 max-w-xl text-left">
             <h4 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-slate-500">Where do you want to post?</h4>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className={cx('grid gap-3', channels?.cargurus && channels?.marketplace && 'sm:grid-cols-2')}>
+              {channels?.cargurus && (
               <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition hover:border-slate-300">
                 <div>
                   <div className="flex items-center gap-2">
@@ -1027,7 +1085,9 @@ export default function ImportPage() {
                   View CarGurus feed
                 </Link>
               </div>
+              )}
 
+              {channels?.marketplace && (
               <div className="flex flex-col justify-between rounded-xl border border-blue-200 bg-blue-50/40 p-4 transition hover:border-blue-300">
                 <div>
                   <div className="flex items-center gap-2">
@@ -1048,8 +1108,10 @@ export default function ImportPage() {
                   Set up Facebook posting
                 </Link>
               </div>
+              )}
             </div>
           </div>
+          )}
 
           <div className="mt-6 flex justify-center">
             <LinkButton href="/dealer/inventory" variant="secondary">

@@ -170,6 +170,111 @@ export function scrubFeedCsv(text: string | null | undefined): string | null {
   return out.map((r) => r.map(csvCell).join(',')).join('\n') + '\n';
 }
 
+/** Why CarGurus could not download this photo link ('' = it is a public internet address). */
+export function publicUrlProblem(u: string): string {
+  let host = '';
+  try {
+    host = new URL(u).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  } catch {
+    return 'Not a valid address';
+  }
+  if (!host) return 'Not a valid address';
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.test'))
+    return 'Photo link points to this computer / a private name, CarGurus cannot download it (set the dealership website address)';
+  if (/^(127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) || host === '::1' || /^f[cd][0-9a-f]{2}:/i.test(host))
+    return 'Photo link uses a private network address, CarGurus cannot download it';
+  if (!host.includes('.') && !host.includes(':')) return 'Photo link has no public domain, CarGurus cannot download it';
+  return '';
+}
+
+export interface FeedCheck {
+  id: string;
+  label: string;
+  ok: boolean;
+  detail?: string;
+}
+
+/**
+ * Reads a finished CarGurus file back the way CarGurus would and checks it: exact header, every row the same width
+ * (nothing shifted by a comma / quote / new line), unique VINs, real prices and mileage, public photo links, and no
+ * processing-fee wording in the comments. errors block an upload; warnings are shown.
+ */
+export function validateFeedPayload(text: string) {
+  const checks: FeedCheck[] = [];
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const add = (id: string, labelText: string, bad: string[], blocking = true, max = 5) => {
+    const ok = bad.length === 0;
+    checks.push({ id, label: labelText, ok, detail: ok ? undefined : bad.slice(0, max).join(' · ') + (bad.length > max ? ` · +${bad.length - max} more` : '') });
+    if (!ok) (blocking ? errors : warnings).push(`${labelText}: ${bad.slice(0, max).join(' · ')}${bad.length > max ? ` (+${bad.length - max} more)` : ''}`);
+  };
+  const raw = String(text || '');
+  add('encoding', 'UTF-8 text without byte-order mark', raw.charCodeAt(0) === 0xfeff ? ['file starts with a BOM'] : []);
+  add('lineEnd', 'File ends with a line break', raw && !raw.endsWith('\n') ? ['last line has no line break'] : [], false);
+  // strict RFC 4180 read with a comma (no delimiter guessing)
+  const rows = parseDelimited(raw.replace(/\r\n?/g, '\n'), ',').filter((r) => r.some((c) => c !== ''));
+  const header = rows[0] || [];
+  const data = rows.slice(1);
+  const expected = headerRow();
+  add('header', `Header row is exactly the ${expected.length} CarGurus columns in order`, header.join('|') === expected.join('|') ? [] : [`got "${header.join(', ')}"`]);
+  const col = (name: string) => header.indexOf(name);
+  const width = header.length;
+  add('width', `Every row has ${width} columns (nothing shifted by commas, quotes or line breaks)`, data.map((r, i) => (r.length !== width ? `row ${i + 2}: ${r.length} columns` : '')).filter(Boolean));
+  const at = (r: string[], name: string) => (col(name) > -1 ? String(r[col(name)] ?? '') : '');
+  const vins = new Map<string, number>();
+  const dupVin: string[] = [];
+  const badVin: string[] = [];
+  const badPrice: string[] = [];
+  const badMiles: string[] = [];
+  const badYear: string[] = [];
+  const badImg: string[] = [];
+  const httpImg: string[] = [];
+  const noImg: string[] = [];
+  const fee: string[] = [];
+  const emptyReq: string[] = [];
+  const maxYear = new Date().getFullYear() + 2;
+  const required = ['VIN', 'Make', 'Model', 'Year', 'Trim', 'Price', 'Mileage', 'Image URLs', 'Exterior Color', 'Dealer comments on vehicle', 'Stock Number', 'Transmission Type', 'Dealer ID', 'Dealer Name', 'Dealer Street Address', 'Dealer City', 'Dealer State', 'Dealer ZIP', 'Dealer CRM Email'];
+  data.forEach((r, i) => {
+    const line = i + 2;
+    const vin = at(r, 'VIN').toUpperCase();
+    if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) badVin.push(`row ${line}: "${vin}"`);
+    if (vin) {
+      if (vins.has(vin)) dupVin.push(`${vin} (rows ${vins.get(vin)} and ${line})`);
+      else vins.set(vin, line);
+    }
+    const price = at(r, 'Price');
+    if (!/^\d+(\.\d{1,2})?$/.test(price) || +price <= 0) badPrice.push(`row ${line}: "${price}"`);
+    const miles = at(r, 'Mileage');
+    if (!/^\d+$/.test(miles)) badMiles.push(`row ${line}: "${miles}"`);
+    const y = at(r, 'Year');
+    if (!/^\d{4}$/.test(y) || +y < 1980 || +y > maxYear) badYear.push(`row ${line}: "${y}"`);
+    const imgs = at(r, 'Image URLs').split(',').map((x) => x.trim()).filter(Boolean);
+    if (!imgs.length) noImg.push(`row ${line}`);
+    for (const u of imgs) {
+      if (!/^https?:\/\/\S+$/i.test(u)) badImg.push(`row ${line}: "${u.slice(0, 80)}" is not an absolute link`);
+      else {
+        const pr = publicUrlProblem(u);
+        if (pr) badImg.push(`row ${line}: ${u.slice(0, 80)} (${pr.split(',')[0]})`);
+        else if (/^http:/i.test(u)) httpImg.push(`row ${line}`);
+      }
+    }
+    const comments = at(r, 'Dealer comments on vehicle');
+    if (stripFeeText(comments) !== comments.trim()) fee.push(`row ${line} (${vin || 'no VIN'})`);
+    for (const name of required) if (col(name) > -1 && !at(r, name).trim()) emptyReq.push(`row ${line}: ${name}`);
+  });
+  add('vin', 'Every VIN is 17 valid characters', badVin);
+  add('vinUnique', 'No VIN appears twice', dupVin);
+  add('price', 'Price is a plain number above 0 (processing fee already included)', badPrice);
+  add('mileage', 'Mileage is a whole number', badMiles);
+  add('year', `Year is between 1980 and ${maxYear}`, badYear);
+  add('required', 'No mandatory column is empty', emptyReq);
+  add('images', 'Every vehicle has at least one photo', noImg);
+  add('imagesPublic', 'Photo links are absolute, public internet addresses', [...new Set(badImg)]);
+  add('imagesHttps', 'Photo links use https', [...new Set(httpImg)], false);
+  add('comments', 'Dealer comments contain no processing-fee wording', fee);
+  return { header, dataRows: data.length, checks, errors, warnings };
+}
+
 /** RFC-4180 style CSV line splitter for one delimiter (handles quotes and new lines inside quotes). */
 function parseDelimited(text: string, delim: string): string[][] {
   const rows: string[][] = [];
@@ -337,6 +442,12 @@ export function ingestRows(headers: string[] | null, rows: (string[] | Record<st
           add('images', `Image URL format not supported (.${ext}): only JPEG, JPG, PNG or GIF - ${short(u)}`);
           continue;
         }
+        const pub = publicUrlProblem(u);
+        if (pub) {
+          add('images', `${pub}: ${short(u)}`);
+          continue;
+        }
+        if (/^http:\/\//i.test(u)) warn('images', `Photo is not on https (CarGurus prefers secure links): ${short(u)}`);
         if (!ext) warn('images', `Format cannot be confirmed from the link (no .jpg/.png/.gif ending): ${short(u)}`);
         if (!imgs.includes(u)) imgs.push(u);
       }
