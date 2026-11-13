@@ -30,8 +30,14 @@ export class VehiclesController {
   }
 
   @Post('import')
-  import(@TenantId() t: string, @Body() body: { rows?: Record<string, unknown>[]; mode?: 'publish' | 'draft' }, @CurrentUser() u: AuthUser) {
+  import(@TenantId() t: string, @Body() body: { rows?: Record<string, unknown>[]; mode?: 'publish' | 'draft'; enhancePhotos?: boolean }, @CurrentUser() u: AuthUser) {
     return this.vehicles.import(t, body, u);
+  }
+
+  /** Auto White Studio Background progress for imported photo links (before ':id') */
+  @Get('photo-jobs')
+  photoJob(@TenantId() t: string) {
+    return this.vehicles.photoJob(t);
   }
 
   @Get(':id')

@@ -7,3 +7,5 @@ src/generated
 *.tsbuildinfo
 # FB Poster: Facebook logins (Chrome profiles), screenshots, temp media - keep private
 storage/
+# Auto White Studio Background model (~170 MB, downloaded with: npm run photo-model)
+models/

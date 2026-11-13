@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { randomHex } from '../common/util.js';
 import type { AuthUser } from '../common/auth.types.js';
+import { VehiclePhotoEnhancerService } from './photo-enhancer.service.js';
 
 export const UPLOAD_ROOT = join(process.cwd(), 'uploads');
 
@@ -36,20 +37,46 @@ function jpegSize(buf: Buffer): { width?: number; height?: number } {
 
 @Injectable()
 export class MediaService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+    private readonly enhancer: VehiclePhotoEnhancerService,
+  ) {}
 
-  async save(tenantId: string, file: { buffer: Buffer; originalname: string; size: number }, user: AuthUser, folder = '') {
+  /**
+   * Saves one photo. opts.enhance (vehicle photos with "Auto White Studio Background" on): the vehicle is put on a
+   * white studio background first; when that is not possible the original photo is saved exactly as before.
+   * The answer carries enhanced (true / false) and, when it was asked for but not done, enhanceNote (why).
+   */
+  async save(
+    tenantId: string,
+    file: { buffer: Buffer; originalname: string; size: number },
+    user: AuthUser,
+    folder = '',
+    opts: { enhance?: boolean; priority?: 'high' | 'low' } = {},
+  ) {
     if (!file?.buffer?.length) throw new BadRequestException('No file received');
     const s = await this.prisma.tenantSettings.findUnique({ where: { tenantId }, select: { maxUploadMb: true } });
     const maxMb = s?.maxUploadMb || 12;
     if (file.size > maxMb * 1024 * 1024) throw new BadRequestException(`The photo is larger than ${maxMb} MB`);
-    const kind = sniffImage(file.buffer);
+    let kind = sniffImage(file.buffer);
     if (!kind) throw new BadRequestException('Only JPG, PNG, GIF or WebP images can be uploaded');
+    let buffer = file.buffer;
+    let enhanced = false;
+    let enhanceNote = '';
+    if (opts.enhance && folder !== 'site') {
+      const r = await this.enhancer.enhance(buffer, { priority: opts.priority ?? 'high' });
+      if (r.enhanced) {
+        buffer = r.buffer;
+        kind = { ext: r.ext, mime: r.mime, width: r.width, height: r.height };
+        enhanced = true;
+      } else enhanceNote = r.reason;
+    }
     const d = new Date();
     const sub = [tenantId, folder === 'site' ? 'site' : '', String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0')].filter(Boolean).join('/');
     const name = `${randomHex(8)}.${kind.ext}`;
     await mkdir(join(UPLOAD_ROOT, sub), { recursive: true });
-    await writeFile(join(UPLOAD_ROOT, sub, name), file.buffer);
+    await writeFile(join(UPLOAD_ROOT, sub, name), buffer);
     const rel = `${sub}/${name}`;
     const m = await this.prisma.mediaFile.create({
       data: {
@@ -57,14 +84,14 @@ export class MediaService {
         url: `/uploads/${rel}`,
         path: rel,
         mime: kind.mime,
-        size: file.size,
+        size: buffer.length,
         width: kind.width ?? null,
         height: kind.height ?? null,
         originalName: (file.originalname || '').slice(0, 200),
         uploadedBy: user.login,
       },
     });
-    return m;
+    return opts.enhance ? { ...m, enhanced, ...(enhanceNote ? { enhanceNote } : {}) } : m;
   }
 
   list(tenantId: string) {

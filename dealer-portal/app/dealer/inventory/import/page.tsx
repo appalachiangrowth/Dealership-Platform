@@ -2,14 +2,16 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, Download, FileText, Pencil, Upload } from 'lucide-react';
+import { ArrowLeft, Check, Download, FileText, Pencil, Sparkles, Upload } from 'lucide-react';
 import { api } from '@/lib/api';
 import { CG_IMG_OK, photoExt } from '@/lib/cargurus';
 import { brandRun } from '@/lib/branding';
+import { useStudioStatus, useStudioSwitch } from '@/lib/photo-studio';
+import type { PhotoJob } from '@/lib/photo-studio';
 import { useToast } from '@/components/toast';
 import { FacebookIcon } from '@/lib/facebook';
 import { MP_FIELDS, MP_FIX, MP_REQ_N, mpMissing } from '@/lib/marketplace';
-import { Button, Input, LinkButton, cx } from '@/components/ui';
+import { Button, Input, LinkButton, Spinner, Toggle, cx } from '@/components/ui';
 import { money, vehicleName } from '@/lib/format';
 
 /* ================= INVENTORY IMPORT (CSV / TSV / XML) — same flow as the old portal =================
@@ -334,6 +336,26 @@ export default function ImportPage() {
   const [fix, setFix] = useState<{ row: number; field: string; value: string; src?: 'cg' | 'mp' } | null>(null);
   const [done, setDone] = useState<{ add: number; upd: number; left: number; bad: number; ready: number; skipped: { row: number; reason: string }[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  /** Auto White Studio Background for the photo links of the file (on by default, remembered in this browser) */
+  const [studioOn, setStudioOn] = useStudioSwitch();
+  const studioStatus = useStudioStatus();
+  /** progress of the background photo job started by the import; note = why it did not start */
+  const [photoJob, setPhotoJob] = useState<PhotoJob | null>(null);
+  const [photoNote, setPhotoNote] = useState('');
+
+  // follow the photo job until it is done, then the photo branding runs on the new photos
+  useEffect(() => {
+    if (photoJob?.state !== 'running') return;
+    const t = setTimeout(() => {
+      api<{ job: PhotoJob | null }>('/dealer/vehicles/photo-jobs')
+        .then((r) => {
+          setPhotoJob(r.job);
+          if (!r.job || r.job.state === 'done') void brandRun();
+        })
+        .catch(() => setPhotoJob((j) => (j ? { ...j } : j))); // try again
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [photoJob]);
 
   useEffect(() => {
     api('/dealer/vehicles?pageSize=500')
@@ -444,13 +466,18 @@ export default function ImportPage() {
         if (!r.ex && !o.status) o.status = (o.images || []).length ? 'PUBLISHED' : 'DRAFT';
         return o;
       });
-      const res = await api('/dealer/vehicles/import', { body: { rows: body } });
+      const enhancePhotos = studioOn && studioStatus?.available !== false;
+      const res = await api('/dealer/vehicles/import', { body: { rows: body, enhancePhotos } });
       // "bad" = imported vehicles that CarGurus will not take yet (only counted when CarGurus is on)
       const bad = channels?.cargurus ? rows.filter((r) => !r.ok).length : 0;
       setDone({ add: res.created, upd: res.updated, left: (R?.rows.length || 0) - rows.length, bad, ready: rows.length - bad, skipped: res.skipped || [] });
       setStep(3);
       toast.ok(`Imported: ${res.created} added, ${res.updated} updated`);
-      void brandRun(); // photo links from the file get the branding bands (when photo branding is on)
+      const pj = res.photoJob as { job: PhotoJob | null; note: string } | null | undefined;
+      setPhotoJob(pj?.job ?? null);
+      setPhotoNote(enhancePhotos && pj?.note && pj.note !== 'no photo links to enhance' ? pj.note : '');
+      // photo links from the file get the branding bands (when photo branding is on) — after the white background
+      if (pj?.job?.state !== 'running') void brandRun();
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -963,6 +990,21 @@ export default function ImportPage() {
             )}
             <p className="text-xs text-slate-500">Vehicles with photos are published on your website; vehicles without photos are saved as drafts.</p>
 
+            {/* Auto White Studio Background for the photo links of the file */}
+            <div className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <Toggle
+                checked={studioOn}
+                onChange={setStudioOn}
+                label="Auto White Studio Background"
+                desc={
+                  studioStatus && !studioStatus.available
+                    ? `Not set up on the server yet — photo links are imported as they are (${studioStatus.reason}).`
+                    : 'After the import, the photos from the file are downloaded and each vehicle is put on a clean white studio background (in the background — you can keep working). Interior and close-up photos, and links that cannot be downloaded, keep the original photo.'
+                }
+              />
+              <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+            </div>
+
             {/* actions */}
             <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-[#f4f6fb]/95 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8">
               <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -1058,6 +1100,36 @@ export default function ImportPage() {
               {done.ready} CarGurus-ready vehicle{done.ready === 1 ? ' is' : 's are'} now queued for CarGurus (sent after the platform team verifies them).
             </div>
           )}
+          {photoJob && (
+            <div className="mx-auto mt-4 max-w-xl rounded-xl bg-blue-50 p-3 text-left text-sm text-blue-900" role="status" aria-live="polite">
+              {photoJob.state === 'running' ? (
+                <>
+                  <div className="flex items-center gap-2 font-semibold">
+                    <Spinner className="h-4 w-4" /> Enhancing vehicle background... {photoJob.done} of {photoJob.total} photo{photoJob.total === 1 ? '' : 's'}
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100">
+                    <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${photoJob.total ? Math.round((photoJob.done / photoJob.total) * 100) : 0}%` }} />
+                  </div>
+                  <p className="mt-1.5 text-xs text-blue-800">Your vehicles are already imported; each photo is swapped as soon as it is ready. You can leave this page.</p>
+                </>
+              ) : (
+                <>
+                  <b>White studio background done:</b> {photoJob.enhanced} photo{photoJob.enhanced === 1 ? '' : 's'} enhanced
+                  {photoJob.kept + photoJob.failed > 0 && <> · {photoJob.kept + photoJob.failed} kept as in the file</>}.
+                  {photoJob.notes.length > 0 && (
+                    <ul className="mt-1 list-disc pl-5 text-xs text-blue-800">
+                      {photoJob.notes.slice(0, 5).map((n, i) => (
+                        <li key={i} className="break-all">
+                          {n.url}: {n.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+          {photoNote && <div className="mx-auto mt-4 max-w-xl rounded-xl bg-amber-50 p-3 text-left text-sm text-amber-900">Photos imported as they are: {photoNote}</div>}
           <LinkButton href="/dealer/inventory" className="mt-6">
             View inventory
           </LinkButton>

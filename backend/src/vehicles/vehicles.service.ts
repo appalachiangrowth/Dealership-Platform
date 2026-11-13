@@ -5,6 +5,8 @@ import { TenantsService } from '../tenants/tenants.service.js';
 import { clean, slugify } from '../common/util.js';
 import { CARGURUS_RULES, cleanVehicleInput, DEFAULT_RULES, publishProblems, RULE_FIELDS, vehicleName } from './vehicle.fields.js';
 import { CargurusService } from '../cargurus/cargurus.service.js';
+import { PhotoJobsService } from './photo-jobs.service.js';
+import type { PhotoJob } from './photo-jobs.service.js';
 import type { Prisma, Vehicle, VehicleStatus } from '../generated/prisma/client.js';
 import type { AuthUser } from '../common/auth.types.js';
 
@@ -49,6 +51,7 @@ export class VehiclesService {
     private readonly audit: AuditService,
     private readonly tenants: TenantsService,
     private readonly cargurus: CargurusService,
+    private readonly photoJobs: PhotoJobsService,
   ) {}
 
   /** Every inventory change: update the CarGurus queue / live feed (never blocks the save). */
@@ -249,8 +252,11 @@ export class VehiclesService {
    * their other fields (and photos when the row has none) are kept. New vehicles: the row's status when the file
    * has one, otherwise published when they have photos and saved as drafts when they have none.
    */
-  async import(tenantId: string, body: { rows?: Record<string, unknown>[]; mode?: 'publish' | 'draft' }, user: AuthUser) {
+  async import(tenantId: string, body: { rows?: Record<string, unknown>[]; mode?: 'publish' | 'draft'; enhancePhotos?: boolean }, user: AuthUser) {
     const rows = Array.isArray(body.rows) ? body.rows.slice(0, 2000) : [];
+    /** Auto White Studio Background for the photo links of the file (on unless the portal switched it off) */
+    const enhance = body.enhancePhotos !== false;
+    const photoItems: { vehicleId: string; urls: string[] }[] = [];
     const res = { created: 0, updated: 0, skipped: [] as { row: number; reason: string }[] };
     const existing = await this.prisma.vehicle.findMany({ where: { tenantId }, select: { id: true, vin: true, stockNumber: true } });
     const byVin = new Map<string, string>(existing.filter((v) => v.vin).map((v) => [v.vin, v.id]));
@@ -278,6 +284,7 @@ export class VehiclesService {
           if (data.status === 'PUBLISHED' && !imgs.length && !cur?.images.length) data.status = 'DRAFT';
           if (extra) data.extra = { ...(cur?.extra && typeof cur.extra === 'object' ? (cur.extra as Record<string, string>) : {}), ...extra };
           await this.prisma.vehicle.update({ where: { id }, data: data as Prisma.VehicleUncheckedUpdateInput });
+          if (enhance && imgs.length) photoItems.push({ vehicleId: id, urls: imgs });
           res.updated++;
         } else {
           let status = (data.status as VehicleStatus | undefined) ?? (imgs.length ? 'PUBLISHED' : 'DRAFT');
@@ -297,6 +304,7 @@ export class VehiclesService {
           });
           if (v.vin) byVin.set(v.vin, v.id);
           if (v.stockNumber) byStock.set(v.stockNumber.toLowerCase(), v.id);
+          if (enhance && imgs.length) photoItems.push({ vehicleId: v.id, urls: imgs });
           res.created++;
         }
       } catch (e) {
@@ -309,6 +317,18 @@ export class VehiclesService {
       if (await this.prisma.vehicle.count({ where: { tenantId, status: 'PUBLISHED' } })) await this.tenants.setOnboarding(tenantId, 'first_vehicle');
       await this.changed(tenantId, user);
     }
-    return { ...res, channels };
+    // photo links → white studio photos, in the background (the import answer does not wait for it)
+    let photoJob: { job: PhotoJob | null; note: string } | null = null;
+    if (enhance && photoItems.length) {
+      photoJob = await this.photoJobs
+        .start(tenantId, photoItems, user, () => this.changed(tenantId, user))
+        .catch((e: Error) => ({ job: null, note: e.message }));
+    }
+    return { ...res, channels, photoJob };
+  }
+
+  /** Progress of the Auto White Studio Background job of the last import */
+  photoJob(tenantId: string) {
+    return { job: this.photoJobs.status(tenantId) };
   }
 }

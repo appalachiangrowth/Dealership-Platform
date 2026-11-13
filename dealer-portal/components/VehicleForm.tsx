@@ -679,7 +679,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
             chip={photoN ? { text: `✓ ${photoN} photo${photoN === 1 ? '' : 's'}`, tone: 'ok' } : { text: 'At least 1 needed', tone: isReq('images') ? 'todo' : 'opt' }}
           >
             <div data-f="images" className={cx('scroll-mt-28 rounded-xl transition', hot === 'images' && 'ring-2 ring-amber-400 ring-offset-4')}>
-              <ImageUploader value={v.images} onChange={(imgs) => set('images', imgs)} />
+              <ImageUploader studio value={v.images} onChange={(imgs) => set('images', imgs)} />
             </div>
             {problem('images') && photoN > 0 && <p className="mt-2 text-xs font-medium text-[#B91C1C]">{problem('images')}</p>}
           </Sec>
