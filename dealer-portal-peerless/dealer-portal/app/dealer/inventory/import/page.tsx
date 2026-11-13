@@ -6,7 +6,7 @@ import { ArrowLeft, Check, Download, FileText, Pencil, Sparkles, Upload } from '
 import { api } from '@/lib/api';
 import { CONVERTIBLE_IMG, photoExt } from '@/lib/cargurus';
 import { brandRun } from '@/lib/branding';
-import { useStudioStatus, useStudioSwitch } from '@/lib/photo-studio';
+import { STUDIO_SWITCH_VISIBLE, useStudioStatus, useStudioSwitch } from '@/lib/photo-studio';
 import type { PhotoJob } from '@/lib/photo-studio';
 import { useToast } from '@/components/toast';
 import { FacebookIcon } from '@/lib/facebook';
@@ -991,7 +991,8 @@ export default function ImportPage() {
             )}
             <p className="text-xs text-slate-500">Vehicles with photos are published on your website; vehicles without photos are saved as drafts.</p>
 
-            {/* Auto White Studio Background for the photo links of the file */}
+            {/* Auto White Studio Background for the photo links of the file (hidden on Peerless) */}
+            {STUDIO_SWITCH_VISIBLE && (
             <div className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3">
               <Toggle
                 checked={studioOn}
@@ -1005,7 +1006,8 @@ export default function ImportPage() {
               />
               <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
             </div>
-            <p className="-mt-2 text-xs text-slate-500">
+            )}
+            <p className="text-xs text-slate-500">
               All photo links (WebP, PNG, AVIF, HEIC or links without an ending) are copied to your photos as <b>.jpeg</b> after the import, so CarGurus and Facebook Marketplace always get JPEG photos. A link that cannot be downloaded keeps its original link.
             </p>
 

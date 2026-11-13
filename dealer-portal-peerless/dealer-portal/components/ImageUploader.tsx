@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, ImagePlus, Link2, Sparkles, Trash2, Upload } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
-import { useStudioStatus, useStudioSwitch } from '@/lib/photo-studio';
+import { STUDIO_SWITCH_VISIBLE, useStudioStatus, useStudioSwitch } from '@/lib/photo-studio';
 import { useToast } from './toast';
 import { Button, Input, Spinner, Toggle, cx } from './ui';
 
@@ -169,7 +169,7 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
             ))}
           </div>
         )}
-        {studio && (
+        {studio && STUDIO_SWITCH_VISIBLE && (
           <div className="mb-3 flex flex-wrap items-start justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
             <Toggle
               checked={studioOn}
