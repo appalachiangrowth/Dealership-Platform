@@ -187,7 +187,17 @@ export class VehiclesService {
     await this.audit.record('vehicle.create', { tenantId, actor: user.login, detail: { id: v.id, name: vehicleName(v) } });
     if (v.status === 'PUBLISHED') await this.tenants.setOnboarding(tenantId, 'first_vehicle');
     await this.changed(tenantId, user);
+    await this.convertLinks(tenantId, [{ vehicleId: v.id, urls: v.images }], user);
     return this.serialize(v);
+  }
+
+  /**
+   * Web photo links on a saved vehicle (pasted links, API, older vehicles) → the dealer's own .jpeg photos, in the
+   * background (the save does not wait; a link that cannot be downloaded stays as it is).
+   */
+  private async convertLinks(tenantId: string, items: { vehicleId: string; urls: string[] }[], user: AuthUser, enhance = false) {
+    if (!items.some((i) => i.urls.some((u) => PhotoJobsService.external(u, tenantId)))) return null;
+    return this.photoJobs.start(tenantId, items, user, { enhance }, () => this.changed(tenantId, user)).catch((e: Error) => ({ job: null, note: e.message }));
   }
 
   async update(tenantId: string, id: string, body: Record<string, unknown>, user: AuthUser) {
@@ -200,6 +210,7 @@ export class VehiclesService {
     await this.audit.record('vehicle.update', { tenantId, actor: user.login, detail: { id, name: vehicleName(v), fields: Object.keys(data) } });
     if (v.status === 'PUBLISHED') await this.tenants.setOnboarding(tenantId, 'first_vehicle');
     await this.changed(tenantId, user);
+    if ('images' in data) await this.convertLinks(tenantId, [{ vehicleId: v.id, urls: v.images }], user);
     return this.serialize(v);
   }
 
@@ -254,7 +265,7 @@ export class VehiclesService {
    */
   async import(tenantId: string, body: { rows?: Record<string, unknown>[]; mode?: 'publish' | 'draft'; enhancePhotos?: boolean }, user: AuthUser) {
     const rows = Array.isArray(body.rows) ? body.rows.slice(0, 2000) : [];
-    /** Auto White Studio Background for the photo links of the file (on unless the portal switched it off) */
+    /** every photo link of the file becomes a .jpeg on this server; + white studio background unless switched off */
     const enhance = body.enhancePhotos !== false;
     const photoItems: { vehicleId: string; urls: string[] }[] = [];
     const res = { created: 0, updated: 0, skipped: [] as { row: number; reason: string }[] };
@@ -284,7 +295,7 @@ export class VehiclesService {
           if (data.status === 'PUBLISHED' && !imgs.length && !cur?.images.length) data.status = 'DRAFT';
           if (extra) data.extra = { ...(cur?.extra && typeof cur.extra === 'object' ? (cur.extra as Record<string, string>) : {}), ...extra };
           await this.prisma.vehicle.update({ where: { id }, data: data as Prisma.VehicleUncheckedUpdateInput });
-          if (enhance && imgs.length) photoItems.push({ vehicleId: id, urls: imgs });
+          if (imgs.length) photoItems.push({ vehicleId: id, urls: imgs });
           res.updated++;
         } else {
           let status = (data.status as VehicleStatus | undefined) ?? (imgs.length ? 'PUBLISHED' : 'DRAFT');
@@ -304,7 +315,7 @@ export class VehiclesService {
           });
           if (v.vin) byVin.set(v.vin, v.id);
           if (v.stockNumber) byStock.set(v.stockNumber.toLowerCase(), v.id);
-          if (enhance && imgs.length) photoItems.push({ vehicleId: v.id, urls: imgs });
+          if (imgs.length) photoItems.push({ vehicleId: v.id, urls: imgs });
           res.created++;
         }
       } catch (e) {
@@ -317,13 +328,8 @@ export class VehiclesService {
       if (await this.prisma.vehicle.count({ where: { tenantId, status: 'PUBLISHED' } })) await this.tenants.setOnboarding(tenantId, 'first_vehicle');
       await this.changed(tenantId, user);
     }
-    // photo links → white studio photos, in the background (the import answer does not wait for it)
-    let photoJob: { job: PhotoJob | null; note: string } | null = null;
-    if (enhance && photoItems.length) {
-      photoJob = await this.photoJobs
-        .start(tenantId, photoItems, user, () => this.changed(tenantId, user))
-        .catch((e: Error) => ({ job: null, note: e.message }));
-    }
+    // photo links → .jpeg photos on this server (+ white studio background), in the background (the answer does not wait)
+    const photoJob: { job: PhotoJob | null; note: string } | null = photoItems.length ? await this.convertLinks(tenantId, photoItems, user, enhance) : null;
     return { ...res, channels, photoJob };
   }
 

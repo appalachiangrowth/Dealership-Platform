@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Param, Post, Query, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { MediaService } from './media.service.js';
@@ -24,6 +24,7 @@ export class MediaController {
 
   /**
    * POST /dealer/media (multipart, field "files", up to 30 photos). ?folder=site for logo/website images.
+   * Vehicle photos (no folder) are always stored as .jpeg, whatever format was uploaded.
    * ?enhance=1 for vehicle photos: Auto White Studio Background (each file says enhanced true / false).
    */
   @Post()
@@ -46,6 +47,12 @@ export class MediaController {
       }
     }
     return { files: out, errors };
+  }
+
+  /** POST /dealer/media/from-url { url, enhance? } — a pasted photo link becomes one of the dealer's own .jpeg photos */
+  @Post('from-url')
+  fromUrl(@TenantId() t: string, @Body() body: { url?: string; enhance?: boolean }, @CurrentUser() u: AuthUser) {
+    return this.media.saveFromUrl(t, String(body?.url || ''), u, { enhance: body?.enhance === true });
   }
 
   @Get()

@@ -6,6 +6,8 @@ import { AuditService } from '../audit/audit.service.js';
 import { randomHex } from '../common/util.js';
 import type { AuthUser } from '../common/auth.types.js';
 import { VehiclePhotoEnhancerService } from './photo-enhancer.service.js';
+import { JpegError, isoBrand, toJpeg } from './jpeg.js';
+import { downloadPublicImage } from './safe-download.js';
 
 export const UPLOAD_ROOT = join(process.cwd(), 'uploads');
 
@@ -18,8 +20,17 @@ export function sniffImage(buf: Buffer): { ext: string; mime: string; width?: nu
   if (buf.subarray(0, 6).toString('ascii') === 'GIF87a' || buf.subarray(0, 6).toString('ascii') === 'GIF89a')
     return { ext: 'gif', mime: 'image/gif', width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) };
   if (buf.subarray(0, 4).toString('ascii') === 'RIFF' && buf.subarray(8, 12).toString('ascii') === 'WEBP') return { ext: 'webp', mime: 'image/webp' };
+  // formats browsers / feeds do not all show: accepted, but always stored as JPEG
+  const brand = isoBrand(buf);
+  if (brand === 'avif' || brand === 'avis') return { ext: 'avif', mime: 'image/avif' };
+  if (brand) return { ext: 'heic', mime: 'image/heic' };
+  if (buf[0] === 0x42 && buf[1] === 0x4d) return { ext: 'bmp', mime: 'image/bmp' };
+  if ((buf[0] === 0x49 && buf[1] === 0x49 && buf[2] === 0x2a) || (buf[0] === 0x4d && buf[1] === 0x4d && buf[3] === 0x2a)) return { ext: 'tiff', mime: 'image/tiff' };
   return null;
 }
+
+/** what the website / logo folder keeps as it is (transparent logos stay PNG); everything else becomes JPEG */
+const KEEP_IN_SITE = ['jpg', 'png', 'gif', 'webp'];
 
 function jpegSize(buf: Buffer): { width?: number; height?: number } {
   let i = 2;
@@ -47,24 +58,47 @@ export class MediaService {
    * Saves one photo. opts.enhance (vehicle photos with "Auto White Studio Background" on): the vehicle is put on a
    * white studio background first; when that is not possible the original photo is saved exactly as before.
    * The answer carries enhanced (true / false) and, when it was asked for but not done, enhanceNote (why).
+   *
+   * JPEG: every vehicle photo (any folder except 'site') is converted to a .jpeg file — EXIF rotation applied,
+   * transparency flattened on white, quality 90 (see jpeg.ts) — whether the white background is on or off.
+   * Logo / website images ('site') keep JPG / PNG / GIF / WebP as they are; other formats there become JPEG too.
    */
   async save(
     tenantId: string,
     file: { buffer: Buffer; originalname: string; size: number },
     user: AuthUser,
     folder = '',
-    opts: { enhance?: boolean; priority?: 'high' | 'low' } = {},
+    opts: { enhance?: boolean; priority?: 'high' | 'low'; skipSizeCheck?: boolean } = {},
   ) {
     if (!file?.buffer?.length) throw new BadRequestException('No file received');
-    const s = await this.prisma.tenantSettings.findUnique({ where: { tenantId }, select: { maxUploadMb: true } });
-    const maxMb = s?.maxUploadMb || 12;
-    if (file.size > maxMb * 1024 * 1024) throw new BadRequestException(`The photo is larger than ${maxMb} MB`);
+    if (!opts.skipSizeCheck) {
+      const s = await this.prisma.tenantSettings.findUnique({ where: { tenantId }, select: { maxUploadMb: true } });
+      const maxMb = s?.maxUploadMb || 12;
+      if (file.size > maxMb * 1024 * 1024) throw new BadRequestException(`The photo is larger than ${maxMb} MB`);
+    }
     let kind = sniffImage(file.buffer);
-    if (!kind) throw new BadRequestException('Only JPG, PNG, GIF or WebP images can be uploaded');
+    if (!kind) throw new BadRequestException('Only photos can be uploaded (JPG, PNG, WebP, AVIF, HEIC, GIF or BMP)');
     let buffer = file.buffer;
     let enhanced = false;
     let enhanceNote = '';
-    if (opts.enhance && folder !== 'site') {
+    const site = folder === 'site';
+    if (!site || !KEEP_IN_SITE.includes(kind.ext)) {
+      let jpg: Awaited<ReturnType<typeof toJpeg>>;
+      try {
+        jpg = await toJpeg(buffer);
+      } catch (e) {
+        throw new BadRequestException(e instanceof JpegError ? `The photo could not be converted: ${e.message}` : 'The photo could not be converted to JPEG');
+      }
+      if (jpg) {
+        buffer = jpg.buffer;
+        kind = { ext: 'jpeg', mime: 'image/jpeg', width: jpg.width, height: jpg.height };
+      } else if (!KEEP_IN_SITE.includes(kind.ext)) {
+        // sharp missing on the server: only formats every browser shows may be stored unconverted
+        throw new BadRequestException('This photo format needs the image converter on the server (npm install in backend/)');
+      }
+    }
+    if (opts.enhance && !site) {
+      // the white studio background works on the JPEG (so HEIC / AVIF / transparent PNG work too)
       const r = await this.enhancer.enhance(buffer, { priority: opts.priority ?? 'high' });
       if (r.enhanced) {
         buffer = r.buffer;
@@ -92,6 +126,21 @@ export class MediaService {
       },
     });
     return opts.enhance ? { ...m, enhanced, ...(enhanceNote ? { enhanceNote } : {}) } : m;
+  }
+
+  /**
+   * A photo from a web link (pasted link, import): downloaded (public internet only, ≤ 15 MB) and saved like an
+   * upload — so it becomes one of the dealer's own .jpeg files.
+   */
+  async saveFromUrl(tenantId: string, url: string, user: AuthUser, opts: { enhance?: boolean; priority?: 'high' | 'low' } = {}) {
+    let buf: Buffer;
+    try {
+      buf = await downloadPublicImage(String(url || '').trim());
+    } catch (e) {
+      throw new BadRequestException(`The photo could not be downloaded: ${(e as Error).message}`);
+    }
+    const name = (String(url).split(/[?#]/)[0].split('/').pop() || 'photo').slice(0, 150);
+    return this.save(tenantId, { buffer: buf, originalname: name, size: buf.length }, user, '', { ...opts, skipSizeCheck: true });
   }
 
   list(tenantId: string) {

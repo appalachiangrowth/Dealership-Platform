@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, Download, FileText, Pencil, Sparkles, Upload } from 'lucide-react';
 import { api } from '@/lib/api';
-import { CG_IMG_OK, photoExt } from '@/lib/cargurus';
+import { CONVERTIBLE_IMG, photoExt } from '@/lib/cargurus';
 import { brandRun } from '@/lib/branding';
 import { useStudioStatus, useStudioSwitch } from '@/lib/photo-studio';
 import type { PhotoJob } from '@/lib/photo-studio';
@@ -277,15 +277,16 @@ function impProblems(
   else if (seen.stock[sk]) core('Stock Number', `Same Stock Number as row ${seen.stock[sk]}`);
   if (v.stockNumber && !seen.stock[sk]) seen.stock[sk] = row;
 
-  // Photos: the website only needs links (no photo = saved as a draft) · CarGurus needs JPG / PNG / GIF links
+  // Photos: the website only needs links (no photo = saved as a draft). Every link is downloaded after the import and
+  // stored as a .jpeg on this server (WebP, PNG, AVIF, HEIC, extension-less CDN links …), so CarGurus gets .jpeg links;
+  // only links that are clearly not photos (.pdf, .html, .mp4 …) are a problem.
   const imgs: string[] = v.images || [];
   if (!raw('images')) cg('Image URLs', 'Missing Image URLs (photo links)');
   else if (!imgs.length) core('Image URLs', 'No valid photo link (links must start with http:// or https://): saved as a draft without photos', true);
   for (const u of imgs) {
     const ext = photoExt(u);
     const short = u.length > 60 ? u.slice(0, 57) + '…' : u;
-    if (ext && !CG_IMG_OK.includes(ext)) cg('Image URLs', `Image format not supported by CarGurus (.${ext}): use JPG, PNG or GIF · ${short}`);
-    else if (!ext) cg('Image URLs', `Photo format cannot be confirmed (link has no .jpg/.png ending) · ${short}`, true);
+    if (ext && !CONVERTIBLE_IMG.includes(ext) && !/^(php|aspx?|jsp|cgi)$/.test(ext)) cg('Image URLs', `Not a photo link (.${ext}): use links to JPG, PNG, WebP, AVIF or HEIC photos · ${short}`);
   }
   return P;
 }
@@ -475,7 +476,7 @@ export default function ImportPage() {
       toast.ok(`Imported: ${res.created} added, ${res.updated} updated`);
       const pj = res.photoJob as { job: PhotoJob | null; note: string } | null | undefined;
       setPhotoJob(pj?.job ?? null);
-      setPhotoNote(enhancePhotos && pj?.note && pj.note !== 'no photo links to enhance' ? pj.note : '');
+      setPhotoNote(pj?.note || '');
       // photo links from the file get the branding bands (when photo branding is on) — after the white background
       if (pj?.job?.state !== 'running') void brandRun();
     } catch (e) {
@@ -999,11 +1000,14 @@ export default function ImportPage() {
                 desc={
                   studioStatus && !studioStatus.available
                     ? `Not set up on the server yet — photo links are imported as they are (${studioStatus.reason}).`
-                    : 'After the import, the photos from the file are downloaded and each vehicle is put on a clean white studio background (in the background — you can keep working). Interior and close-up photos, and links that cannot be downloaded, keep the original photo.'
+                    : 'After the import, the photos from the file are downloaded and each vehicle is put on a clean white studio background (in the background — you can keep working). Interior and close-up photos keep their original look.'
                 }
               />
               <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
             </div>
+            <p className="-mt-2 text-xs text-slate-500">
+              All photo links (WebP, PNG, AVIF, HEIC or links without an ending) are copied to your photos as <b>.jpeg</b> after the import, so CarGurus and Facebook Marketplace always get JPEG photos. A link that cannot be downloaded keeps its original link.
+            </p>
 
             {/* actions */}
             <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-[#f4f6fb]/95 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8">
@@ -1105,7 +1109,7 @@ export default function ImportPage() {
               {photoJob.state === 'running' ? (
                 <>
                   <div className="flex items-center gap-2 font-semibold">
-                    <Spinner className="h-4 w-4" /> Enhancing vehicle background... {photoJob.done} of {photoJob.total} photo{photoJob.total === 1 ? '' : 's'}
+                    <Spinner className="h-4 w-4" /> {studioOn ? 'Enhancing vehicle background...' : 'Converting photos to JPEG...'} {photoJob.done} of {photoJob.total} photo{photoJob.total === 1 ? '' : 's'}
                   </div>
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100">
                     <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${photoJob.total ? Math.round((photoJob.done / photoJob.total) * 100) : 0}%` }} />
@@ -1114,8 +1118,9 @@ export default function ImportPage() {
                 </>
               ) : (
                 <>
-                  <b>White studio background done:</b> {photoJob.enhanced} photo{photoJob.enhanced === 1 ? '' : 's'} enhanced
-                  {photoJob.kept + photoJob.failed > 0 && <> · {photoJob.kept + photoJob.failed} kept as in the file</>}.
+                  <b>Photos done:</b> {photoJob.converted} saved as JPEG
+                  {photoJob.enhanced > 0 && <> ({photoJob.enhanced} on a white studio background)</>}
+                  {photoJob.failed > 0 && <> · {photoJob.failed} link{photoJob.failed === 1 ? '' : 's'} could not be downloaded and stay as in the file</>}.
                   {photoJob.notes.length > 0 && (
                     <ul className="mt-1 list-disc pl-5 text-xs text-blue-800">
                       {photoJob.notes.slice(0, 5).map((n, i) => (
@@ -1129,7 +1134,7 @@ export default function ImportPage() {
               )}
             </div>
           )}
-          {photoNote && <div className="mx-auto mt-4 max-w-xl rounded-xl bg-amber-50 p-3 text-left text-sm text-amber-900">Photos imported as they are: {photoNote}</div>}
+          {photoNote && <div className="mx-auto mt-4 max-w-xl rounded-xl bg-amber-50 p-3 text-left text-sm text-amber-900">{photoNote}</div>}
           <LinkButton href="/dealer/inventory" className="mt-6">
             View inventory
           </LinkButton>

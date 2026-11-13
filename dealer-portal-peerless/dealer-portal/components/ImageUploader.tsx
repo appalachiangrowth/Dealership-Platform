@@ -8,8 +8,9 @@ import { useToast } from './toast';
 import { Button, Input, Spinner, Toggle, cx } from './ui';
 
 /**
- * Like the old upload.php: photos are stored as JPG / PNG / GIF (CarGurus refuses WebP, AVIF …) and very large
- * photos are made smaller. Converted in the browser before upload; JPG / PNG / GIF under the limits are sent as they are.
+ * Vehicle photos are always stored as .jpeg by the server (any format: JPG, PNG, WebP, AVIF, HEIC, GIF, BMP — rotated
+ * upright, transparency on white). Here, very large photos are only made smaller before the upload so it is faster;
+ * formats this browser cannot read (HEIC on most browsers) are sent as they are and converted by the server.
  */
 const MAX_SIDE = 2400;
 async function webReady(f: File): Promise<File> {
@@ -34,6 +35,15 @@ async function webReady(f: File): Promise<File> {
   } catch {
     return f; // the browser cannot read this format: the server decides
   }
+}
+
+/** what the photo pickers accept (HEIC / AVIF named too: some systems do not count them as image/*) */
+export const PHOTO_ACCEPT = 'image/*,.jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.gif,.bmp';
+
+/** A pasted web photo link → downloaded by the server and saved as one of the dealer's own .jpeg photos. */
+export async function photoFromLink(link: string, enhance: boolean): Promise<{ url: string; enhanced: boolean; note: string }> {
+  const r = await api<{ url: string; enhanced?: boolean; enhanceNote?: string }>('/dealer/media/from-url', { body: { url: link, enhance } });
+  return { url: r.url, enhanced: !!r.enhanced, note: r.enhanceNote || '' };
 }
 
 export async function uploadFiles(files: FileList | File[], folder?: string): Promise<string[]> {
@@ -65,6 +75,7 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
   const ref = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [url, setUrl] = useState('');
+  const [linkBusy, setLinkBusy] = useState(false);
   const [drag, setDrag] = useState(false);
   const [studioOn, setStudioOn] = useStudioSwitch();
   const studioStatus = useStudioStatus();
@@ -187,8 +198,18 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
           <Button type="button" variant="secondary" onClick={() => ref.current?.click()} loading={busy}>
             <Upload className="h-4 w-4" /> Upload photos
           </Button>
-          <span className="text-xs text-slate-500">or drag photos here · JPG, PNG, GIF, WebP · first photo is the cover</span>
-          <input ref={ref} type="file" accept="image/*" multiple hidden onChange={(e) => e.target.files && add(e.target.files)} />
+          <span className="text-xs text-slate-500">or drag photos here · JPG, PNG, WebP, AVIF, HEIC, GIF · saved as JPEG · first photo is the cover</span>
+          <input
+            ref={ref}
+            type="file"
+            accept={PHOTO_ACCEPT}
+            multiple
+            hidden
+            onChange={(e) => {
+              if (e.target.files) void add(e.target.files);
+              e.target.value = '';
+            }}
+          />
         </div>
         <div className="mt-3 flex gap-2">
           <div className="relative flex-1">
@@ -198,11 +219,26 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
           <Button
             type="button"
             variant="secondary"
-            onClick={() => {
-              if (/^https?:\/\//.test(url.trim())) {
-                onChange([...value, url.trim()]);
+            loading={linkBusy}
+            onClick={async () => {
+              const link = url.trim();
+              if (!/^https?:\/\//.test(link)) return toast.error('Paste a link that starts with https://');
+              if (value.length >= max) return toast.error(`At most ${max} photos`);
+              // the photo is copied to the dealership's own photos as a .jpeg (feeds always get a .jpeg link)
+              setLinkBusy(true);
+              if (enhance) setProgress({ done: 0, total: 1 });
+              try {
+                const r = await photoFromLink(link, enhance);
+                onChange([...value, r.url].slice(0, max));
                 setUrl('');
-              } else toast.error('Paste a link that starts with https://');
+                if (r.enhanced) toast.ok('Photo put on a white studio background');
+                else if (enhance && r.note) toast.ok(`Photo saved as JPEG (kept as it is: ${r.note})`);
+              } catch (e) {
+                toast.error(`${(e as Error).message}. Download the photo and upload it instead.`);
+              } finally {
+                setLinkBusy(false);
+                setProgress(null);
+              }
             }}
           >
             Add link

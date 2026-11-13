@@ -23,6 +23,11 @@ export const CG_ITEMS: [string, string, string][] = [
 ];
 
 export const CG_IMG_OK = ['jpg', 'jpeg', 'png', 'gif'];
+/**
+ * Photo formats the server converts to .jpeg (uploads, imported links and links saved on a vehicle are all stored as
+ * .jpeg on this server), so for these the original format does not matter. Anything else is not a photo.
+ */
+export const CONVERTIBLE_IMG = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'heif', 'bmp', 'tif', 'tiff', 'jfif'];
 
 export function photoExt(u: string): string {
   return ((String(u).split(/[?#]/)[0].match(/\.([a-z0-9]{2,5})$/i) || [])[1] || '').toLowerCase();
@@ -60,7 +65,9 @@ export function cgIssues(v: V, all: V[] = []): CgProblem[] {
   if (!imgs.length) add('images', 'Photos', 'No photos');
   for (const u of imgs) {
     const ext = photoExt(u);
-    if (ext && !CG_IMG_OK.includes(ext)) add('images', 'Photos', `Photo format .${ext} not accepted (use JPG, PNG or GIF)`);
+    // web links in another photo format (WebP, AVIF …) are converted to .jpeg when the vehicle is saved
+    if (ext && !CG_IMG_OK.includes(ext) && !(/^https?:\/\//i.test(u) && CONVERTIBLE_IMG.includes(ext)))
+      add('images', 'Photos', `Photo format .${ext} not accepted (use JPG, PNG, WebP, AVIF, HEIC or GIF photos)`);
   }
   return out.filter((x, i, a) => a.findIndex((y2) => y2.m === x.m) === i);
 }

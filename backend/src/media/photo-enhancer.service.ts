@@ -26,7 +26,7 @@ import { isAbsolute, join } from 'path';
  */
 
 export type EnhanceResult =
-  | { enhanced: true; buffer: Buffer; mime: 'image/jpeg'; ext: 'jpg'; width: number; height: number; ms: number }
+  | { enhanced: true; buffer: Buffer; mime: 'image/jpeg'; ext: 'jpeg'; width: number; height: number; ms: number }
   | { enhanced: false; reason: string };
 
 export type EnhancerStatus = { available: boolean; reason?: string; model: string };
@@ -342,9 +342,9 @@ export class VehiclePhotoEnhancerService implements OnModuleDestroy {
         { input: subject, left, top },
       ])
       .flatten({ background: '#ffffff' })
-      .jpeg({ quality: 88, mozjpeg: true, chromaSubsampling: '4:4:4' })
+      .jpeg({ quality: 90, mozjpeg: true, chromaSubsampling: '4:4:4' })
       .toBuffer();
-    return { enhanced: true, buffer: jpg, mime: 'image/jpeg', ext: 'jpg', width: OUT_W, height: OUT_H, ms: 0 };
+    return { enhanced: true, buffer: jpg, mime: 'image/jpeg', ext: 'jpeg', width: OUT_W, height: OUT_H, ms: 0 };
   }
 }
 

@@ -57,6 +57,7 @@ export type PhotoJob = {
   state: 'running' | 'done';
   total: number;
   done: number;
+  converted: number;
   enhanced: number;
   kept: number;
   failed: number;

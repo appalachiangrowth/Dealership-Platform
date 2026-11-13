@@ -13,10 +13,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTenant } from '@/components/DealerShell';
 import { useToast } from '@/components/toast';
-import { uploadFiles } from '@/components/ImageUploader';
+import { PHOTO_ACCEPT, uploadFiles } from '@/components/ImageUploader';
 import { FbPostModal } from '@/components/fb/FbPostModal';
 import { AQ_CSS } from '@/components/ai/aqStyles';
-import { api } from '@/lib/api';
+import { api, mediaUrl } from '@/lib/api';
 import { brandRun } from '@/lib/branding';
 import {
   aiApi, AiStatus, ANGLE_LABEL, ANGLE_ORDER, arrangePhotos, bigFrame, extractAudio, extractFrames, mergeVideo, nextPhotoId, Photo, shrink, Vid, vinOk,
@@ -385,10 +385,30 @@ export default function AiAddVehiclePage() {
   };
 
   /* ---------------- photos + AI (starts by itself) ---------------- */
+  /**
+   * A picture this browser can read is used as it is. HEIC / AVIF / BMP … that it cannot read are converted by the
+   * server first (it stores every vehicle photo as .jpeg anyway) and the .jpeg is used for the preview and the AI.
+   */
+  const readPhoto = async (f: File): Promise<Photo | null> => {
+    try {
+      return await shrink(f, f.name);
+    } catch {
+      /* not readable here: let the server convert it */
+    }
+    try {
+      const [u] = await uploadFiles([f]);
+      const res = await fetch(mediaUrl(u));
+      if (!res.ok) return null;
+      return await shrink(await res.blob(), f.name);
+    } catch {
+      return null;
+    }
+  };
   const addFiles = async (list: FileList | File[]) => {
-    const files = Array.from(list).filter((f) => f.type.startsWith('image/'));
+    // HEIC / HEIF files often come without a type on Windows: their name decides
+    const files = Array.from(list).filter((f) => f.type.startsWith('image/') || /\.(heic|heif|avif|webp|bmp)$/i.test(f.name));
     if (!files.length) return;
-    const done = await Promise.all(files.map((f) => shrink(f, f.name).catch(() => null)));
+    const done = await Promise.all(files.map((f) => readPhoto(f)));
     const ok = done.filter(Boolean) as Photo[];
     if (ok.length < files.length) toast.error(`${files.length - ok.length} file(s) couldn’t be read as pictures.`);
     manualOrder.current = false;
@@ -1331,7 +1351,7 @@ export default function AiAddVehiclePage() {
                       <label className="btn">
                         <input
                           type="file"
-                          accept="image/*"
+                          accept={PHOTO_ACCEPT}
                           multiple
                           className="sr"
                           onChange={(e) => {
