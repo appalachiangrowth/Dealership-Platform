@@ -195,10 +195,11 @@ export function cleanSettingsPatch(
         else invalid.push(k);
         break;
       case 'secret': {
-        // empty = keep the stored secret; null = clear it
+        // empty = keep the stored secret; null = clear it.
+        // Kept EXACTLY as typed (spaces count in passwords / passphrases): only invisible control characters are dropped.
         if (v === null) data[k] = '';
         else {
-          const s = clean(v, f.max);
+          const s = String(v).replace(/[\u0000-\u001f\u007f]/g, '').slice(0, f.max);
           if (s) data[k] = s;
         }
         break;

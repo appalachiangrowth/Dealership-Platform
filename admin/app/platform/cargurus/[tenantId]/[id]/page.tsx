@@ -134,14 +134,11 @@ export default function CargurusAudit() {
   const [connModalOpen, setConnModalOpen] = useState(false);
   const [testingConn, setTestingConn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [showPassphrase, setShowPassphrase] = useState(false);
   const [sftpForm, setSftpForm] = useState({
     host: 'ftp.cargurus.com',
     port: 2122,
     username: '',
     password: '',
-    passphrase: '',
-    privateKey: '',
     remoteDir: '',
     remoteName: 'inventory.csv',
   });
@@ -171,8 +168,6 @@ export default function CargurusAudit() {
         remoteName: data.sftpSettings.remoteName || 'inventory.csv',
         // never pre-filled: an empty password / key means "use the saved one"
         password: '',
-        passphrase: '',
-        privateKey: '',
       }));
     }
   }, [data]);
@@ -203,10 +198,50 @@ export default function CargurusAudit() {
   const sftp = data.sftpSettings || {};
   const last = sub.dispatchResult as any;
 
+  /** Writes the form as the dealership's CarGurus upload settings (the password only when one was typed). */
+  const saveSftpSettings = async () => {
+    const patch: Record<string, unknown> = {
+      cargurusFtpHost: sftpForm.host.trim(),
+      cargurusFtpPort: Number(sftpForm.port) || 2122,
+      cargurusFtpUser: sftpForm.username.trim(),
+      cargurusRemoteDir: sftpForm.remoteDir.trim(),
+      cargurusRemoteName: sftpForm.remoteName.trim() || 'inventory.csv',
+    };
+    if (sftpForm.password) patch.cargurusFtpPass = sftpForm.password;
+    await api('/dealer/settings', { method: 'PATCH', body: patch, tenant: tenantId });
+  };
+
+  const showResult = (res: any) => {
+    const detail = {
+      credentialsSource: res.credentialsSource,
+      protocol: res.protocol,
+      host: res.host,
+      port: res.port,
+      remotePath: res.remotePath,
+      hostFingerprint: res.hostFingerprint,
+      fingerprintPinned: res.fingerprintPinned,
+      warnings: res.warnings || [],
+      directory: res.directory,
+      write: res.write,
+      stage: res.stage,
+      latencyMs: res.latencyMs,
+      timestamp: new Date().toLocaleTimeString(),
+    };
+    if (res.success) setConnectionStatus({ tested: true, success: true, message: res.message || 'Connection & login verified', ...detail });
+    else setConnectionStatus({ tested: true, success: false, reason: res.reason || 'Login or connection failed', ...detail });
+  };
+
+  /**
+   * "Test & save connection":
+   *  1. logs in to CarGurus for real with what is in the form (nothing is saved if this fails),
+   *  2. saves it as the dealership's upload settings,
+   *  3. logs in AGAIN with the saved copy — exactly what Approve & Sync and the daily upload will use.
+   * Only step 3 passing marks the connection OK.
+   */
   const handleTestConnection = async () => {
     setTestingConn(true);
     try {
-      const res = await api('/api/cargurus/test-connection', {
+      let res = await api('/api/cargurus/test-connection', {
         method: 'POST',
         body: {
           tenantId,
@@ -214,69 +249,38 @@ export default function CargurusAudit() {
           port: Number(sftpForm.port) || 2122,
           username: sftpForm.username,
           password: sftpForm.password || undefined,
-          passphrase: sftpForm.passphrase || undefined,
-          privateKey: sftpForm.privateKey || undefined,
           remoteDir: sftpForm.remoteDir,
           checkWrite,
         },
       });
-      const detail = {
-        credentialsSource: res.credentialsSource,
-        protocol: res.protocol,
-        host: res.host,
-        port: res.port,
-        remotePath: res.remotePath,
-        hostFingerprint: res.hostFingerprint,
-        fingerprintPinned: res.fingerprintPinned,
-        warnings: res.warnings || [],
-        directory: res.directory,
-        write: res.write,
-        stage: res.stage,
-        latencyMs: res.latencyMs,
-        timestamp: new Date().toLocaleTimeString(),
-      };
-      if (res.success) {
-        setConnectionStatus({ tested: true, success: true, message: res.message || 'Connection & authentication verified', ...detail });
-        if (res.credentialsSource === 'custom') toast.error('Connected, but with details that are NOT saved — uploads use the saved settings. Save them in the dealership first.');
-        else toast.ok(res.message || 'SFTP connection verified');
-      } else {
-        setConnectionStatus({ tested: true, success: false, reason: res.reason || 'Authentication or connection handshake failed', ...detail });
-        toast.error(res.reason || 'SFTP connection failed');
-      }
+      if (res.success && res.credentialsSource === 'custom') {
+        await saveSftpSettings();
+        res = await api('/api/cargurus/test-connection', { method: 'POST', body: { tenantId } });
+        if (res.success) {
+          setSftpForm((f) => ({ ...f, password: '' }));
+          toast.ok('Connected and saved. Uploads will use these settings.');
+        } else toast.error(`Saved, but the saved settings do not log in: ${res.reason}`);
+        reload();
+      } else if (res.success) toast.ok(res.message || 'Connected with the saved settings');
+      else toast.error(res.reason || 'SFTP connection failed — nothing was saved');
+      showResult(res);
     } catch (e: any) {
       const reason = e?.message || 'Connection error';
-      setConnectionStatus({
-        tested: true,
-        success: false,
-        reason,
-        timestamp: new Date().toLocaleTimeString(),
-      });
+      setConnectionStatus({ tested: true, success: false, reason, timestamp: new Date().toLocaleTimeString() });
       toast.error(reason);
     } finally {
       setTestingConn(false);
     }
   };
 
-  /** Saves host / port / username / folder / file name (+ the password when one was typed) as the dealership's CarGurus settings. */
+  /** "Save only" (without testing), e.g. to correct the folder or file name. */
   const handleSaveSftp = async () => {
-    if (sftpForm.privateKey.trim()) {
-      toast.error('Private keys cannot be saved: CarGurus uploads use the username and password.');
-      return;
-    }
     setSavingSftp(true);
     try {
-      const patch: Record<string, unknown> = {
-        cargurusFtpHost: sftpForm.host.trim(),
-        cargurusFtpPort: Number(sftpForm.port) || 2122,
-        cargurusFtpUser: sftpForm.username.trim(),
-        cargurusRemoteDir: sftpForm.remoteDir.trim(),
-        cargurusRemoteName: sftpForm.remoteName.trim() || 'inventory.csv',
-      };
-      if (sftpForm.password) patch.cargurusFtpPass = sftpForm.password;
-      await api('/dealer/settings', { method: 'PATCH', body: patch, tenant: tenantId });
+      await saveSftpSettings();
       setSftpForm((f) => ({ ...f, password: '' }));
       setConnectionStatus({ tested: false, success: false });
-      toast.ok('Saved as this dealership\'s CarGurus settings. Run the connection test again (it now tests the saved settings).');
+      toast.ok('Saved. Run "Test & save connection" before Approve & Sync.');
       reload();
     } catch (e) {
       toast.error((e as Error).message);
@@ -746,29 +750,25 @@ export default function CargurusAudit() {
       <Modal
         open={connModalOpen}
         onClose={() => setConnModalOpen(false)}
-        title="SFTP Connection & Auth Verification"
+        title="CarGurus SFTP connection"
         footer={
-          <div className="flex w-full items-center justify-between">
-            <div className="text-xs text-slate-500">
-              Saved target: <span className="font-mono font-semibold">{(sftp.protocol || 'sftp').toUpperCase()} {sftp.host}:{sftp.port}/{sftp.remotePath}</span>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setConnModalOpen(false)}>
-                Close
-              </Button>
-              <Button variant="secondary" loading={savingSftp} onClick={handleSaveSftp} title="Store these details as the dealership's CarGurus upload settings">
-                Save as dealership settings
-              </Button>
-              <Button variant="primary" loading={testingConn} onClick={handleTestConnection}>
-                <Wifi className="h-4 w-4" /> Run Connection Test
-              </Button>
-            </div>
+          <div className="flex w-full flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" onClick={() => setConnModalOpen(false)}>
+              Close
+            </Button>
+            <Button variant="secondary" loading={savingSftp} disabled={testingConn} onClick={handleSaveSftp} title="Save without testing">
+              Save only
+            </Button>
+            <Button variant="primary" loading={testingConn} disabled={savingSftp} onClick={handleTestConnection}>
+              <Wifi className="h-4 w-4" /> Test &amp; save connection
+            </Button>
           </div>
         }
       >
         <p className="mb-3 text-xs text-slate-600">
-          Logs in for real and checks the target folder. Leave the password empty to test the <b>saved</b> settings — the only ones the
-          real upload uses. Typing other details tests them without saving them.
+          Enter the details CarGurus sent you and press <b>Test &amp; save connection</b>: it logs in for real, saves them only if the
+          login works, then logs in again with the saved copy. Leave the password empty to re-test what is already saved
+          {sftp.hasPassword ? ' (a password is saved)' : ''}.
         </p>
         {(sftp.warnings || []).length > 0 && (
           <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
@@ -779,7 +779,7 @@ export default function CargurusAudit() {
         )}
         {!sftp.configured && (
           <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-900">
-            The dealership has no saved CarGurus {!sftp.username ? 'username' : 'password'}: uploads cannot run until it is saved in the dealership&apos;s settings.
+            Nothing saved yet: enter the CarGurus username and password below, then press Test &amp; save connection.
           </div>
         )}
 
@@ -891,13 +891,14 @@ export default function CargurusAudit() {
         </div>
 
         <div className="mt-3">
-          <Field label="Password / Passphrase" hint="Used for SFTP account password or to decrypt the private key">
+          <Field label="Password" hint="The SFTP password from CarGurus (they may call it the passphrase). Saved exactly as typed.">
             <div className="relative">
               <Input
                 type={showPassword ? 'text' : 'password'}
                 value={sftpForm.password}
                 onChange={(e) => setSftpForm({ ...sftpForm, password: e.target.value })}
-                placeholder={sftp.hasPassword ? 'Leave empty to test the saved password' : 'No password saved for this dealership'}
+                placeholder={sftp.hasPassword ? 'Saved — leave empty to keep it' : 'CarGurus SFTP password'}
+                autoComplete="new-password"
               />
               <button
                 type="button"
@@ -911,18 +912,6 @@ export default function CargurusAudit() {
         </div>
 
         <div className="mt-3">
-          <Field label="SSH Private Key (Optional)" hint="Paste PEM or OpenSSH private key for key-based authentication">
-            <Textarea
-              rows={3}
-              value={sftpForm.privateKey}
-              onChange={(e) => setSftpForm({ ...sftpForm, privateKey: e.target.value })}
-              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
-              className="font-mono text-xs"
-            />
-          </Field>
-        </div>
-
-        <div className="mt-3">
           <Toggle
             checked={checkWrite}
             onChange={setCheckWrite}
@@ -930,27 +919,6 @@ export default function CargurusAudit() {
           />
         </div>
 
-        {sftpForm.privateKey.trim() && (
-          <div className="mt-3">
-            <Field label="SSH Key Passphrase (Optional)">
-              <div className="relative">
-                <Input
-                  type={showPassphrase ? 'text' : 'password'}
-                  value={sftpForm.passphrase}
-                  onChange={(e) => setSftpForm({ ...sftpForm, passphrase: e.target.value })}
-                  placeholder="Passphrase for encrypted private key"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassphrase(!showPassphrase)}
-                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-                >
-                  {showPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </Field>
-          </div>
-        )}
       </Modal>
 
       {/* ─────────────────── Dry Run Simulation Modal ─────────────────── */}
