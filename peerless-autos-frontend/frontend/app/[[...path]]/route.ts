@@ -9,9 +9,10 @@
  * Photos (/uploads/…) are passed to the backend (next.config.ts), theme assets come from public/themes/.
  */
 import { backend, hostOf, originOf, securityHeaders, siteErrorPage, statePage, withTenant } from '@/lib/backend';
-import { loadTheme, rawTemplate, themesInstalled, type Theme } from '@/lib/engine';
+import { loadTheme, themesInstalled, type Theme } from '@/lib/engine';
 import { renderPage, type ThemeContext } from '@/lib/page';
-import { applyMeta, hashFor, headScripts, injectHead, resolveSeo, rewriteStaticLinks, seoLinks, seoSkipped, type SeoMeta, type SeoResolve } from '@/lib/seo';
+import { applyMeta, headScripts, injectHead, resolveSeo, rewriteStaticLinks, seoLinks, seoSkipped, type SeoMeta, type SeoResolve } from '@/lib/seo';
+import { rewriteHashLinks, runtimeScript, spaConf, spaHashForKey, spaMatch, virtualizeHtml, virtualizeJs } from '@/lib/spa';
 import { injectNav, renderCustomPage, type CustomPage, type NavItem } from '@/lib/custom-pages';
 import { rel, siteTokens } from '@/lib/tokens';
 import { existsSync, statSync } from 'fs';
@@ -35,6 +36,24 @@ async function themeAsset(r: string) {
   return new Response(new Uint8Array(await readFile(file)), { headers: { 'Content-Type': MIME[ext], 'Cache-Control': 'public, max-age=2592000', 'X-Content-Type-Options': 'nosniff' } });
 }
 
+/** a design script with location.hash → virtual hash (single-page designs, lib/spa.ts); kept in memory per file version */
+const spaJs = new Map<string, { at: number; body: string }>();
+async function spaAsset(r: string) {
+  const root = join(process.cwd(), 'public');
+  const file = normalize(join(root, r));
+  if (!file.startsWith(join(root, 'themes')) || !/^themes\/[a-z0-9][a-z0-9-]*\/\d+\.\d+\.\d+\/assets\/[a-z0-9_\-\/.]+\.js$/i.test(r) || r.includes('..') || !existsSync(file)) {
+    return new Response('Not found', { status: 404 });
+  }
+  const st = statSync(file);
+  if (!st.isFile()) return new Response('Not found', { status: 404 });
+  let hit = spaJs.get(file);
+  if (!hit || hit.at !== st.mtimeMs) {
+    hit = { at: st.mtimeMs, body: virtualizeJs(await readFile(file, 'utf8')) };
+    spaJs.set(file, hit);
+  }
+  return new Response(hit.body, { headers: { 'Content-Type': MIME.js, 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' } });
+}
+
 export const dynamic = 'force-dynamic';
 
 type Ctx = { params: Promise<{ path?: string[] }> };
@@ -45,10 +64,22 @@ const LOGO_BADGE =
   '<text x="84" y="50" font-family="Arial,Helvetica,sans-serif" font-size="25" font-weight="700" letter-spacing="3" fill="#8C96A6">YOUR LOGO</text></svg>';
 
 async function context(host: string, previewTheme?: string) {
+  // one request can need the context twice (clean single-page addresses): reuse it for 2 s
+  const key = previewTheme ? '' : host;
+  const hit = key ? ctxMemo.get(key) : undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (hit && Date.now() - hit.at < 2000) return { ctx: hit.ctx as any };
   const res = await backend('/public/theme-context', host, { query: previewTheme ? { theme: previewTheme } : {} });
   if (!res.ok) return { error: res };
-  return { ctx: await res.json() };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ctx = (await res.json()) as any;
+  if (key) {
+    if (ctxMemo.size > 500) ctxMemo.clear();
+    ctxMemo.set(key, { at: Date.now(), ctx });
+  }
+  return { ctx };
 }
+const ctxMemo = new Map<string, { at: number; ctx: ThemeContext }>();
 
 /**
  * The header menu (Platform Admin › Pages & SEO › Header menu): top-level links and dropdowns. Without a saved menu
@@ -77,20 +108,46 @@ function navItems(ctx: ThemeContext): NavItem[] {
 
 /* ---------------- SEO & URLs ---------------- */
 
-type SeoOpts = { seo: SeoResolve | null; meta?: SeoMeta; path?: string; vehicleId?: string; hash?: string };
+type SeoOpts = {
+  seo: SeoResolve | null;
+  meta?: SeoMeta;
+  path?: string;
+  vehicleId?: string;
+  /** design template being shown (index.html of a single-page design = its shell) */
+  template?: string;
+  /** view a single-page design opens: hash or vehicle id */
+  init?: { h?: string; v?: string };
+};
 
-/** title / description / canonical, clean links and the small helper scripts (nothing when SEO data is unavailable) */
-function finishHtml(html: string, ctx: ThemeContext, origin: string, o?: SeoOpts): string {
+const customSlugs = (ctx: ThemeContext) => new Set((ctx.pages || []).map((p) => String(p.slug).toLowerCase()));
+
+/**
+ * title / description / canonical, clean links (pages, vehicles, index.html#… and single-page views), the virtual hash
+ * for single-page designs (lib/spa.ts) and the small helper scripts. Nothing changes when SEO data is unavailable.
+ */
+async function finishHtml(html: string, ctx: ThemeContext, theme: Theme, host: string, origin: string, o?: SeoOpts): Promise<string> {
   if (!o?.seo) return html;
   const site = siteTokens(ctx.settings, origin).site_url;
   let out = html;
   if (o.path !== undefined) out = applyMeta(out, o.meta || {}, site + '/' + o.path, site);
   out = rewriteStaticLinks(out, o.seo.links);
-  return injectHead(out, headScripts({ base: !!o.path && o.path.includes('/'), vehicleId: o.vehicleId, hash: o.hash, links: o.seo.links }));
+  const conf = spaConf(theme, o.seo.links, customSlugs(ctx));
+  out = rewriteHashLinks(out, conf);
+  let vehicles: Record<string, string> | null = null;
+  if (conf) {
+    out = virtualizeHtml(out);
+    vehicles = (await seoLinks(host))?.vehicles || {};
+  }
+  const shell = !!conf && (o.template || '') === 'index.html';
+  return injectHead(
+    out,
+    headScripts({ base: !!o.path && o.path.includes('/'), vehicleId: o.vehicleId }) +
+      runtimeScript({ conf, links: o.seo.links, vehicles, shell, init: shell ? o.init : null }),
+  );
 }
 
 /** 301 / 302 to a clean address on this website (keeps ?utm_… and ?tenant=, drops the old ?id=) */
-function redirectTo(req: Request, url: URL, to: string, status: 301 | 302) {
+function redirectTo(_req: Request, url: URL, to: string, status: 301 | 302) {
   const q = new URLSearchParams(url.search);
   q.delete('id');
   const qs = q.toString();
@@ -99,20 +156,50 @@ function redirectTo(req: Request, url: URL, to: string, status: 301 | 302) {
   const where = (hi < 0 ? target : target.slice(0, hi)) + (qs ? '?' + qs : '') + (hi < 0 ? '' : target.slice(hi));
   return new Response(null, {
     status,
-    headers: { Location: originOf(req) + where, 'Cache-Control': status === 301 ? 'public, max-age=300' : 'no-store' },
+    // a relative Location (allowed since RFC 7231) keeps the visitor on the same host and port, behind any proxy
+    headers: { Location: where, 'Cache-Control': status === 301 ? 'public, max-age=300' : 'no-store' },
   });
 }
 
 /** a design page rendered for a clean address */
-function themeResponse(req: Request, ctx: ThemeContext, theme: Theme, template: string, o: SeoOpts) {
+async function themeResponse(req: Request, host: string, ctx: ThemeContext, theme: Theme, template: string, o: SeoOpts) {
   const origin = originOf(req);
   const t = siteTokens(ctx.settings, origin);
   const html = injectNav(renderPage(ctx, theme, template, origin, false, false), theme, navItems(ctx), '', t);
-  return new Response(finishHtml(html, ctx, origin, o), { headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }) });
+  const out = await finishHtml(html, ctx, theme, host, origin, { ...o, template });
+  return new Response(out, { headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }) });
 }
 
-/** single-page designs (Classic, VroomFox) show inventory, vehicles, about … inside their home page */
-const isSpa = (theme: Theme) => /#\/(inventory|vehicle)/.test(rawTemplate(theme, 'index.html'));
+/** the design's own title / description of a single-page view (seo.about.title …), for the server-rendered head */
+function viewMeta(ctx: ThemeContext, key: string): SeoMeta {
+  const group = ({ 'about-us': 'about', 'contact-us': 'contact', inventory: 'inventory', blog: 'blog' } as Record<string, string>)[key];
+  const pick = (k: string) => {
+    const v = String(ctx.values?.[k] || '').trim();
+    return v && !v.includes('{') ? v : '';
+  };
+  return { title: group ? pick(`seo.${group}.title`) : '', description: group ? pick(`seo.${group}.description`) : '', ogTitle: '', ogDescription: '', ogImage: '', canonicalUrl: '' };
+}
+
+/**
+ * Single-page designs: /about-us, /inventory, /contact, /blog/<post>, /financing … open the right view of the home
+ * page (virtual hash, lib/spa.ts); older addresses of those views answer with a 301.
+ */
+async function spaRoute(req: Request, url: URL, host: string, rawPath: string, seo: SeoResolve) {
+  if (!rawPath || rawPath.includes('..')) return null;
+  const { ctx, error } = await context(host);
+  if (error) return null;
+  const theme = loadTheme(ctx.theme.id, ctx.theme.version);
+  const slugs = customSlugs(ctx);
+  const lowPath = rawPath.toLowerCase().replace(/\/+$/, '');
+  if (slugs.has(lowPath) || (theme.manifest.pages || []).some((p) => p.template === lowPath)) return null;
+  const conf = spaConf(theme, seo.links, slugs);
+  if (!conf) return null;
+  const m = spaMatch(conf, lowPath, url.search);
+  if (!m) return null;
+  if ('redirect' in m) return redirectTo(req, url, m.redirect, 301);
+  const route = conf.routes.find((r) => m.hash.split('?')[0] === r.h);
+  return themeResponse(req, host, ctx, theme, 'index.html', { seo, path: lowPath, meta: viewMeta(ctx, route?.k || ''), init: { h: m.hash } });
+}
 
 async function seoPage(req: Request, url: URL, host: string, seo: Extract<SeoResolve, { type: 'page' }>) {
   const { key, path, meta } = seo.page;
@@ -121,8 +208,13 @@ async function seoPage(req: Request, url: URL, host: string, seo: Extract<SeoRes
   if (error) return siteErrorPage(error);
   const theme = loadTheme(ctx.theme.id, ctx.theme.version);
   const own = key === 'home' ? { template: 'index.html' } : (theme.manifest.pages || []).find((p) => p.id === key);
-  const hash = own ? '' : hashFor(key, theme.manifest.hash_routes as Record<string, string> | undefined, isSpa(theme));
-  return themeResponse(req, ctx, theme, own ? own.template : 'index.html', { seo, meta, path, hash });
+  if (own) return themeResponse(req, host, ctx, theme, own.template, { seo, meta, path });
+  // a single-page design: the page is a view of its home page
+  const conf = spaConf(theme, seo.links, customSlugs(ctx));
+  const hash = conf ? spaHashForKey(conf, key) : null;
+  const fallback = viewMeta(ctx, key);
+  const m = { ...meta, title: meta.title || fallback.title, description: meta.description || fallback.description };
+  return themeResponse(req, host, ctx, theme, 'index.html', { seo, meta: m, path, init: hash ? { h: hash } : undefined });
 }
 
 async function vehiclePage(req: Request, host: string, seo: Extract<SeoResolve, { type: 'vehicle' }>) {
@@ -131,12 +223,13 @@ async function vehiclePage(req: Request, host: string, seo: Extract<SeoResolve, 
   const theme = loadTheme(ctx.theme.id, ctx.theme.version);
   const own = (theme.manifest.pages || []).find((p) => p.id === 'vehicle' || p.template === 'vehicle.html');
   const { publicId, path, meta } = seo.vehicle;
-  return themeResponse(req, ctx, theme, own ? own.template : 'index.html', {
+  return themeResponse(req, host, ctx, theme, own ? own.template : 'index.html', {
     seo,
     meta,
     path,
     vehicleId: own ? publicId : undefined,
-    hash: own ? '' : '#/vehicle/' + encodeURIComponent(publicId),
+    // single-page designs open their vehicle view (virtual hash, lib/spa.ts)
+    init: own ? undefined : { v: publicId },
   });
 }
 
@@ -165,7 +258,7 @@ async function customPage(req: Request, url: URL, host: string, slug: string, se
     if (inv.ok) vehicles = ((await inv.json()) as { vehicles?: Record<string, unknown>[] }).vehicles || [];
   }
   let html = renderCustomPage(ctx, theme, data.page, originOf(req), { vehicles, navPages: navItems(ctx), themePreview, preview: data.preview });
-  if (!data.preview && !themePreview) html = finishHtml(html, ctx, originOf(req), seoOpts);
+  if (!data.preview && !themePreview) html = await finishHtml(html, ctx, theme, host, originOf(req), seoOpts);
   return new Response(html, {
     headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': data.preview || themePreview ? 'no-store' : 'no-cache' }),
   });
@@ -204,7 +297,19 @@ async function page(req: Request, { params }: Ctx) {
     return new Response(LOGO_BADGE, { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-cache' } });
   }
 
-  /* clean vehicle addresses for the link script (lib/seo.ts) */
+  /* the design's scripts for single-page designs, reading the virtual hash (lib/spa.ts) */
+  if (r.startsWith('pa-spa/themes/')) return spaAsset(r.slice('pa-spa/'.length));
+
+  /* title / description of one address, for single-page designs switching views: /pa-seo.json?path=/about-us */
+  if (r === 'pa-seo.json' && url.searchParams.has('path')) {
+    const p = String(url.searchParams.get('path') || '').replace(/^\/+/, '').slice(0, 300);
+    const res = await resolveSeo(host, p);
+    const meta = res?.type === 'page' ? res.page.meta : res?.type === 'vehicle' ? res.vehicle.meta : null;
+    const body = meta ? { title: meta.title, description: meta.description, canonical: meta.canonicalUrl || originOf(req) + '/' + p } : {};
+    return new Response(JSON.stringify(body), { headers: securityHeaders({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' }) });
+  }
+
+  /* clean vehicle addresses for the link script (lib/spa.ts) */
   if (r === 'pa-seo.json') {
     const d = await seoLinks(host);
     return new Response(JSON.stringify(d ? { base: d.base, pages: d.pages, vehicles: d.vehicles } : { base: 'inventory', pages: {}, vehicles: {} }), {
@@ -249,10 +354,16 @@ async function page(req: Request, { params }: Ctx) {
   }
 
   /* ---------------- SEO & URLs: clean addresses, 301s for old ones, titles / descriptions ---------------- */
+  // /index.html → / (a #view after it is kept by the browser and turned into its clean address on the page)
+  if ((rawPath === 'index.html' || rawPath === 'index.php') && !seoSkipped(url)) return redirectTo(req, url, '/', 301);
   const seo = seoSkipped(url) ? null : await resolveSeo(host, rawPath, r === 'vehicle.html' ? url.searchParams.get('id') || undefined : undefined);
   if (seo?.type === 'redirect') return redirectTo(req, url, seo.to, seo.status);
   if (seo?.type === 'vehicle') return vehiclePage(req, host, seo);
   if (seo?.type === 'page') return seoPage(req, url, host, seo);
+  if (seo && /^[a-z0-9][a-z0-9\-\/.]*$/i.test(rawPath)) {
+    const spa = await spaRoute(req, url, host, rawPath, seo);
+    if (spa) return spa;
+  }
 
   /* ---------------- custom pages: /financing (or /financing.html when no theme page has that name) ---------------- */
   if (/^[a-z0-9][a-z0-9-]*$/.test(r)) return customPage(req, url, host, r, { seo });
@@ -274,7 +385,7 @@ async function page(req: Request, { params }: Ctx) {
   const live = url.searchParams.get('pa_live') === '1';
   // menu links of the custom pages (not in the editor preview: the dealer edits the theme's own texts there)
   let html = injectNav(renderPage(ctx, theme, r, originOf(req), themePreview, live), theme, live ? [] : navItems(ctx), '', siteTokens(ctx.settings, originOf(req)));
-  if (!themePreview && !live) html = finishHtml(html, ctx, originOf(req), { seo });
+  if (!themePreview && !live) html = await finishHtml(html, ctx, theme, host, originOf(req), { seo, template: r });
   return new Response(html, {
     headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': themePreview || live ? 'no-store' : 'no-cache' }),
   });

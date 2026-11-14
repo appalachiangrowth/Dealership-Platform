@@ -7,6 +7,7 @@
  */
 import { backend } from './backend';
 import { h } from './php';
+import { outsideScripts } from './spa';
 
 export interface SeoMeta {
   title: string;
@@ -115,7 +116,9 @@ export function rewriteStaticLinks(html: string, links: SeoLinks): string {
   const map = new Map(entries.map(([from, to]) => [from.toLowerCase(), to]));
   const alt = entries.map(([from]) => escRe(from)).sort((a, b) => b.length - a.length).join('|');
   const re = new RegExp(`(<a\\s[^>]*?href=)(["'])(?:\\.\\/|\\/)?(${alt})((?:[?#][^"']*)?)\\2`, 'gi');
-  return html.replace(re, (_m, pre: string, q: string, from: string, tail: string) => `${pre}${q}${h(map.get(from.toLowerCase()) || '/' + from)}${tail}${q}`);
+  return outsideScripts(html, (part) =>
+    part.replace(re, (_m, pre: string, q: string, from: string, tail: string) => `${pre}${q}${h(map.get(from.toLowerCase()) || '/' + from)}${tail}${q}`),
+  );
 }
 
 /** Puts `snippet` right after <head …> (before the design's own scripts). */
@@ -127,48 +130,19 @@ export function injectHead(html: string, snippet: string): string {
 const js = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
 /**
- * Scripts for the top of <head>:
- *  · base   — <base href="/"> for addresses with a "/" (/inventory/2022-ford-f150) so the design's relative
- *             files (themes/…, inventory.json, api/lead.php) still load
+ * Scripts for the top of <head> (link rewriting and single-page designs: lib/spa.ts runtimeScript):
+ *  · base      — <base href="/"> for addresses with a "/" (/inventory/2022-ford-f150) so the design's relative
+ *                files (themes/…, inventory.json, api/lead.php) still load
  *  · vehicleId — the design's vehicle page reads ?id= from the address; on a clean address it gets the id here
- *  · hash   — single-page designs (Classic, VroomFox) open the right section (#/inventory, #/vehicle/<id> …)
- *  · links  — the design builds vehicle / page links in JavaScript: they are pointed at the clean addresses
  */
-export function headScripts(o: { base?: boolean; vehicleId?: string; hash?: string; links?: SeoLinks | null }): string {
+export function headScripts(o: { base?: boolean; vehicleId?: string }): string {
   let out = '';
   if (o.base) out += '<base href="/">';
   if (o.vehicleId) {
     out +=
-      `<script>(function(){var I=${js(o.vehicleId)},U=window.URLSearchParams;window.PA_VEHICLE_ID=I;if(!U)return;` +
+      `<script data-pa>(function(){var I=${js(o.vehicleId)},U=window.URLSearchParams;window.PA_VEHICLE_ID=I;if(!U)return;` +
       `function P(i){var p=new U(i);try{if(i===location.search&&!p.get("id"))p.set("id",I)}catch(e){}return p}` +
       `P.prototype=U.prototype;try{Object.setPrototypeOf(P,U)}catch(e){}window.URLSearchParams=P})();</script>`;
   }
-  if (o.hash) out += `<script>if(!location.hash)history.replaceState(history.state,"",location.pathname+location.search+${js(o.hash)});</script>`;
-  if (o.links) {
-    const pages = Object.fromEntries(Object.entries(o.links.pages || {}).map(([k, v]) => [k.toLowerCase(), v]));
-    out +=
-      `<script>(function(){var P=${js(pages)},B=${js(o.links.base || 'inventory')},V=null,busy=0;` +
-      `function m(h){if(!h||/^(mailto:|tel:|sms:|javascript:|data:)/i.test(h))return null;try{var u=new URL(h,document.baseURI);if(u.origin!==location.origin)return null;` +
-      `var p=u.pathname.replace(/^\\/+/,"").toLowerCase();` +
-      `if(/(^|\\/)vehicle\\.html$/.test(p)){var id=u.searchParams.get("id");if(id&&V&&V[id]){u.searchParams.delete("id");return "/"+B+"/"+V[id]+u.search+u.hash}return null}` +
-      `if(p===""||p==="index.html"){var x=/^#\\/vehicle\\/(.+)$/.exec(u.hash);if(x&&V){var k=decodeURIComponent(x[1]);if(V[k])return "/"+B+"/"+V[k]}return null}` +
-      `if(P[p])return P[p]+u.search+u.hash}catch(e){}return null}` +
-      `function f(a){var h=a.getAttribute("href"),n=m(h);if(n&&n!==h)a.setAttribute("href",n)}` +
-      `function all(){busy=0;var a=document.querySelectorAll("a[href]");for(var i=0;i<a.length;i++)f(a[i])}` +
-      `function soon(){if(!busy){busy=1;(window.requestAnimationFrame||setTimeout)(all)}}` +
-      `document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a)f(a)},true);` +
-      `function go(){all();try{new MutationObserver(soon).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}}` +
-      `if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",go);else go();` +
-      `try{fetch("/pa-seo.json",{credentials:"same-origin"}).then(function(r){return r.ok?r.json():null}).then(function(d){if(d&&d.vehicles){V=d.vehicles;if(d.base)B=d.base;soon()}}).catch(function(){})}catch(e){}` +
-      `})();</script>`;
-  }
   return out;
-}
-
-/** Hash routes of single-page designs: what to open when one of their "pages" has a clean address. */
-export function hashFor(pageKey: string, hashRoutes: Record<string, string> | undefined, spa: boolean): string {
-  const short = pageKey.replace(/-us$/, '');
-  if (hashRoutes && (hashRoutes[pageKey] || hashRoutes[short])) return hashRoutes[pageKey] || hashRoutes[short];
-  if (!spa) return '';
-  return ({ inventory: '#/inventory', 'used-cars': '#/inventory', about: '#/about', contact: '#/contact', blog: '#/blog' } as Record<string, string>)[short] || '';
 }
