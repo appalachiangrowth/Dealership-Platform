@@ -252,6 +252,10 @@ model Tenant {
   fbPostRuns         FbPostRun[]
   sitePages          SitePage[]
   siteMenu           SiteMenu?
+  seoPages           SeoPage[]
+  seoVehicles        SeoVehicle[]
+  seoRedirects       SeoRedirect[]
+  seoSettings        SeoSettings?
 
   @@index([status])
 }
@@ -428,6 +432,7 @@ model Vehicle {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   leads  Lead[]
   fbListing FbListing?
+  seo    SeoVehicle?
 
   @@unique([tenantId, slug])
   @@index([tenantId, status])
@@ -814,4 +819,85 @@ model SiteMenu {
   updatedAt DateTime @updatedAt
 
   tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ───────────────────────── SEO & URLs (Platform Admin › SEO & URLs) ─────────────────────────
+// Additive tables only: nothing here changes how vehicles, feeds or the Dealership Portal work. With no rows a
+// website looks and behaves exactly as before (design's own addresses, titles and descriptions).
+
+/// Address + Google title / description of one standard website page of a dealership.
+model SeoPage {
+  id              String   @id @default(uuid())
+  tenantId        String
+  /// design page id (home, inventory, used-cars, about-us, contact-us, blog …) or "custom:<slug>" for a Pages & SEO page
+  pageKey         String
+  /// address without the leading "/" (e.g. "used-cars-for-sale"); null = the design's own address
+  path            String?
+  metaTitle       String   @default("")
+  metaDescription String   @default("")
+  ogTitle         String   @default("")
+  ogDescription   String   @default("")
+  ogImage         String   @default("")
+  /// absolute URL; "" = the page's own clean address
+  canonicalUrl    String   @default("")
+  updatedBy       String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, pageKey])
+  @@index([tenantId, path])
+}
+
+/// Clean vehicle address (/<inventory-base>/<slug>) + Platform Admin title / description overrides.
+model SeoVehicle {
+  vehicleId       String   @id
+  tenantId        String
+  /// year-make-model-trim (plus -<stock> only when another vehicle of the dealership already has it)
+  slug            String
+  /// true = typed in Platform Admin: "Regenerate clean slugs" leaves it alone
+  slugLocked      Boolean  @default(false)
+  metaTitle       String   @default("")
+  metaDescription String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, slug])
+}
+
+/// Old addresses that answer with a 301. The target is looked up when the address is visited
+/// (page:<pageKey> | vehicle:<vehicleId>), so renaming twice never builds a redirect chain.
+model SeoRedirect {
+  id        String    @id @default(uuid())
+  tenantId  String
+  /// old address without the leading "/"; vehicles: "@v/<old-slug>" (valid under any inventory base)
+  fromPath  String
+  target    String
+  hits      Int       @default(0)
+  lastHitAt DateTime?
+  createdAt DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, fromPath])
+}
+
+/// Per-dealership SEO settings: vehicle address base + vehicle title / description templates.
+model SeoSettings {
+  tenantId                   String   @id
+  /// first part of every vehicle address: /<inventoryBase>/<vehicle-slug>
+  inventoryBase              String   @default("inventory")
+  /// earlier bases: their vehicle addresses 301 to the current base
+  previousBases              String[] @default([])
+  /// "" = platform default ({year} {make} {model} {trim} for Sale in {city}, {state} | {dealerName})
+  vehicleTitleTemplate       String   @default("")
+  vehicleDescriptionTemplate String   @default("")
+  updatedBy                  String   @default("")
+  updatedAt                  DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }

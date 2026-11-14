@@ -168,3 +168,27 @@ reviews, questions, gallery, contact form, map, custom HTML and spacers.
 * SEO per page: Google title / description, share picture, "hide from Google". Published pages are added to
   sitemap.xml. Pictures are stored in `backend/uploads/_platform/pages/`.
 * Table: `SitePage` (`npx prisma db push`, done by start-all.cmd).
+
+## 8. SEO & URLs (clean addresses, titles, descriptions, 301s)
+Platform Admin › **SEO & URLs** (`admin/app/platform/seo`, API `backend/src/seo`, website `frontend/lib/seo.ts` —
+the same file and route changes are in `peerless-autos-frontend/frontend`).
+
+* **Pages & URLs:** pick a dealership (its domain is shown read-only), then give any standard page (Home, Inventory,
+  Used Cars…, About Us, Contact Us, Blog, the design's own pages and every published Pages & SEO page) its own URL path,
+  meta title, meta description and optional OpenGraph / canonical values, with live character counts and a Google
+  preview. Empty fields keep the design's own address and texts.
+* **Vehicle URLs & Meta:** vehicles get clean addresses `/<inventory-base>/<year-make-model-trim>` (`-<stock #>` only when
+  two vehicles would share one), automatically for new vehicles too. Per-dealer title / description templates with
+  `{year} {make} {model} {trim} {price} {mileage} {dealerName} {city} {state} …`; per-vehicle slug / title / description
+  overrides; "Regenerate clean slugs". Order of titles on a vehicle page: Platform Admin override → the dealer's own
+  vehicle SEO text → template.
+* **Never a broken link:** a renamed page, a renamed vehicle slug, a changed inventory base, the design's own address
+  (`used-cars.html`), `vehicle.html?id=…` and old `/inventory/<id>` links all answer with a 301 to the current clean
+  address (looked up when visited, so there are no redirect chains). Sold / removed vehicles send visitors to inventory (302).
+* **On the websites:** the server-rendered `<head>` gets the configured `<title>`, description, canonical and og:* tags
+  (view source), menus / footers / breadcrumbs and the design's script-built vehicle links point at the clean addresses,
+  and sitemap.xml lists the clean page and vehicle addresses. Portal previews (`pa_live`, `pa_theme_preview`,
+  `pa_page_preview`) are untouched. The Dealership Portal (`/dealer/*`), feeds and CarGurus are not changed.
+* Tables: `SeoPage`, `SeoVehicle`, `SeoRedirect`, `SeoSettings` (additive only: `npx prisma db push`, done by start-all.cmd).
+  Optional backend `.env`: `SEO_THEME_DIRS` (comma-separated design folders, default `../frontend/themes` and
+  `../peerless-autos-frontend/frontend/themes`) so the page list matches each dealer's design.

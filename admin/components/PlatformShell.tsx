@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Gauge, Building2, Car, Inbox, Users, Palette, ToggleRight, Settings, ShieldCheck, ScrollText, Server, LogOut, Menu, Plus, Search, KeyRound, Rss, X, FileText,
+  Gauge, Building2, Car, Inbox, Users, Palette, ToggleRight, Settings, ShieldCheck, ScrollText, Server, LogOut, Menu, Plus, Search, KeyRound, Rss, X, FileText, Globe,
 } from 'lucide-react';
 import { api, auth, DEALER_PORTAL_URL } from '@/lib/api';
 import { useSession } from '@/lib/session';
@@ -27,6 +27,7 @@ const NAV: { title: string; items: { href: string; label: string; icon: React.El
     items: [
       { href: '/platform/themes', label: 'Themes & releases', icon: Palette },
       { href: '/platform/pages', label: 'Pages & SEO', icon: FileText },
+      { href: '/platform/seo', label: 'SEO & URLs', icon: Globe },
       { href: '/platform/features', label: 'Feature flags', icon: ToggleRight },
       { href: '/platform/settings', label: 'Platform settings', icon: Settings },
     ],

@@ -4,11 +4,14 @@
  *   /inventory.json                     → that dealership's published inventory (original format)
  *   /logo  /images/logo.png             → the dealer's logo, or the neutral "YOUR LOGO" badge
  *   /sitemap.xml  /robots.txt           → generated per dealership
+ *   /used-cars-for-sale  /inventory/2022-ford-f150-lariat … → clean addresses from Platform Admin › SEO & URLs
+ *                                         (old addresses answer with a 301; see lib/seo.ts)
  * Photos (/uploads/…) are passed to the backend (next.config.ts), theme assets come from public/themes/.
  */
 import { backend, hostOf, originOf, securityHeaders, siteErrorPage, statePage, withTenant } from '@/lib/backend';
-import { loadTheme, themesInstalled } from '@/lib/engine';
+import { loadTheme, rawTemplate, themesInstalled, type Theme } from '@/lib/engine';
 import { renderPage, type ThemeContext } from '@/lib/page';
+import { applyMeta, hashFor, headScripts, injectHead, resolveSeo, rewriteStaticLinks, seoLinks, seoSkipped, type SeoMeta, type SeoResolve } from '@/lib/seo';
 import { injectNav, renderCustomPage, type CustomPage, type NavItem } from '@/lib/custom-pages';
 import { rel, siteTokens } from '@/lib/tokens';
 import { existsSync, statSync } from 'fs';
@@ -72,8 +75,73 @@ function navItems(ctx: ThemeContext): NavItem[] {
   return (ctx.pages || []).filter((p) => p.showInNav).map((p) => ({ slug: p.slug, label: p.navLabel || p.title }));
 }
 
+/* ---------------- SEO & URLs ---------------- */
+
+type SeoOpts = { seo: SeoResolve | null; meta?: SeoMeta; path?: string; vehicleId?: string; hash?: string };
+
+/** title / description / canonical, clean links and the small helper scripts (nothing when SEO data is unavailable) */
+function finishHtml(html: string, ctx: ThemeContext, origin: string, o?: SeoOpts): string {
+  if (!o?.seo) return html;
+  const site = siteTokens(ctx.settings, origin).site_url;
+  let out = html;
+  if (o.path !== undefined) out = applyMeta(out, o.meta || {}, site + '/' + o.path, site);
+  out = rewriteStaticLinks(out, o.seo.links);
+  return injectHead(out, headScripts({ base: !!o.path && o.path.includes('/'), vehicleId: o.vehicleId, hash: o.hash, links: o.seo.links }));
+}
+
+/** 301 / 302 to a clean address on this website (keeps ?utm_… and ?tenant=, drops the old ?id=) */
+function redirectTo(req: Request, url: URL, to: string, status: 301 | 302) {
+  const q = new URLSearchParams(url.search);
+  q.delete('id');
+  const qs = q.toString();
+  const target = to.startsWith('/') ? to : '/' + to;
+  const hi = target.indexOf('#');
+  const where = (hi < 0 ? target : target.slice(0, hi)) + (qs ? '?' + qs : '') + (hi < 0 ? '' : target.slice(hi));
+  return new Response(null, {
+    status,
+    headers: { Location: originOf(req) + where, 'Cache-Control': status === 301 ? 'public, max-age=300' : 'no-store' },
+  });
+}
+
+/** a design page rendered for a clean address */
+function themeResponse(req: Request, ctx: ThemeContext, theme: Theme, template: string, o: SeoOpts) {
+  const origin = originOf(req);
+  const t = siteTokens(ctx.settings, origin);
+  const html = injectNav(renderPage(ctx, theme, template, origin, false, false), theme, navItems(ctx), '', t);
+  return new Response(finishHtml(html, ctx, origin, o), { headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }) });
+}
+
+/** single-page designs (Classic, VroomFox) show inventory, vehicles, about … inside their home page */
+const isSpa = (theme: Theme) => /#\/(inventory|vehicle)/.test(rawTemplate(theme, 'index.html'));
+
+async function seoPage(req: Request, url: URL, host: string, seo: Extract<SeoResolve, { type: 'page' }>) {
+  const { key, path, meta } = seo.page;
+  if (key.startsWith('custom:')) return customPage(req, url, host, key.slice('custom:'.length), { seo, meta, path });
+  const { ctx, error } = await context(host);
+  if (error) return siteErrorPage(error);
+  const theme = loadTheme(ctx.theme.id, ctx.theme.version);
+  const own = key === 'home' ? { template: 'index.html' } : (theme.manifest.pages || []).find((p) => p.id === key);
+  const hash = own ? '' : hashFor(key, theme.manifest.hash_routes as Record<string, string> | undefined, isSpa(theme));
+  return themeResponse(req, ctx, theme, own ? own.template : 'index.html', { seo, meta, path, hash });
+}
+
+async function vehiclePage(req: Request, host: string, seo: Extract<SeoResolve, { type: 'vehicle' }>) {
+  const { ctx, error } = await context(host);
+  if (error) return siteErrorPage(error);
+  const theme = loadTheme(ctx.theme.id, ctx.theme.version);
+  const own = (theme.manifest.pages || []).find((p) => p.id === 'vehicle' || p.template === 'vehicle.html');
+  const { publicId, path, meta } = seo.vehicle;
+  return themeResponse(req, ctx, theme, own ? own.template : 'index.html', {
+    seo,
+    meta,
+    path,
+    vehicleId: own ? publicId : undefined,
+    hash: own ? '' : '#/vehicle/' + encodeURIComponent(publicId),
+  });
+}
+
 /** a custom page: published copy, or the draft with ?pa_page_preview=<token> from Platform Admin */
-async function customPage(req: Request, url: URL, host: string, slug: string) {
+async function customPage(req: Request, url: URL, host: string, slug: string, seoOpts?: SeoOpts) {
   const preview = url.searchParams.get('pa_page_preview') || '';
   const res = await backend(`/public/pages/${encodeURIComponent(slug)}`, host, { query: preview ? { preview } : {} });
   if (res.status === 404) {
@@ -96,7 +164,8 @@ async function customPage(req: Request, url: URL, host: string, slug: string) {
     const inv = await backend('/public/inventory.json', host);
     if (inv.ok) vehicles = ((await inv.json()) as { vehicles?: Record<string, unknown>[] }).vehicles || [];
   }
-  const html = renderCustomPage(ctx, theme, data.page, originOf(req), { vehicles, navPages: navItems(ctx), themePreview, preview: data.preview });
+  let html = renderCustomPage(ctx, theme, data.page, originOf(req), { vehicles, navPages: navItems(ctx), themePreview, preview: data.preview });
+  if (!data.preview && !themePreview) html = finishHtml(html, ctx, originOf(req), seoOpts);
   return new Response(html, {
     headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': data.preview || themePreview ? 'no-store' : 'no-cache' }),
   });
@@ -110,7 +179,8 @@ export async function GET(req: Request, ctx: Ctx) {
 async function page(req: Request, { params }: Ctx) {
   const url = new URL(req.url);
   const host = hostOf(req);
-  let r = decodeURIComponent((await params).path?.join('/') || '').replace(/^\/+/, '');
+  const rawPath = decodeURIComponent((await params).path?.join('/') || '').replace(/^\/+/, '');
+  let r = rawPath;
   if (r === '' || r === 'index.php') r = 'index.html';
 
   /* design files installed from Platform Admin after the website was built (next start only serves public/ files that
@@ -134,6 +204,14 @@ async function page(req: Request, { params }: Ctx) {
     return new Response(LOGO_BADGE, { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-cache' } });
   }
 
+  /* clean vehicle addresses for the link script (lib/seo.ts) */
+  if (r === 'pa-seo.json') {
+    const d = await seoLinks(host);
+    return new Response(JSON.stringify(d ? { base: d.base, pages: d.pages, vehicles: d.vehicles } : { base: 'inventory', pages: {}, vehicles: {} }), {
+      headers: securityHeaders({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' }),
+    });
+  }
+
   if (r === 'robots.txt' || r === 'sitemap.xml') {
     const { ctx, error } = await context(host);
     if (error) return siteErrorPage(error);
@@ -144,21 +222,40 @@ async function page(req: Request, { params }: Ctx) {
       });
     }
     const theme = loadTheme(ctx.theme.id, ctx.theme.version);
+    // clean addresses from Platform Admin › SEO & URLs (design addresses when there are none)
+    const seo = await seoLinks(host);
+    const clean = seo?.pages || {};
+    const at = (def: string) => (clean[def.toLowerCase()] ? clean[def.toLowerCase()].replace(/^\/+/, '') : def);
+    const xmlEsc = (u: string) => u.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+    const seen = new Set<string>();
     let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
+    const add = (path: string, lastmod?: string) => {
+      const u = t.site_url + '/' + path.replace(/^\/+/, '');
+      if (seen.has(u)) return;
+      seen.add(u);
+      xml += `  <url><loc>${xmlEsc(u)}</loc>${lastmod ? `<lastmod>${xmlEsc(lastmod.slice(0, 10))}</lastmod>` : ''}</url>\n`;
+    };
     for (const p of theme.manifest.pages || []) {
       if (!p.sitemap) continue;
-      const u = t.site_url + '/' + (p.template === 'index.html' ? '' : p.template);
-      xml += `  <url><loc>${u.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')}</loc></url>\n`;
+      add(p.template === 'index.html' ? '' : at(p.template));
     }
     for (const p of (ctx as ThemeContext).pages || []) {
       if (p.noindex) continue;
-      xml += `  <url><loc>${(t.site_url + '/' + p.slug).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</loc></url>\n`;
+      add(at(p.slug));
     }
+    for (const p of seo?.sitemap.pages || []) add(p.path); // e.g. a single-page design's inventory with its own address
+    for (const v of seo?.sitemap.vehicles || []) add(v.path, v.updatedAt);
     return new Response(xml + '</urlset>\n', { headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
   }
 
+  /* ---------------- SEO & URLs: clean addresses, 301s for old ones, titles / descriptions ---------------- */
+  const seo = seoSkipped(url) ? null : await resolveSeo(host, rawPath, r === 'vehicle.html' ? url.searchParams.get('id') || undefined : undefined);
+  if (seo?.type === 'redirect') return redirectTo(req, url, seo.to, seo.status);
+  if (seo?.type === 'vehicle') return vehiclePage(req, host, seo);
+  if (seo?.type === 'page') return seoPage(req, url, host, seo);
+
   /* ---------------- custom pages: /financing (or /financing.html when no theme page has that name) ---------------- */
-  if (/^[a-z0-9][a-z0-9-]*$/.test(r)) return customPage(req, url, host, r);
+  if (/^[a-z0-9][a-z0-9-]*$/.test(r)) return customPage(req, url, host, r, { seo });
 
   /* ---------------- theme pages ---------------- */
   if (!/^[a-z0-9][a-z0-9\-]*\.html$/.test(r)) return statePage(404, 'Page not found', 'The page you are looking for does not exist.');
@@ -171,12 +268,13 @@ async function page(req: Request, { params }: Ctx) {
 
   const theme = loadTheme(ctx.theme.id, ctx.theme.version);
   const page = (theme.manifest.pages || []).find((p) => p.template === r);
-  if (!page) return customPage(req, url, host, r.replace(/\.html$/, ''));
+  if (!page) return customPage(req, url, host, r.replace(/\.html$/, ''), { seo });
 
   // ?pa_live=1 — live preview inside the Dealership Portal editors (texts / colours update while typing)
   const live = url.searchParams.get('pa_live') === '1';
   // menu links of the custom pages (not in the editor preview: the dealer edits the theme's own texts there)
-  const html = injectNav(renderPage(ctx, theme, r, originOf(req), themePreview, live), theme, live ? [] : navItems(ctx), '', siteTokens(ctx.settings, originOf(req)));
+  let html = injectNav(renderPage(ctx, theme, r, originOf(req), themePreview, live), theme, live ? [] : navItems(ctx), '', siteTokens(ctx.settings, originOf(req)));
+  if (!themePreview && !live) html = finishHtml(html, ctx, originOf(req), { seo });
   return new Response(html, {
     headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': themePreview || live ? 'no-store' : 'no-cache' }),
   });
