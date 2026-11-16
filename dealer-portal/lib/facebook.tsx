@@ -57,6 +57,24 @@ type Ctx = {
   setViewOpen: (v: boolean) => void;
 };
 
+/**
+ * GET /dealer/facebook/state, shared: while one request for the same query is on its way, every other caller
+ * (FB Poster page, activity bar, Post-to-Facebook popup) gets that same answer instead of starting another request.
+ */
+const inflight = new Map<string, Promise<unknown>>();
+export function fbState<T = FbState & { logs: FbLog[] }>(query = ''): Promise<T> {
+  let p = inflight.get(query) as Promise<T> | undefined;
+  if (!p) {
+    p = api<T>(`/dealer/facebook/state${query}`).finally(() => inflight.delete(query));
+    inflight.set(query, p);
+  }
+  return p;
+}
+
+/** something is running on the dealer's Facebook browser (worth following closely) */
+export const fbBusy = (s: Partial<FbState> | null | undefined) =>
+  !!s && (!!s.busy || s.job?.status === 'running' || !!s.postQueue?.length || !!s.mp?.active || !!s.mp?.queue?.length || !!s.mp?.running || !!(s.mp?.batch && !s.mp.batch.finishedAt));
+
 const FbCtx = createContext<Ctx>({ state: null, logs: [], error: '', refresh: async () => {}, viewOpen: false, setViewOpen: () => {} });
 export const useFb = () => useContext(FbCtx);
 
@@ -69,10 +87,12 @@ export function FbProvider({ children }: { children: React.ReactNode }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alive = useRef(true);
 
+  const busyRef = useRef(false);
   const refresh = useCallback(async () => {
     try {
-      const s = await api<FbState & { logs: FbLog[] }>(`/dealer/facebook/state?log=${logSeq.current}`);
+      const s = await fbState(`?log=${logSeq.current}`);
       if (!alive.current) return;
+      busyRef.current = fbBusy(s);
       // the server restarted: its log numbering starts again
       if (s.logSeq < logSeq.current) {
         logSeq.current = 0;
@@ -88,16 +108,33 @@ export function FbProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // poll: every 3 s while something runs or the live browser is open, every 15 s otherwise; paused while the tab is hidden
+  const viewRef = useRef(false);
+  viewRef.current = viewOpen;
   useEffect(() => {
     alive.current = true;
-    const loop = async () => {
-      await refresh();
-      if (!alive.current) return;
-      timer.current = setTimeout(loop, document.hidden ? 8000 : 1500);
+    const schedule = () => {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      if (!alive.current || document.visibilityState !== 'visible') return; // resumes on visibilitychange
+      timer.current = setTimeout(loop, busyRef.current || viewRef.current ? 3000 : 15000);
     };
+    const loop = async () => {
+      if (document.visibilityState === 'visible') await refresh();
+      schedule();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void loop();
+      else if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
     void loop();
     return () => {
       alive.current = false;
+      document.removeEventListener('visibilitychange', onVisible);
       if (timer.current) clearTimeout(timer.current);
     };
   }, [refresh]);

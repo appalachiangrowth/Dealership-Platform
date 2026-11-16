@@ -283,7 +283,8 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
     const st = await s.state(logAfter, peek);
     let a = account;
     if (st.loggedIn) {
-      const id = await s.fbUserId().catch(() => '');
+      // from the last cookie check (never waits on Chrome: this endpoint is polled and must answer fast)
+      const id: string = typeof s.cachedUserId === 'function' ? s.cachedUserId() : '';
       if (id && id !== a.fbUserId) {
         a = await this.prisma.fbAccount.update({
           where: { id: a.id },

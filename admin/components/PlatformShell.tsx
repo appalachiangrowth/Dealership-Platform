@@ -83,26 +83,42 @@ function Jump() {
 }
 
 /** NEW design requests for the sidebar badge: refreshed on navigation, every minute, when the tab regains focus and after an update. */
-function useDesignRequestBadge(enabled: boolean, pathname: string) {
+function useDesignRequestBadge(enabled: boolean) {
   const [n, setN] = useState(0);
   useEffect(() => {
     if (!enabled) return;
     let alive = true;
-    const load = () =>
+    let busy = false; // one request at a time
+    let last = 0;
+    // force = after an update on the Design requests page; otherwise only when the tab is visible and not more
+    // often than every 15 s (focus / visibility events can fire in bursts)
+    const load = (force = false) => {
+      if (busy || document.visibilityState !== 'visible') return;
+      if (!force && Date.now() - last < 15_000) return;
+      busy = true;
+      last = Date.now();
       api<{ new: number }>('/platform/design-requests/count')
         .then((r) => alive && setN(r.new || 0))
-        .catch(() => {});
-    void load();
-    const t = setInterval(load, 60_000);
-    window.addEventListener('focus', load);
-    window.addEventListener('pa:design-requests', load);
+        .catch(() => {})
+        .finally(() => {
+          busy = false;
+        });
+    };
+    const onFocus = () => load();
+    const onUpdate = () => load(true);
+    load(true);
+    const t = setInterval(() => load(), 60_000);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    window.addEventListener('pa:design-requests', onUpdate);
     return () => {
       alive = false;
       clearInterval(t);
-      window.removeEventListener('focus', load);
-      window.removeEventListener('pa:design-requests', load);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+      window.removeEventListener('pa:design-requests', onUpdate);
     };
-  }, [enabled, pathname]);
+  }, [enabled]);
   return n;
 }
 
@@ -111,7 +127,7 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const newDesignRequests = useDesignRequestBadge(!loading && me?.user.kind === 'owner', pathname);
+  const newDesignRequests = useDesignRequestBadge(!loading && me?.user.kind === 'owner');
 
   useEffect(() => {
     if (loading) return;

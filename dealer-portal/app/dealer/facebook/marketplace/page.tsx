@@ -72,7 +72,10 @@ export default function MarketplacePage() {
       return;
     }
     wasBusy.current = true;
-    const t = setInterval(() => void reload(), 3000);
+    // every 5 s while the batch runs; skipped while the tab is hidden
+    const t = setInterval(() => {
+      if (document.visibilityState === 'visible') void reload();
+    }, 5000);
     void reload();
     return () => clearInterval(t);
   }, [mpBusy, reload]);

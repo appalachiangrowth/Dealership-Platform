@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Brush,
   CheckCircle2,
@@ -135,11 +135,25 @@ export function DesignSubNav({ className }: { className?: string }) {
 export function DesignRequests({ mode }: { mode: 'pages' | 'custom' }) {
   const { data, loading, error, reload } = useApi<Data>('/dealer/design-requests');
 
-  // see the team's replies without reloading the page
+  // see the team's replies without reloading the page: when the dealer comes back to the tab — only if it is
+  // visible, never two requests at once, and not more often than every 30 s
+  const refreshing = useRef(false);
+  const lastRefresh = useRef(Date.now());
   useEffect(() => {
-    const onFocus = () => void reload();
+    const onFocus = () => {
+      if (document.visibilityState !== 'visible' || refreshing.current || Date.now() - lastRefresh.current < 30_000) return;
+      refreshing.current = true;
+      lastRefresh.current = Date.now();
+      void Promise.resolve(reload()).finally(() => {
+        refreshing.current = false;
+      });
+    };
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
   }, [reload]);
 
   return (

@@ -14,7 +14,7 @@ import { api, mediaUrl } from '@/lib/api';
 import { useToast } from '@/components/toast';
 import { Button, cx } from '@/components/ui';
 import { money, vehicleName } from '@/lib/format';
-import { FacebookIcon, fb, type FbItem, type FbJob } from '@/lib/facebook';
+import { FacebookIcon, fb, fbState, type FbItem, type FbJob } from '@/lib/facebook';
 import { mpMissing, MP_FIX } from '@/lib/marketplace';
 import { announceFbActivity } from './FbActivityBar';
 
@@ -146,7 +146,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
   const tracking = runId !== null || mpStarted;
   const poll = useCallback(async () => {
     try {
-      const s = await api<LiveState>(`/dealer/facebook/state?log=999999999`);
+      const s = await fbState<LiveState>('?log=999999999');
       setLive({ job: s.job, mp: s.mp });
       return s;
     } catch {
@@ -159,6 +159,11 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
     let alive = true;
     let mpEnded = false;
     const loop = async () => {
+      // tab in the background: look again later without asking the server
+      if (document.visibilityState !== 'visible') {
+        timer.current = setTimeout(loop, 5000);
+        return;
+      }
       const s = await poll();
       if (!alive) return;
       const mpBusy = !!s && (s.mp.active?.vehicleId === v.id || s.mp.queue.some((q) => q.id === v.id));
@@ -174,7 +179,7 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
       }
       const sameJob = !!s?.job && (!runId || s.job.runId === runId);
       const jobBusy = runId !== null && (!sameJob || s!.job!.status === 'running');
-      if (alive && (jobBusy || mpBusy || (mpStarted && !mpEnded))) timer.current = setTimeout(loop, 1500);
+      if (alive && (jobBusy || mpBusy || (mpStarted && !mpEnded))) timer.current = setTimeout(loop, 3000);
     };
     void loop();
     return () => {

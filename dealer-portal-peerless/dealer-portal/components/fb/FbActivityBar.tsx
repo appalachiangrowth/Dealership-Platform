@@ -14,9 +14,9 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, ChevronDown, Clock, Loader2, RotateCcw, Store, X, XCircle } from 'lucide-react';
-import { api } from '@/lib/api';
-import { FacebookIcon, fb, type FbJob, type MpBatch, type MpBatchItem } from '@/lib/facebook';
+import { FacebookIcon, fb, fbState, type FbJob, type MpBatch, type MpBatchItem } from '@/lib/facebook';
 import { cx } from '@/components/ui';
 
 type Live = {
@@ -67,7 +67,7 @@ export function FbActivityBar({ enabled }: { enabled: boolean }) {
   const poll = useCallback(async () => {
     if (off.current) return null;
     try {
-      const s = await api<Live>('/dealer/facebook/state?log=999999999&peek=1');
+      const s = await fbState<Live>('?log=999999999&peek=1');
       if (!alive.current) return null;
       setLive({ job: s.job, mp: s.mp, postQueue: s.postQueue || [] });
 
@@ -117,29 +117,54 @@ export function FbActivityBar({ enabled }: { enabled: boolean }) {
     }
   }, []);
 
+  // on the FB Poster pages it follows runs closely; everywhere else it only checks now and then
+  const pathname = usePathname() || '';
+  const onFbPage = pathname.startsWith('/dealer/facebook');
+  const onFbRef = useRef(onFbPage);
+  onFbRef.current = onFbPage;
+
   useEffect(() => {
     alive.current = true;
     if (!enabled) return;
     let fastUntil = 0;
-    const loop = async () => {
-      const s = await poll();
-      if (!alive.current || off.current) return;
-      const busy =
-        !!s && (s.job?.status === 'running' || !!(s.postQueue || []).length || !!s.mp.active || s.mp.queue.length > 0 || s.mp.running || !!(s.mp.batch && !s.mp.batch.finishedAt));
-      const ms = busy || Date.now() < fastUntil ? 2000 : document.hidden ? 30000 : 20000;
+    let busy = false;
+    const schedule = () => {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      // hidden tab: no polling at all — it starts again when the dealer comes back (visibilitychange)
+      if (!alive.current || off.current || document.visibilityState !== 'visible') return;
+      const fb = onFbRef.current;
+      const ms = Date.now() < fastUntil ? 3000 : busy ? (fb ? 5000 : 10000) : fb ? 30000 : 60000;
       timer.current = setTimeout(loop, ms);
+    };
+    const loop = async () => {
+      if (document.visibilityState === 'visible') {
+        const s = await poll();
+        if (!alive.current || off.current) return;
+        busy =
+          !!s && (s.job?.status === 'running' || !!(s.postQueue || []).length || !!s.mp.active || s.mp.queue.length > 0 || s.mp.running || !!(s.mp.batch && !s.mp.batch.finishedAt));
+      }
+      schedule();
     };
     const kick = () => {
       fastUntil = Date.now() + 15000; // the server may need a moment to start the run
       setHidden(false);
-      if (timer.current) clearTimeout(timer.current);
       void loop();
     };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void loop();
+      else if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+    };
     window.addEventListener('fb-activity', kick);
+    document.addEventListener('visibilitychange', onVisible);
     void loop();
     return () => {
       alive.current = false;
       window.removeEventListener('fb-activity', kick);
+      document.removeEventListener('visibilitychange', onVisible);
       if (timer.current) clearTimeout(timer.current);
     };
   }, [enabled, poll]);

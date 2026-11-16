@@ -428,7 +428,7 @@ export function createFbSession(opts) {
     try {
       p = await browser.newPage();
       await p.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' }).catch(() => {});
-      await p.goto('https://www.facebook.com/me', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await p.goto('https://www.facebook.com/me', { waitUntil: 'domcontentloaded', timeout: 15000 }); // background only, never blocks a request
       await sleep(2500);
       const name = await p.evaluate(() => {
         const bad = /^(notifications|chats|facebook|menu|marketplace|home)$/i;
@@ -2436,10 +2436,46 @@ export function createFbSession(opts) {
   }
 
   // ---------- state for the portal ----------
+  /**
+   * Login status for state(): read from Chrome's cookies at most every 10 s, in the background, and never waiting
+   * more than 5 s on Chrome. state() is polled by the portal; asking a busy or frozen Chrome on every poll used to
+   * keep the request (and a Node worker on the web host) hanging.
+   */
+  const loginCache = { at: 0, loggedIn: null, userId: '', checking: null };
+  function refreshLogin() {
+    if (loginCache.checking) return loginCache.checking;
+    loginCache.checking = (async () => {
+      try {
+        const cookies = await Promise.race([fbCookies(), sleep(5000).then(() => null)]);
+        if (cookies) {
+          const c = cookies.find((x) => x.name === 'c_user');
+          loginCache.loggedIn = !!c;
+          loginCache.userId = c ? String(c.value) : '';
+          loginCache.at = Date.now();
+        }
+      } catch (e) {
+      } finally {
+        loginCache.checking = null;
+      }
+    })();
+    return loginCache.checking;
+  }
+  /** the logged-in Facebook id from the last check ('' = logged out / not checked yet) — never waits on Chrome */
+  const cachedUserId = () => loginCache.userId;
+
   async function state(logAfter = 0, peek = false) {
     if (!peek) S.lastSeen = Date.now();
     const open = !!(browser && page && !page.isClosed());
-    const li = open ? await isLoggedIn() : null;
+    let li = null;
+    if (open) {
+      if (!loginCache.at) await Promise.race([refreshLogin(), sleep(400)]); // first look: wait a moment, never long
+      else if (Date.now() - loginCache.at > 10000) void refreshLogin(); // later: refresh in the background
+      li = loginCache.at ? loginCache.loggedIn : null;
+    } else {
+      loginCache.at = 0;
+      loginCache.loggedIn = null;
+      loginCache.userId = '';
+    }
     if (li) S.loginLost = false;
     return {
       browserOpen: open,
@@ -2448,7 +2484,7 @@ export function createFbSession(opts) {
       busy,
       busyWhat,
       view: view.on,
-      url: open ? page.url() : '',
+      url: open ? (() => { try { return page.url(); } catch (e) { return ''; } })() : '',
       job,
       mp: { active: mpActive, queue: queue.map((q) => ({ id: q.id, action: q.action })), running, report: lastReport, batch: batchView() },
       postQueue: postQueue.map((q) => ({ runId: q.job.runId, label: q.job.label || '', total: q.job.total })),
@@ -2460,7 +2496,7 @@ export function createFbSession(opts) {
   const idle = () => !busy && !running && !queue.length && !postQueue.length && !launching;
 
   return {
-    S, log, state, idle,
+    S, log, state, idle, cachedUserId,
     isOpen: () => !!browser,
     healthy, viewOn: () => view.on,
     ensureBrowser, warm, isLoggedIn, fbUserId, fetchName, connect, close, switchAccount, forget,
