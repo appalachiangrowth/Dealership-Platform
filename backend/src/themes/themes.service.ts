@@ -6,7 +6,7 @@ import { PlatformSettingsService } from '../platform-settings/platform-settings.
 import { clean, cleanMl, isColor, num, rateLimit } from '../common/util.js';
 import type { BillingCycle, Theme } from '../generated/prisma/client.js';
 import type { AuthUser } from '../common/auth.types.js';
-import { installedVersions } from './theme-installer.service.js';
+import { installedVersions } from './theme-files.js';
 
 export const CURRENCIES = ['USD', 'PKR', 'CAD', 'GBP', 'EUR', 'AED'];
 const BILLING: BillingCycle[] = ['ONE_TIME', 'MONTHLY', 'YEARLY'];

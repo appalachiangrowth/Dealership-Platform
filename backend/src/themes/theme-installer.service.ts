@@ -8,6 +8,9 @@ import { AuditService } from '../audit/audit.service.js';
 import { readZip, ZipError } from './zip-reader.js';
 import type { AuthUser } from '../common/auth.types.js';
 import { ThemesService } from './themes.service.js';
+// plain helpers live in theme-files.ts so themes.service.ts never imports this file (no import cycle)
+import { installedVersions, SEMVER, TEMPLATES_ROOT, VALID_ID, WEBSITE_DIR } from './theme-files.js';
+export { installedVersions, WEBSITE_DIR };
 import { clean } from '../common/util.js';
 
 /**
@@ -24,11 +27,7 @@ import { clean } from '../common/util.js';
  */
 const MB = 1024 * 1024;
 const ASSET_EXT = ['css', 'js', 'json', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'svg', 'ico', 'woff', 'woff2', 'ttf', 'otf', 'mp4', 'webm', 'glb', 'gltf', 'bin'];
-const VALID_ID = /^[a-z0-9][a-z0-9-]{1,39}$/;
-const SEMVER = /^\d+\.\d+\.\d+$/;
 
-export const WEBSITE_DIR = resolve(process.env.WEBSITE_DIR || join(process.cwd(), '..', 'frontend'));
-const TEMPLATES_ROOT = join(WEBSITE_DIR, 'themes');
 const ASSETS_ROOT = join(WEBSITE_DIR, 'public', 'themes');
 
 /**
@@ -82,19 +81,6 @@ function allowedFile(rel: string): boolean {
   return ASSET_EXT.includes(extname(rel).slice(1).toLowerCase());
 }
 
-/** Installed versions of a design on disk (ascending). */
-export function installedVersions(id: string): string[] {
-  const dir = join(TEMPLATES_ROOT, id);
-  if (!VALID_ID.test(id) || !existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((v) => SEMVER.test(v) && existsSync(join(dir, v, 'theme.json')))
-    .sort((a, b) => {
-      const pa = a.split('.').map(Number);
-      const pb = b.split('.').map(Number);
-      for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] - pb[i];
-      return 0;
-    });
-}
 
 @Injectable()
 export class ThemeInstallerService implements OnModuleInit {
