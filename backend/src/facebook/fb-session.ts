@@ -2488,7 +2488,9 @@ export function createFbSession(opts) {
       job,
       mp: { active: mpActive, queue: queue.map((q) => ({ id: q.id, action: q.action })), running, report: lastReport, batch: batchView() },
       postQueue: postQueue.map((q) => ({ runId: q.job.runId, label: q.job.label || '', total: q.job.total })),
-      logs: logs.filter((l) => l.seq > logAfter),
+      // logAfter is a cursor ("lines after #n"), not a count. peek / a negative cursor = status only, no lines;
+      // otherwise at most the newest 150 lines (the log itself is kept in memory, 400 lines at most)
+      logs: peek || !(logAfter >= 0) ? [] : logs.filter((l) => l.seq > Math.min(logAfter, logSeq)).slice(-150),
       logSeq,
     };
   }

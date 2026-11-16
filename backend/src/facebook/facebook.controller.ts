@@ -22,11 +22,16 @@ export class FacebookController {
 
   // ───────── connection & live browser view ─────────
 
-  /** status, activity log (after ?log=<last seq>), posting progress, connected account */
+  /**
+   * status, activity log (lines after ?log=<last seq seen>, at most 150), posting progress, connected account.
+   * ?peek=1 or ?log=-1: status only, no log lines (the activity bar and the Post popup).
+   */
   @Get('state')
   state(@TenantId() t: string, @CurrentUser() u: AuthUser, @Query('log') log?: string, @Query('peek') peek?: string) {
     // peek=1: the progress bar on every portal page — it must not keep an unused Facebook browser awake
-    return this.fb.state(t, u, Number(log) || 0, peek === '1');
+    const n = Number(log);
+    const after = log === undefined || log === '' || !Number.isFinite(n) ? 0 : Math.max(-1, Math.min(Math.trunc(n), Number.MAX_SAFE_INTEGER));
+    return this.fb.state(t, u, after, peek === '1');
   }
 
   @Post('connect')

@@ -67,7 +67,8 @@ export function FbActivityBar({ enabled }: { enabled: boolean }) {
   const poll = useCallback(async () => {
     if (off.current) return null;
     try {
-      const s = await fbState<Live>('?log=999999999&peek=1');
+      // status only: no log lines, and it does not keep an unused Facebook browser awake
+      const s = await fbState<Live>('?peek=1');
       if (!alive.current) return null;
       setLive({ job: s.job, mp: s.mp, postQueue: s.postQueue || [] });
 

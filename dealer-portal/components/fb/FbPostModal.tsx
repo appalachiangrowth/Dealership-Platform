@@ -146,7 +146,8 @@ export function FbPostModal({ vehicle, onClose, intro }: { vehicle: any | null; 
   const tracking = runId !== null || mpStarted;
   const poll = useCallback(async () => {
     try {
-      const s = await fbState<LiveState>('?log=999999999');
+      // progress only (log=-1: no log lines)
+      const s = await fbState<LiveState>('?log=-1');
       setLive({ job: s.job, mp: s.mp });
       return s;
     } catch {
