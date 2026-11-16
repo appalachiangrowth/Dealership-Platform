@@ -7,7 +7,7 @@
  * Here every upstream call has a hard deadline (AbortController) and the timer is always cleared; a request that
  * runs out of time gets a quick 504 JSON answer instead of hanging.
  *
- *   GET / HEAD                      8 s   (dashboards, /dealer/facebook/state, badge counts…)
+ *   GET / HEAD                      5 s   (dashboards, /dealer/facebook/state, badge counts…)
  *   POST / PUT / PATCH / DELETE    25 s   (saves, uploads)
  *   AI, imports, photo uploads,
  *   Facebook / CarGurus actions,
@@ -16,7 +16,7 @@
 
 const BACKEND_URL = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://5.183.35.10:4000').replace(/[<>[\]()]/g, '').trim().replace(/\/+$/, '');
 
-const READ_MS = 8_000;
+const READ_MS = 5_000;
 const WRITE_MS = 25_000;
 const LONG_MS = 180_000;
 
