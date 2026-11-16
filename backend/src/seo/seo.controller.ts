@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Headers, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Headers, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { SeoService } from './seo.service.js';
+import { SeoRedirectsService } from './seo-redirects.service.js';
 import { PublicService } from '../public/public.service.js';
 import { CurrentUser, PlatformOnly, Public } from '../common/decorators.js';
 import type { AuthUser } from '../common/auth.types.js';
@@ -11,7 +12,10 @@ import type { AuthUser } from '../common/auth.types.js';
 @Controller(['platform/seo', 'admin/seo'])
 @PlatformOnly()
 export class SeoAdminController {
-  constructor(private readonly seo: SeoService) {}
+  constructor(
+    private readonly seo: SeoService,
+    private readonly redirects: SeoRedirectsService,
+  ) {}
 
   /** dealership address, every page's URL + meta, vehicle template, vehicles (?q= &page= &pageSize=), redirects */
   @Get(':dealerId')
@@ -42,6 +46,51 @@ export class SeoAdminController {
   vehicle(@Param('dealerId') dealerId: string, @Param('vehicleId') vehicleId: string, @Body() b: Record<string, unknown>, @CurrentUser() u: AuthUser) {
     return this.seo.patchVehicle(dealerId, vehicleId, b, u);
   }
+
+  /* ---------------- URL Redirects (301 / 302 / 307 / 410) ---------------- */
+
+  /** ?q=&type=301|302|307|410&status=active|inactive&page=&pageSize= */
+  @Get(':dealerId/redirects')
+  redirectList(@Param('dealerId') dealerId: string, @Query() q: { q?: string; type?: string; status?: string; page?: string; pageSize?: string }) {
+    return this.redirects.list(dealerId, q);
+  }
+
+  /** CSV: source_url,destination_url,type,status */
+  @Get(':dealerId/redirects/export')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Cache-Control', 'no-store')
+  redirectExport(@Param('dealerId') dealerId: string) {
+    return this.redirects.exportCsv(dealerId);
+  }
+
+  /** { sourceUrl, destinationUrl?, statusCode: 301|302|307|410, isActive? } */
+  @Post(':dealerId/redirects')
+  redirectCreate(@Param('dealerId') dealerId: string, @Body() b: Record<string, unknown>, @CurrentUser() u: AuthUser) {
+    return this.redirects.create(dealerId, b, u);
+  }
+
+  /** { rows: [{ source_url, destination_url, type, status }], missingDestination?: 'skip' | 'gone' } */
+  @Post(':dealerId/redirects/import')
+  redirectImport(@Param('dealerId') dealerId: string, @Body() b: Record<string, unknown>, @CurrentUser() u: AuthUser) {
+    return this.redirects.import(dealerId, b, u);
+  }
+
+  /** { ids, action: 'activate' | 'deactivate' | 'delete' } */
+  @Post(':dealerId/redirects/bulk')
+  redirectBulk(@Param('dealerId') dealerId: string, @Body() b: Record<string, unknown>, @CurrentUser() u: AuthUser) {
+    return this.redirects.bulk(dealerId, b, u);
+  }
+
+  /** any of { sourceUrl, destinationUrl, statusCode, isActive } (isActive alone = the status pill) */
+  @Patch(':dealerId/redirects/:id')
+  redirectUpdate(@Param('dealerId') dealerId: string, @Param('id') id: string, @Body() b: Record<string, unknown>, @CurrentUser() u: AuthUser) {
+    return this.redirects.update(dealerId, id, b, u);
+  }
+
+  @Delete(':dealerId/redirects/:id')
+  redirectDelete(@Param('dealerId') dealerId: string, @Param('id') id: string, @CurrentUser() u: AuthUser) {
+    return this.redirects.remove(dealerId, id, u);
+  }
 }
 
 /** The dealer websites ask how to answer an address (?host=dealer-domain, like the other /public endpoints). */
@@ -53,11 +102,14 @@ export class SeoPublicController {
     private readonly pub: PublicService,
   ) {}
 
-  /** ?host=…&path=/used-cars&id=<vehicle.html ?id> → page | vehicle | redirect | none, plus the link map */
+  /**
+   * ?host=…&path=/used-cars&id=<vehicle.html ?id>&search=<the address's query, e.g. "?dealer=1&id=2">
+   * → page | vehicle | redirect | gone | none, plus the link map
+   */
   @Get('resolve')
-  async resolve(@Query('host') host: string, @Headers('x-site-host') h: string, @Query('path') path: string, @Query('id') id?: string) {
+  async resolve(@Query('host') host: string, @Headers('x-site-host') h: string, @Query('path') path: string, @Query('id') id?: string, @Query('search') search?: string) {
     const t = await this.pub.tenantFor(host || h || '');
-    return this.seo.resolve(t.id, path || '', id);
+    return this.seo.resolve(t.id, path || '', id, typeof search === 'string' ? search.slice(0, 2000) : undefined);
   }
 
   /** link map + every clean address (website link rewriting, sitemap.xml) */

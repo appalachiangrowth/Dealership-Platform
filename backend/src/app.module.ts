@@ -25,6 +25,7 @@ import { PublicModule } from './public/public.module.js';
 import { PlatformModule } from './platform/platform.module.js';
 import { AiModule } from './ai/ai.module.js';
 import { SeoModule } from './seo/seo.module.js';
+import { DesignRequestsModule } from './design-requests/design-requests.module.js';
 import { AuthGuard } from './common/auth.guard.js';
 
 @Module({
@@ -55,6 +56,7 @@ import { AuthGuard } from './common/auth.guard.js';
     PlatformModule,
     AiModule,
     SeoModule,
+    DesignRequestsModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: AuthGuard }],

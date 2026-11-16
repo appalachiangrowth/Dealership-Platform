@@ -4,13 +4,13 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Gauge, Building2, Car, Inbox, Users, Palette, ToggleRight, Settings, ShieldCheck, ScrollText, Server, LogOut, Menu, Plus, Search, KeyRound, Rss, X, FileText, Globe,
+  Gauge, Building2, Car, Inbox, Users, Palette, ToggleRight, Settings, ShieldCheck, ScrollText, Server, LogOut, Menu, Plus, Search, KeyRound, Rss, X, FileText, Globe, MessageSquarePlus,
 } from 'lucide-react';
 import { api, auth, DEALER_PORTAL_URL } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { Loading, cx } from './ui';
 
-const NAV: { title: string; items: { href: string; label: string; icon: React.ElementType }[] }[] = [
+const NAV: { title: string; items: { href: string; label: string; icon: React.ElementType; badge?: 'designRequests' }[] }[] = [
   {
     title: 'Monitor',
     items: [
@@ -19,6 +19,7 @@ const NAV: { title: string; items: { href: string; label: string; icon: React.El
       { href: '/platform/accounts', label: 'Dealer accounts', icon: Users },
       { href: '/platform/inventory', label: 'Inventory', icon: Car },
       { href: '/platform/leads', label: 'Leads & inquiries', icon: Inbox },
+      { href: '/platform/design-requests', label: 'Design requests', icon: MessageSquarePlus, badge: 'designRequests' },
       { href: '/platform/cargurus', label: 'CarGurus audit', icon: Rss },
     ],
   },
@@ -81,11 +82,36 @@ function Jump() {
   );
 }
 
+/** NEW design requests for the sidebar badge: refreshed on navigation, every minute, when the tab regains focus and after an update. */
+function useDesignRequestBadge(enabled: boolean, pathname: string) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    const load = () =>
+      api<{ new: number }>('/platform/design-requests/count')
+        .then((r) => alive && setN(r.new || 0))
+        .catch(() => {});
+    void load();
+    const t = setInterval(load, 60_000);
+    window.addEventListener('focus', load);
+    window.addEventListener('pa:design-requests', load);
+    return () => {
+      alive = false;
+      clearInterval(t);
+      window.removeEventListener('focus', load);
+      window.removeEventListener('pa:design-requests', load);
+    };
+  }, [enabled, pathname]);
+  return n;
+}
+
 export function PlatformShell({ children }: { children: React.ReactNode }) {
   const { me, loading, logout } = useSession();
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const newDesignRequests = useDesignRequestBadge(!loading && me?.user.kind === 'owner', pathname);
 
   useEffect(() => {
     if (loading) return;
@@ -121,7 +147,12 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
                 href={i.href}
                 className={cx('flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium', isActive(i.href) ? 'bg-slate-800 text-white' : 'hover:bg-slate-900 hover:text-white')}
               >
-                <i.icon className="h-4 w-4" /> {i.label}
+                <i.icon className="h-4 w-4" /> <span className="flex-1">{i.label}</span>
+                {i.badge === 'designRequests' && newDesignRequests > 0 && (
+                  <span title={`${newDesignRequests} new`} className="min-w-[1.25rem] rounded-full bg-blue-600 px-1.5 py-0.5 text-center text-[10px] font-bold leading-none text-white">
+                    {newDesignRequests > 99 ? '99+' : newDesignRequests}
+                  </span>
+                )}
               </Link>
             ))}
           </div>

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Car, ExternalLink, FileText, Globe, Lock, RefreshCw, Search, Undo2, Wand2 } from 'lucide-react';
+import { ArrowRight, Car, ExternalLink, FileText, Globe, Link2, Lock, RefreshCw, Search, Undo2, Wand2 } from 'lucide-react';
+import { UrlRedirects } from '@/components/UrlRedirects';
 import { api, mediaUrl, siteUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { money, num } from '@/lib/format';
@@ -214,7 +215,7 @@ export default function SeoManager() {
   const toast = useToast();
   const tenants = useApi<Tenant[]>('/platform/tenants');
   const [selected, setSelected] = useState('');
-  const [tab, setTab] = useState<'pages' | 'vehicles'>('pages');
+  const [tab, setTab] = useState<'pages' | 'vehicles' | 'redirects'>('pages');
   const [vq, setVq] = useState('');
   const [vqLive, setVqLive] = useState('');
   const [vpage, setVpage] = useState(1);
@@ -223,13 +224,13 @@ export default function SeoManager() {
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     if (q.get('dealer')) setSelected(q.get('dealer')!);
-    if (q.get('tab') === 'vehicles') setTab('vehicles');
+    if (q.get('tab') === 'vehicles' || q.get('tab') === 'redirects') setTab(q.get('tab') as 'vehicles' | 'redirects');
   }, []);
   useEffect(() => {
     if (!selected && tenants.data?.length) setSelected(tenants.data[0].id);
   }, [tenants.data, selected]);
   useEffect(() => {
-    if (selected) window.history.replaceState(null, '', `/platform/seo?dealer=${encodeURIComponent(selected)}${tab === 'vehicles' ? '&tab=vehicles' : ''}`);
+    if (selected) window.history.replaceState(null, '', `/platform/seo?dealer=${encodeURIComponent(selected)}${tab !== 'pages' ? `&tab=${tab}` : ''}`);
   }, [selected, tab]);
   useEffect(() => {
     const t = setTimeout(() => {
@@ -306,13 +307,17 @@ export default function SeoManager() {
         tabs={[
           { id: 'pages', label: <span className="inline-flex items-center gap-1.5"><FileText className="h-4 w-4" /> Pages & URLs</span> },
           { id: 'vehicles', label: <span className="inline-flex items-center gap-1.5"><Car className="h-4 w-4" /> Vehicle URLs & Meta</span> },
+          { id: 'redirects', label: <span className="inline-flex items-center gap-1.5"><Link2 className="h-4 w-4" /> URL Redirects</span> },
         ]}
         value={tab}
-        onChange={(v) => setTab(v === 'vehicles' ? 'vehicles' : 'pages')}
+        onChange={(v) => setTab(v === 'vehicles' || v === 'redirects' ? v : 'pages')}
       />
 
-      {seo.error && <ErrorBox error={seo.error} retry={seo.reload} />}
-      {!data && !seo.error && <Loading />}
+      {tab !== 'redirects' && seo.error && <ErrorBox error={seo.error} retry={seo.reload} />}
+      {tab !== 'redirects' && !data && !seo.error && <Loading />}
+      {tab === 'redirects' && selected && (
+        <UrlRedirects key={selected} dealerId={selected} dealerName={data?.dealer.name || tenant?.name || ''} view={view} />
+      )}
       {data && tab === 'pages' && <PagesTab key={data.dealer.id} data={data} domainUrl={domainUrl} view={view} onSaved={seo.reload} toast={toast} />}
       {data && tab === 'vehicles' && (
         <VehiclesTab
@@ -461,7 +466,7 @@ function PagesTab({ data, domainUrl, view, onSaved, toast }: { data: SeoData; do
       })}
       {!shown.length && <Empty title="No page matches" />}
 
-      <Card title={`Redirects (${data.redirects.length})`} pad={false}>
+      <Card title={`Automatic redirects (${data.redirects.length})`} actions={<span className="text-xs text-slate-500">Your own 301 / 302 / 307 / 410 rules: URL Redirects tab</span>} pad={false}>
         {data.redirects.length ? (
           <Table head={['Old address', 'Goes to (301)', 'Visits', '']}>
             {data.redirects.map((r) => (

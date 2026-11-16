@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { TenantsService } from '../tenants/tenants.service.js';
 import { ContentService } from '../content/content.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { SeoRedirectsService } from './seo-redirects.service.js';
 import { clean } from '../common/util.js';
 import type { AuthUser } from '../common/auth.types.js';
 import type { Prisma, SeoPage, Tenant } from '../generated/prisma/client.js';
@@ -47,7 +48,10 @@ export interface SeoLinks {
 }
 
 export type ResolveResult =
-  | { type: 'redirect'; to: string; status: 301 | 302; links: SeoLinks }
+  /** manual = a URL Redirects rule: the website sends exactly `to` (no query carried over) */
+  | { type: 'redirect'; to: string; status: 301 | 302 | 307; manual?: true; links: SeoLinks }
+  /** a URL Redirects rule with type 410: the address was removed for good */
+  | { type: 'gone'; links: SeoLinks }
   | { type: 'page'; page: { key: string; path: string; meta: SeoMeta }; links: SeoLinks }
   | { type: 'vehicle'; vehicle: { id: string; publicId: string; slug: string; path: string; meta: SeoMeta }; links: SeoLinks }
   | { type: 'none'; links: SeoLinks };
@@ -142,6 +146,7 @@ export class SeoService {
     private readonly tenants: TenantsService,
     private readonly content: ContentService,
     private readonly audit: AuditService,
+    private readonly redirects: SeoRedirectsService,
   ) {}
 
   /* ───────────────────────── shared ───────────────────────── */
@@ -390,7 +395,7 @@ export class SeoService {
     });
 
     const vehicles = await this.adminVehicles(t.id, cfg, q);
-    const redirects = await this.prisma.seoRedirect.findMany({ where: { tenantId: t.id }, orderBy: { createdAt: 'desc' }, take: 100 });
+    const redirects = await this.prisma.seoRedirect.findMany({ where: { tenantId: t.id, manual: false }, orderBy: { createdAt: 'desc' }, take: 100 });
     const redirectRows = await Promise.all(
       redirects.map(async (r) => ({
         from: r.fromPath.startsWith('@v/') ? `/${cfg.base}/${r.fromPath.slice(3)}` : `/${r.fromPath}`,
@@ -689,12 +694,17 @@ export class SeoService {
 
   /**
    * What the website should do with an address: show a page (with its title / description), show a vehicle,
-   * redirect, or nothing special (design's own handling). `id` = the ?id= of vehicle.html links.
+   * redirect, or nothing special (design's own handling). `id` = the ?id= of vehicle.html links, `search` = the
+   * address's whole query (URL Redirects rules can match on it).
    */
-  async resolve(tenantId: string, rawPath: string, id?: string): Promise<ResolveResult> {
+  async resolve(tenantId: string, rawPath: string, id?: string, search?: string): Promise<ResolveResult> {
     void this.ensureThrottled(tenantId);
     const cfg = await this.cfg(tenantId);
     const links = this.links(cfg);
+
+    // URL Redirects (set by hand / imported) win over everything: path + query first, then the path alone
+    const rule = await this.redirects.match(tenantId, String(rawPath || '').replace(/[?#].*$/, ''), search ?? (id ? `id=${id}` : ''));
+    if (rule) return rule.status === 410 || !rule.to ? { type: 'gone', links } : { type: 'redirect', to: rule.to, status: rule.status, manual: true, links };
     let p = String(rawPath || '').trim().toLowerCase();
     try {
       p = decodeURIComponent(p);

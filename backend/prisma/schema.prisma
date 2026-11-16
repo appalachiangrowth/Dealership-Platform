@@ -256,6 +256,7 @@ model Tenant {
   seoVehicles        SeoVehicle[]
   seoRedirects       SeoRedirect[]
   seoSettings        SeoSettings?
+  designRequests     DesignRequest[]
 
   @@index([status])
 }
@@ -871,19 +872,35 @@ model SeoVehicle {
 
 /// Old addresses that answer with a 301. The target is looked up when the address is visited
 /// (page:<pageKey> | vehicle:<vehicleId>), so renaming twice never builds a redirect chain.
+/// Redirects of one dealership's website (the dealership = tenantId).
+///  · automatic (manual = false): a changed page address / vehicle slug → "page:<key>" / "vehicle:<id>", always 301
+///  · URL Redirects (manual = true, Platform Admin › SEO & URLs): sourcePath → destinationUrl with statusCode
+///    301 / 302 / 307, or 410 Gone (no destination); isActive switches a rule off without deleting it
 model SeoRedirect {
-  id        String    @id @default(uuid())
-  tenantId  String
-  /// old address without the leading "/"; vehicles: "@v/<old-slug>" (valid under any inventory base)
-  fromPath  String
-  target    String
-  hits      Int       @default(0)
-  lastHitAt DateTime?
-  createdAt DateTime  @default(now())
+  id             String    @id @default(uuid())
+  tenantId       String
+  /// lookup key: old address without the leading "/"; vehicles: "@v/<old-slug>"; URL Redirects: "@m/<path>?<sorted query>"
+  fromPath       String
+  /// automatic redirects only
+  target         String    @default("")
+  manual         Boolean   @default(false)
+  /// URL Redirects: the old URL as shown in Platform Admin ("/vehicle.html?id=123")
+  sourcePath     String    @default("")
+  /// URL Redirects: "/inventory/…" or "https://…"; null for 410
+  destinationUrl String?
+  /// 301 | 302 | 307 | 410
+  statusCode     Int       @default(301)
+  isActive       Boolean   @default(true)
+  hits           Int       @default(0)
+  lastHitAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, fromPath])
+  @@index([tenantId, manual, createdAt])
+  @@index([tenantId, sourcePath])
 }
 
 /// Per-dealership SEO settings: vehicle address base + vehicle title / description templates.
@@ -900,4 +917,57 @@ model SeoSettings {
   updatedAt                  DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ───────────────────────── Design requests (Dealer Portal › Design & colours → Platform Admin › Design requests) ─────────────────────────
+
+enum DesignRequestType {
+  EXTRA_PAGE
+  EXTRA_SECTION
+  DESIGN_CHANGE
+}
+
+enum DesignRequestStatus {
+  NEW
+  IN_REVIEW
+  IN_PROGRESS
+  COMPLETED
+  DECLINED
+}
+
+enum DesignContactPreference {
+  PORTAL
+  EMAIL
+  PHONE
+}
+
+/// A dealership asks the platform team for an extra page, an extra section or a design change.
+model DesignRequest {
+  id                String                  @id @default(uuid())
+  /// the dealership (shown as dealerId in the API)
+  tenantId          String
+  requestType       DesignRequestType
+  /// "Service Department Page", "Customer Testimonials Section"
+  title             String
+  /// "New navigation page", "Home page", "Vehicle detail page" …
+  targetPage        String                  @default("")
+  description       String
+  referenceUrl      String                  @default("")
+  contactPreference DesignContactPreference @default(PORTAL)
+  contactEmail      String                  @default("")
+  contactPhone      String                  @default("")
+  status            DesignRequestStatus     @default(NEW)
+  /// reply / status note from the platform team — the dealer sees it in the portal
+  adminNotes        String                  @default("")
+  /// login of the dealer user who sent it
+  submittedBy       String                  @default("")
+  /// platform owner who last updated it
+  updatedBy         String                  @default("")
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([status, createdAt])
 }

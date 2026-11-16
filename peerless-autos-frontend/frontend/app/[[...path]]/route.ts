@@ -12,7 +12,7 @@
 import { backend, hostOf, originOf, securityHeaders, siteErrorPage, statePage, withTenant } from '@/lib/backend';
 import { loadTheme, themesInstalled, type Theme } from '@/lib/engine';
 import { renderPage, type ThemeContext } from '@/lib/page';
-import { applyMeta, cleanPages, headScripts, injectHead, resolveSeo, rewriteStaticLinks, seoLinks, seoSkipped, templateForPath, type SeoLinks, type SeoMeta, type SeoResolve } from '@/lib/seo';
+import { applyMeta, cleanPages, gonePage, headScripts, injectHead, resolveSeo, rewriteStaticLinks, ruleRedirect, seoLinks, seoSkipped, templateForPath, type SeoLinks, type SeoMeta, type SeoResolve } from '@/lib/seo';
 import { outsideScripts, rewriteHashLinks, runtimeScript, spaConf, spaHashForKey, spaMatch, virtualizeHtml, virtualizeJs } from '@/lib/spa';
 import { allOn, blockedPaths, featureCss, featureOfPage, flagsOf, hideFeatures, hrefBlocked, markRoot, offText, themeFeatures } from '@/lib/features';
 import { injectNav, renderCustomPage, type CustomPage, type NavItem } from '@/lib/custom-pages';
@@ -233,7 +233,7 @@ async function featureRedirect(req: Request, url: URL, host: string, rawPath: st
 }
 
 /** 301 / 302 to a clean address on this website (keeps ?utm_… and ?tenant=, drops the old ?id=) */
-function redirectTo(_req: Request, url: URL, to: string, status: 301 | 302, keepId = false) {
+function redirectTo(_req: Request, url: URL, to: string, status: 301 | 302 | 307, keepId = false) {
   const q = new URLSearchParams(url.search);
   if (!keepId) q.delete('id');
   const qs = q.toString();
@@ -244,6 +244,34 @@ function redirectTo(_req: Request, url: URL, to: string, status: 301 | 302, keep
     status,
     // a relative Location (allowed since RFC 7231) keeps the visitor on the same host and port, behind any proxy
     headers: { Location: where, 'Cache-Control': status === 301 ? 'public, max-age=300' : 'no-store' },
+  });
+}
+
+/** 410 Gone (URL Redirects rule) with the dealership's name, logo and brand colour */
+async function removedPage(req: Request, host: string, links: SeoLinks) {
+  const { ctx } = await context(host);
+  const s = (ctx?.settings || {}) as Record<string, unknown>;
+  const t = siteTokens(s, originOf(req));
+  const logo = rel(String(s.logo || ''));
+  const colors = (ctx?.colors || {}) as Record<string, string>;
+  let inventoryUrl = '/' + (links?.base || 'inventory');
+  try {
+    // the inventory page's own address when SEO & URLs gave it one
+    if (ctx) {
+      const theme = loadTheme(ctx.theme.id, ctx.theme.version);
+      const pages = cleanLinks(theme, links).pages;
+      inventoryUrl = pages['inventory.html'] || pages['inventory'] || inventoryUrl;
+    }
+  } catch {
+    /* keep /inventory */
+  }
+  return gonePage({
+    name: t.name,
+    logo: logo && logo !== 'images/logo.png' ? (/^https?:\/\//i.test(logo) ? logo : '/' + logo.replace(/^\/+/, '')) : '',
+    color: colors.primary || colors.accent || '',
+    phone: t.phone,
+    tel: t.tel,
+    inventoryUrl,
   });
 }
 
@@ -452,13 +480,17 @@ async function page(req: Request, { params }: Ctx) {
   }
 
   /* ---------------- SEO & URLs: clean addresses, 301s for old ones, titles / descriptions ---------------- */
+  // path + whole query: URL Redirects rules (Platform Admin › SEO & URLs) can match "/brochure?dealer=1&id=2"
+  const seo = seoSkipped(url) ? null : await resolveSeo(host, rawPath, r === 'vehicle.html' ? url.searchParams.get('id') || undefined : undefined, url.search);
+  // URL Redirects come before everything else: their exact status (301 / 302 / 307) to their destination, or 410 Gone
+  if (seo?.type === 'gone') return removedPage(req, host, seo.links);
+  if (seo?.type === 'redirect' && seo.manual) return ruleRedirect(seo.to, seo.status);
   // /index.html → / (a #view after it is kept by the browser and turned into its clean address on the page)
   if ((rawPath === 'index.html' || rawPath === 'index.php') && !seoSkipped(url)) return redirectTo(req, url, '/', 301);
   if (!seoSkipped(url) && rawPath) {
     const off = await featureRedirect(req, url, host, rawPath);
     if (off) return off;
   }
-  const seo = seoSkipped(url) ? null : await resolveSeo(host, rawPath, r === 'vehicle.html' ? url.searchParams.get('id') || undefined : undefined);
   if (seo && seo.type !== 'redirect' && rawPath) {
     // a clean address set in SEO & URLs for a switched-off feature's page
     const off = await featureRedirect(req, url, host, rawPath, seo.links.pages);
