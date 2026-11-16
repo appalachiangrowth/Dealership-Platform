@@ -11,6 +11,14 @@ import { installedVersions } from './theme-installer.service.js';
 export const CURRENCIES = ['USD', 'PKR', 'CAD', 'GBP', 'EUR', 'AED'];
 const BILLING: BillingCycle[] = ['ONE_TIME', 'MONTHLY', 'YEARLY'];
 
+/**
+ * Private / custom themes: only the dealerships in allowedTenantIds see them. A dealership always sees the theme it
+ * uses now (even if it was made private later), so its Design & colours screen never loses the active theme.
+ */
+export function themeVisibleTo(theme: { isPrivate: boolean; allowedTenantIds: string[]; id: string }, tenantId: string, activeThemeId = '') {
+  return !theme.isPrivate || theme.allowedTenantIds.includes(tenantId) || theme.id === activeThemeId;
+}
+
 export function priceLabel(t: { paid: boolean; price: unknown; currency: string; billing: BillingCycle }) {
   if (!t.paid) return 'Free';
   const p = Number(t.price);
@@ -49,7 +57,11 @@ export class ThemesService {
   async dealerView(tenantId: string) {
     const t = await this.tenants.get(tenantId);
     const current = await this.tenants.themeFor(t);
-    const themes = await this.prisma.theme.findMany({ where: { enabled: true }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
+    // public themes + private themes made for this dealership (+ the one it uses now)
+    const themes = await this.prisma.theme.findMany({
+      where: { enabled: true, OR: [{ isPrivate: false }, { allowedTenantIds: { has: tenantId } }, { id: t.themeId }] },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
     const catalog = [];
     for (const th of themes) {
       catalog.push({
@@ -60,6 +72,8 @@ export class ThemesService {
         previewUrl: th.previewUrl,
         version: th.stableVersion,
         active: th.id === t.themeId,
+        /** made for this dealership only */
+        custom: th.isPrivate,
         access: await this.access(tenantId, th, t.themeId),
       });
     }
@@ -74,7 +88,7 @@ export class ThemesService {
   async activate(tenantId: string, themeId: string, user: AuthUser) {
     const t = await this.tenants.get(tenantId);
     const theme = await this.prisma.theme.findUnique({ where: { id: themeId } });
-    if (!theme || !theme.enabled) throw new NotFoundException('Design not found');
+    if (!theme || !theme.enabled || !themeVisibleTo(theme, tenantId, t.themeId)) throw new NotFoundException('Theme not found');
     const acc = await this.access(tenantId, theme, t.themeId);
     if (!acc.allowed && user.kind !== 'owner') throw new ForbiddenException(`This design costs ${acc.label}. Request it first.`);
     if (t.themeId !== themeId) {
@@ -108,7 +122,7 @@ export class ThemesService {
   async request(tenantId: string, body: { themeId?: string; note?: string }, user: AuthUser) {
     const t = await this.tenants.get(tenantId);
     const theme = await this.prisma.theme.findUnique({ where: { id: String(body.themeId) } });
-    if (!theme) throw new NotFoundException('Design not found');
+    if (!theme || !themeVisibleTo(theme, tenantId, t.themeId)) throw new NotFoundException('Theme not found');
     const acc = await this.access(tenantId, theme, t.themeId);
     if (!acc.paid || acc.unlocked) throw new BadRequestException('This design is already available to you.');
     if (acc.requested) throw new ConflictException('You already requested this design. It will be unlocked once your payment is confirmed.');
@@ -137,8 +151,20 @@ export class ThemesService {
     const used = Object.fromEntries(usage.map((u) => [u.themeId, u._count]));
     const licenses = await this.prisma.themeLicense.groupBy({ by: ['themeId'], _count: true });
     const lic = Object.fromEntries(licenses.map((u) => [u.themeId, u._count]));
+    // names of the dealerships a private theme is assigned to
+    const ids = [...new Set(themes.flatMap((t) => t.allowedTenantIds))];
+    const named = ids.length ? await this.prisma.tenant.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [];
+    const nameOf = Object.fromEntries(named.map((n) => [n.id, n.name]));
     return {
-      themes: themes.map((t) => ({ ...t, price: Number(t.price), priceLabel: priceLabel(t), dealers: used[t.id] || 0, licenses: lic[t.id] || 0, installed: installedVersions(t.id) })),
+      themes: themes.map((t) => ({
+        ...t,
+        price: Number(t.price),
+        priceLabel: priceLabel(t),
+        dealers: used[t.id] || 0,
+        licenses: lic[t.id] || 0,
+        installed: installedVersions(t.id),
+        allowedTenants: t.allowedTenantIds.filter((id) => nameOf[id]).map((id) => ({ id, name: nameOf[id] })),
+      })),
       currencies: CURRENCIES,
       paymentInstructions: String(await this.platform.get('payment', 'instructions', '')),
     };
@@ -146,8 +172,14 @@ export class ThemesService {
 
   async platformUpdate(id: string, b: Record<string, unknown>, user: AuthUser) {
     const theme = await this.prisma.theme.findUnique({ where: { id }, include: { versions: true } });
-    if (!theme) throw new NotFoundException('Design not found');
+    if (!theme) throw new NotFoundException('Theme not found');
     const data: Record<string, unknown> = {};
+    // visibility: Public (all dealerships) or Private (only the chosen dealerships)
+    if ('isPrivate' in b || 'allowedTenantIds' in b) {
+      const v = await this.visibility(b, theme);
+      data.isPrivate = v.isPrivate;
+      data.allowedTenantIds = v.allowedTenantIds;
+    }
     if ('paid' in b) data.paid = !!b.paid;
     if ('price' in b) data.price = Math.max(0, num(b.price) ?? 0);
     if ('currency' in b && CURRENCIES.includes(String(b.currency))) data.currency = String(b.currency);
@@ -168,6 +200,20 @@ export class ThemesService {
     await this.prisma.theme.update({ where: { id }, data });
     await this.audit.record('theme.update', { actor: user.login, detail: { theme: id, ...data } });
     return this.platformList();
+  }
+
+  /** { isPrivate, allowedTenantIds } checked: only existing dealerships; a private theme needs at least one */
+  async visibility(b: Record<string, unknown>, cur?: { isPrivate: boolean; allowedTenantIds: string[] }) {
+    const isPrivate = 'isPrivate' in b ? b.isPrivate === true || b.isPrivate === 'true' || b.isPrivate === 'private' : !!cur?.isPrivate;
+    let wanted: string[] = cur?.allowedTenantIds || [];
+    if ('allowedTenantIds' in b) {
+      const raw = Array.isArray(b.allowedTenantIds) ? b.allowedTenantIds : String(b.allowedTenantIds || '').split(',');
+      wanted = [...new Set(raw.map((x) => clean(x, 80)).filter(Boolean))].slice(0, 500);
+    }
+    const found = wanted.length ? await this.prisma.tenant.findMany({ where: { id: { in: wanted } }, select: { id: true } }) : [];
+    const allowedTenantIds = found.map((f) => f.id);
+    if (isPrivate && !allowedTenantIds.length) throw new BadRequestException('Choose at least one dealership for a private theme, or make it public.');
+    return { isPrivate, allowedTenantIds };
   }
 
   async addVersion(id: string, b: { version?: string; notes?: string }, user: AuthUser) {

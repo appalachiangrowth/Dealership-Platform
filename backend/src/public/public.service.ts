@@ -61,7 +61,8 @@ export class PublicService {
     let theme = await this.tenants.themeFor(t);
     if (previewTheme && previewTheme !== theme.id) {
       const th = await this.prisma.theme.findUnique({ where: { id: previewTheme } });
-      if (th) theme = { id: th.id, name: th.name, version: th.stableVersion, colorSlots: th.colorSlots as unknown[] };
+      // a private theme is only previewed on the websites of its own dealerships
+      if (th && (!th.isPrivate || th.allowedTenantIds.includes(t.id))) theme = { id: th.id, name: th.name, version: th.stableVersion, colorSlots: th.colorSlots as unknown[] };
     }
     const { content, tokens } = await this.content.resolved(t.id, s, t.name);
     const settings: Record<string, unknown> = {};
@@ -181,7 +182,8 @@ export class PublicService {
     let theme = await this.tenants.themeFor(t);
     if (previewTheme && previewTheme !== theme.id) {
       const th = await this.prisma.theme.findUnique({ where: { id: previewTheme } });
-      if (th) theme = { id: th.id, name: th.name, version: th.stableVersion, colorSlots: th.colorSlots as unknown[] };
+      // a private theme is only previewed on the websites of its own dealerships
+      if (th && (!th.isPrivate || th.allowedTenantIds.includes(t.id))) theme = { id: th.id, name: th.name, version: th.stableVersion, colorSlots: th.colorSlots as unknown[] };
     }
     const values = await this.content.values(t.id);
     const pages = await publishedPagesFor(this.prisma, t.id);

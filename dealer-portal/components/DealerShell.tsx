@@ -26,7 +26,7 @@ export interface DealerTenant {
 const TenantCtx = createContext<{ tenant: DealerTenant | null; support: boolean; refreshTenant: () => void }>({ tenant: null, support: false, refreshTenant: () => {} });
 export const useTenant = () => useContext(TenantCtx);
 
-type Item = { href: string; label: string; icon: React.ElementType; perm: string[]; feature?: string; badge?: number; done?: boolean };
+type Item = { href: string; label: string; icon: React.ElementType; perm: string[]; feature?: string; badge?: number; done?: boolean; sub?: { href: string; label: string }[] };
 
 export function DealerShell({ children }: { children: React.ReactNode }) {
   const { me, loading, logout, can } = useSession();
@@ -117,7 +117,17 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
       title: 'Your website',
       items: [
         { href: '/dealer/business', label: 'Business details', icon: Store, perm: ['business'], done: done('business', 'logo', 'hours') },
-        { href: '/dealer/design', label: 'Design & colours', icon: Palette, perm: ['design'], done: done('design') },
+        {
+          href: '/dealer/design',
+          label: 'Design & colours',
+          icon: Palette,
+          perm: ['design'],
+          done: done('design'),
+          sub: [
+            { href: '/dealer/design/pages', label: 'Add Pages' },
+            { href: '/dealer/design/custom', label: 'Add Custom Design / Theme' },
+          ],
+        },
         { href: '/dealer/content', label: 'Website content', icon: FileText, perm: ['content'], done: done('content') },
       ],
     },
@@ -140,7 +150,7 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
     .map((g) => ({ ...g, items: g.items.filter((i) => can(...i.perm) && (!i.feature || tenant.features[i.feature] !== false)) }))
     .filter((g) => g.items.length);
   // editors with a live website preview use the full width
-  const wide = pathname.startsWith('/dealer/content') || pathname.startsWith('/dealer/design');
+  const wide = pathname.startsWith('/dealer/content') || (pathname.startsWith('/dealer/design') && !/^\/dealer\/design\/(pages|custom)/.test(pathname));
   const isActive = (href: string) => (href === '/dealer' ? pathname === '/dealer' : pathname.startsWith(href));
   const initials = (me.user.name || me.user.login).split(/\s+/).map((s) => s[0]).join('').slice(0, 2).toUpperCase();
 
@@ -181,8 +191,10 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
           <div key={gi} className="flex flex-col gap-0.5">
             {g.title && <span className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#94A3B8]">{g.title}</span>}
             {g.items.map((i) => {
-              const active = isActive(i.href);
+              // on a sub-page only the sub-item is highlighted
+              const active = i.sub?.some((x) => pathname.startsWith(x.href)) ? false : isActive(i.href);
               return (
+                <div key={i.href} className="flex flex-col gap-0.5">
                 <Link
                   key={i.href}
                   href={i.href}
@@ -197,6 +209,24 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
                   {i.done && <Check className="h-4 w-4 text-[#22C55E]" strokeWidth={2.4} aria-label="Complete" />}
                   {!!i.badge && <span className="rounded-full bg-[#1E293B] px-2 py-px text-xs font-semibold text-[#CBD5E1]">{i.badge}</span>}
                 </Link>
+                {/* sub-menu (Design & colours › Add Pages / Add Custom Design / Theme) */}
+                {i.sub?.map((s) => {
+                  const on = pathname.startsWith(s.href);
+                  return (
+                    <Link
+                      key={s.href}
+                      href={s.href}
+                      aria-current={on ? 'page' : undefined}
+                      className={cx(
+                        'ml-[30px] flex items-center gap-2 rounded-lg border-l border-[#334155] py-1.5 pl-3 pr-2 text-[13px] transition',
+                        on ? 'border-l-[#93C5FD] bg-[#1E293B] font-semibold text-white' : 'text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#E2E8F0]',
+                      )}
+                    >
+                      <span className="truncate">{s.label}</span>
+                    </Link>
+                  );
+                })}
+                </div>
               );
             })}
           </div>

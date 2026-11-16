@@ -1,5 +1,5 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ThemeInstallerService } from './theme-installer.service.js';
 import { ThemesService } from './themes.service.js';
@@ -21,6 +21,32 @@ export class ThemesController {
   install(@UploadedFile() file: { buffer: Buffer; originalname: string } | undefined, @CurrentUser() u: AuthUser) {
     if (!file) throw new BadRequestException('No ZIP received. Choose a theme ZIP file first.');
     return this.installer.install(file.buffer, file.originalname, u);
+  }
+
+  /**
+   * Add New Custom Theme (multipart): "file" = the theme .zip, optional "preview" = thumbnail image, and fields
+   * name, key, description, visibility ("public" | "private"), allowedTenantIds (comma-separated or repeated).
+   * The ZIP is installed like any theme (both storefronts get the files); key / name / description override the
+   * ZIP's theme.json, and a private theme is only shown to the chosen dealerships.
+   */
+  @Post('themes/custom')
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'file', maxCount: 1 },
+        { name: 'preview', maxCount: 1 },
+      ],
+      { storage: memoryStorage(), limits: { fileSize: 41 * 1024 * 1024, files: 2 } },
+    ),
+  )
+  installCustom(
+    @UploadedFiles() files: { file?: { buffer: Buffer; originalname: string }[]; preview?: { buffer: Buffer; originalname: string; mimetype: string; size: number }[] } | undefined,
+    @Body() b: Record<string, unknown>,
+    @CurrentUser() u: AuthUser,
+  ) {
+    const zip = files?.file?.[0];
+    if (!zip) throw new BadRequestException('No ZIP received. Choose the theme package (.zip) first.');
+    return this.installer.installCustom(zip.buffer, zip.originalname, b, files?.preview?.[0], u);
   }
 
   /** Switch one dealership's design (pinned to a version). */

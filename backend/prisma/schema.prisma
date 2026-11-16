@@ -185,6 +185,10 @@ model Theme {
   billing       BillingCycle   @default(ONE_TIME)
   priceNote     String         @default("")
   enabled       Boolean        @default(true)
+  /// private / custom theme: only the dealerships in allowedTenantIds see it in Design & colours (and can use it)
+  isPrivate     Boolean        @default(false)
+  /// dealership (tenant) ids allowed to see a private theme
+  allowedTenantIds String[]    @default([])
   sortOrder     Int            @default(0)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -927,6 +931,12 @@ enum DesignRequestType {
   DESIGN_CHANGE
 }
 
+/// the two tracks of Design & colours: "Add Pages" and "Add Custom Design / Theme"
+enum DesignRequestCategory {
+  ADD_PAGE
+  CUSTOM_THEME
+}
+
 enum DesignRequestStatus {
   NEW
   IN_REVIEW
@@ -947,6 +957,22 @@ model DesignRequest {
   /// the dealership (shown as dealerId in the API)
   tenantId          String
   requestType       DesignRequestType
+  /// null on requests sent before the two tracks: EXTRA_PAGE → ADD_PAGE, anything else → CUSTOM_THEME
+  requestCategory   DesignRequestCategory?
+  /// ADD_PAGE: "page"; CUSTOM_THEME: the main area (FULL_THEME, NEW_SECTION, COLORS_TYPOGRAPHY, HEADER_FOOTER, WIDGET_BANNER)
+  subType           String                  @default("")
+  /// CUSTOM_THEME: every area ticked
+  designAreas       String[]                @default([])
+  /// ADD_PAGE: slug idea, e.g. "service-department"
+  pageSlug          String                  @default("")
+  /// ADD_PAGE: CLEAN_INFO | LEAD_FOCUSED | MEDIA_GALLERY | MATCH_SITE
+  layoutStyle       String                  @default("")
+  /// ADD_PAGE: sections inside the page ("Hero Banner", "FAQ Accordion", custom ones…)
+  requestedSections String[]                @default([])
+  /// ADD_PAGE: text, headlines and details for the page
+  contentNotes      String                  @default("")
+  /// CUSTOM_THEME: { primary, accent, mode: light | dark | either, font }
+  colorPreferences  Json?
   /// "Service Department Page", "Customer Testimonials Section"
   title             String
   /// "New navigation page", "Home page", "Vehicle detail page" …
@@ -969,5 +995,6 @@ model DesignRequest {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, createdAt])
+  @@index([requestCategory, createdAt])
   @@index([status, createdAt])
 }

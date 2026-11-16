@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Check, CreditCard, Eye, Lock, PlusCircle, RotateCcw, Smartphone, Undo2 } from 'lucide-react';
+import { Check, CreditCard, Eye, Lock, RotateCcw, Smartphone, Sparkles, Undo2 } from 'lucide-react';
 import { api, mediaUrl, siteUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { useTenant } from '@/components/DealerShell';
 import { useToast } from '@/components/toast';
 import { Badge, Button, ErrorBox, Field, Input, Loading, Modal, Textarea, cx } from '@/components/ui';
 import { LivePreview, SiteThumbnail, type LivePreviewHandle } from '@/components/LivePreview';
-import { DesignRequests } from '@/components/DesignRequests';
+import { DesignSubNav } from '@/components/DesignRequests';
 
 type Slot = { key: string; label: string; default: string; hint: string };
 
@@ -92,7 +92,6 @@ export default function DesignPage() {
   const previewSrc = siteUrl(tenant, `index.html?pa_live=1&pa_tenant=${encodeURIComponent(tenant.id)}${showingCurrent ? '' : `&pa_theme_preview=${encodeURIComponent(previewId)}`}`);
 
   return (
-    <div className="space-y-10">
     <div className="grid gap-6 lg:h-[calc(100vh-3rem)] lg:grid-cols-[minmax(360px,520px)_1fr]">
       {/* ---------------- designs + colours ---------------- */}
       <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -100,16 +99,8 @@ export default function DesignPage() {
           <div className="text-xs font-bold uppercase tracking-wider text-blue-700">Set up your website · Step 2 of 3</div>
           <h1 className="mt-1 font-heading text-xl font-extrabold text-slate-900">Design & colours</h1>
           <p className="mt-1 text-sm text-slate-500">Pick how your website looks. Your text, vehicles and business details follow you to any design.</p>
-          <a
-            href="#design-requests"
-            onClick={(e) => {
-              e.preventDefault();
-              document.getElementById('design-requests')?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-          >
-            <PlusCircle className="h-3.5 w-3.5" /> Need an extra page or section? Request it
-          </a>
+          {/* Theme & colours | Add Pages | Add Custom Design / Theme */}
+          <DesignSubNav className="mt-3" />
         </div>
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-slate-50/60 px-4 py-4">
@@ -185,7 +176,13 @@ export default function DesignPage() {
                   <div className="p-3.5">
                     <div className="flex items-center justify-between gap-2">
                       <h3 className="font-heading text-sm font-bold text-slate-900">{t.name}</h3>
-                      <Badge>{t.style}</Badge>
+                      {t.custom ? (
+                        <Badge color="green">
+                          <Sparkles className="h-3 w-3" /> Made for you
+                        </Badge>
+                      ) : (
+                        <Badge>{t.style}</Badge>
+                      )}
                     </div>
                     <p className="mt-1 line-clamp-2 min-h-[32px] text-xs text-slate-500">{t.description}</p>
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -358,9 +355,6 @@ export default function DesignPage() {
           </>
         )}
       </Modal>
-    </div>
-
-    <DesignRequests />
     </div>
   );
 }

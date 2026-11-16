@@ -11,9 +11,9 @@ type Theme = { id: string; name: string; installed: string[]; versions: { versio
 
 /**
  * Platform Admin › Themes & releases › Install & switch (same as the old platform):
- *  - Switch a dealership's design: one dealership only, pinned to a version; inventory, photos, inquiries, text and settings stay.
+ *  - Switch a dealership's theme: one dealership only, pinned to a version; inventory, photos, inquiries, text and settings stay.
  *  - Roll back last change.
- *  - Install a design package: ZIP with one theme.json, templates/, optional partials/ and assets/. Installed as a new
+ *  - Install a theme package: ZIP with one theme.json, templates/, optional partials/ and assets/. Installed as a new
  *    version; nothing is activated.
  */
 export function ThemeInstall({ themes, onChanged }: { themes: Theme[]; onChanged: () => void }) {
@@ -37,7 +37,7 @@ export function ThemeInstall({ themes, onChanged }: { themes: Theme[]; onChanged
     return [...new Set(v)];
   }, [theme]);
 
-  // pick the first dealership; follow its current design + version
+  // pick the first dealership; follow its current theme + version
   useEffect(() => {
     if (!tenantId && list.length) setTenantId(list[0].id);
   }, [list, tenantId]);
@@ -101,7 +101,7 @@ export function ThemeInstall({ themes, onChanged }: { themes: Theme[]; onChanged
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      <Card title="Switch a dealership's design">
+      <Card title="Switch a dealership's theme">
         <p className="-mt-1 mb-4 text-sm text-slate-500">Changes one dealership only. Inventory, photos, inquiries, text and settings stay in place.</p>
         {!list.length ? (
           <p className="text-sm text-slate-500">{tenants.loading ? 'Loading…' : 'Add a dealership first.'}</p>
@@ -119,7 +119,7 @@ export function ThemeInstall({ themes, onChanged }: { themes: Theme[]; onChanged
                   </Select>
                 </Field>
               </div>
-              <Field label="Design">
+              <Field label="Theme">
                 <Select value={themeId} onChange={(e) => setThemeId(e.target.value)}>
                   {themes.map((t) => (
                     <option key={t.id} value={t.id}>
@@ -148,7 +148,7 @@ export function ThemeInstall({ themes, onChanged }: { themes: Theme[]; onChanged
         )}
       </Card>
 
-      <Card title="Install a design package">
+      <Card title="Install a theme package">
         <p className="-mt-1 mb-4 text-sm text-slate-500">
           Upload a ZIP with one <code>theme.json</code>, <code>templates/</code>, optional <code>partials/</code> and <code>assets/</code>. PHP and server files are rejected. Installed as a new version; nothing is activated.
         </p>
@@ -156,7 +156,7 @@ export function ThemeInstall({ themes, onChanged }: { themes: Theme[]; onChanged
           <label className="flex cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed border-slate-300 px-4 py-4 hover:border-slate-400">
             <PackageOpen className="h-6 w-6 shrink-0 text-slate-400" />
             <span className="min-w-0 text-sm">
-              <b className="block truncate text-slate-800">{file ? file.name : 'Choose a design ZIP'}</b>
+              <b className="block truncate text-slate-800">{file ? file.name : 'Choose a theme ZIP'}</b>
               <span className="text-slate-500">{file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : 'Up to 40 MB · 800 files · 15 MB per file'}</span>
             </span>
             <input ref={fileRef} type="file" accept=".zip,application/zip" hidden onChange={(e) => setFile(e.target.files?.[0] || null)} />
@@ -185,7 +185,7 @@ export function ThemeInstall({ themes, onChanged }: { themes: Theme[]; onChanged
 templates/index.html
 partials/site-header.html   (optional)
 assets/css/theme.css …      (optional: css, js, images, fonts, 3D models)
-assets/preview.jpg          (optional: picture shown in the design galleries)`}</pre>
+assets/preview.jpg          (optional: picture shown in the theme galleries)`}</pre>
           Reuse the platform's content markers ({'{%text …%}'}, {'{%site …%}'}) and its inventory, settings and lead addresses.
         </details>
       </Card>
@@ -193,7 +193,7 @@ assets/preview.jpg          (optional: picture shown in the design galleries)`}<
       <Modal
         open={!!ask}
         onClose={() => setAsk('')}
-        title={ask === 'activate' ? 'Activate design' : 'Roll back'}
+        title={ask === 'activate' ? 'Activate theme' : 'Roll back'}
         footer={
           <>
             <Button variant="secondary" onClick={() => setAsk('')}>
@@ -205,7 +205,7 @@ assets/preview.jpg          (optional: picture shown in the design galleries)`}<
           </>
         }
       >
-        {ask === 'activate' ? `Activate ${theme?.name} ${version} for ${tenant?.name}?` : `Restore the previous design for ${tenant?.name}?`}
+        {ask === 'activate' ? `Activate ${theme?.name} ${version} for ${tenant?.name}?` : `Restore the previous theme for ${tenant?.name}?`}
       </Modal>
     </div>
   );

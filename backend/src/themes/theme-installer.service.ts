@@ -7,6 +7,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { readZip, ZipError } from './zip-reader.js';
 import type { AuthUser } from '../common/auth.types.js';
+import { ThemesService } from './themes.service.js';
+import { clean } from '../common/util.js';
 
 /**
  * Design packages (port of the old api/theme-installer.php, same rules):
@@ -101,6 +103,7 @@ export class ThemeInstallerService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly themes: ThemesService,
   ) {}
 
   /**
@@ -159,8 +162,58 @@ export class ThemeInstallerService implements OnModuleInit {
     return out;
   }
 
-  /** Validate & install a design ZIP. Returns the installed design; nothing is activated. */
-  async install(buf: Buffer, fileName: string, user: AuthUser) {
+  /**
+   * Themes & releases › Add New Custom Theme: install a theme ZIP under its own key / name, with an optional preview
+   * thumbnail, Public or Private to chosen dealerships. Nothing is activated.
+   */
+  async installCustom(
+    buf: Buffer,
+    fileName: string,
+    b: Record<string, unknown>,
+    preview: { buffer: Buffer; originalname: string; mimetype: string; size: number } | undefined,
+    user: AuthUser,
+  ) {
+    const name = clean(b.name, 60);
+    if (name.length < 2) fail('Enter the theme name, e.g. "Peerless Bespoke Edition".');
+    const key = clean(b.key, 40).toLowerCase();
+    if (!VALID_ID.test(key)) fail('The theme key must use lowercase letters, numbers and hyphens (2–40 characters), e.g. peerless-custom-v1.');
+    if (await this.prisma.theme.findUnique({ where: { id: key } })) fail(`A theme with the key "${key}" already exists. Choose another key, or install a new version of it under Install & switch.`);
+    const description = clean(b.description, 400);
+    // checked before anything is written, so a wrong choice never leaves files behind
+    const vis = await this.themes.visibility({ isPrivate: b.visibility === 'private' || b.isPrivate === 'true', allowedTenantIds: b.allowedTenantIds ?? '' });
+    let thumb: { data: Buffer; ext: string } | null = null;
+    if (preview?.buffer?.length) {
+      if (preview.size > 5 * MB) fail('The preview picture must be smaller than 5 MB.');
+      const d = preview.buffer;
+      const ext =
+        d[0] === 0xff && d[1] === 0xd8 ? '.jpg' : d.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) ? '.png' : d.subarray(0, 4).toString() === 'RIFF' && d.subarray(8, 12).toString() === 'WEBP' ? '.webp' : '';
+      if (!ext) fail('The preview picture must be a JPG, PNG or WebP image.');
+      thumb = { data: d, ext };
+    }
+
+    const r = await this.install(buf, fileName, user, { id: key, name, description, isPrivate: vis.isPrivate, allowedTenantIds: vis.allowedTenantIds });
+
+    let previewUrl = '';
+    if (thumb) {
+      const dir = join(process.cwd(), 'public', 'themes');
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, `${key}${thumb.ext}`), thumb.data);
+      previewUrl = `/themes/${key}${thumb.ext}?v=${Date.now().toString(36)}`;
+    }
+    await this.prisma.theme.update({
+      where: { id: key },
+      data: { name, ...(description ? { description } : {}), ...(previewUrl ? { previewUrl } : {}), style: 'Custom theme', isPrivate: vis.isPrivate, allowedTenantIds: vis.allowedTenantIds },
+    });
+    await this.audit.record('theme.custom', { actor: user.login, detail: { theme: key, private: vis.isPrivate, dealers: vis.allowedTenantIds } });
+    const who = vis.isPrivate ? `only to ${vis.allowedTenantIds.length} chosen dealership${vis.allowedTenantIds.length === 1 ? '' : 's'}` : 'to every dealership';
+    return { ...r, message: `Custom theme "${name}" installed and shown ${who} in Design & colours. It has not been activated yet.`, theme: { ...r.theme, id: key, name, isPrivate: vis.isPrivate } };
+  }
+
+  /**
+   * Validate & install a design ZIP. Returns the installed design; nothing is activated.
+   * `over` (Add New Custom Theme): key / name / description used instead of the ZIP's theme.json (rewritten to match).
+   */
+  async install(buf: Buffer, fileName: string, user: AuthUser, over?: { id?: string; name?: string; description?: string; isPrivate?: boolean; allowedTenantIds?: string[] }) {
     if (!buf?.length) fail('Choose a theme ZIP file first.');
     if (buf.length > 40 * MB) fail('Theme ZIP must be smaller than 40 MB.');
     if (!/\.zip$/i.test(fileName || '')) fail('Choose a .zip file.');
@@ -224,6 +277,9 @@ export class ThemeInstallerService implements OnModuleInit {
       return fail('The theme.json file is not valid JSON.');
     }
     if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) fail('The theme.json file is not a valid JSON object.');
+    if (over?.id) manifest.id = over.id;
+    if (over?.name) manifest.name = over.name;
+    if (over?.description) manifest.description = over.description;
     const id = String(manifest.id ?? '');
     const version = String(manifest.version ?? '');
     const name = String(manifest.name ?? '').trim();
@@ -251,7 +307,8 @@ export class ThemeInstallerService implements OnModuleInit {
     const created: string[] = [];
     try {
       for (const r of rel) {
-        const data = zip.read(r.e);
+        // a custom key / name is written into the installed theme.json too, so files and database agree
+        const data = over && r.rel === 'theme.json' ? Buffer.from(JSON.stringify(manifest, null, 2)) : zip.read(r.e);
         if (/\.(html|css|js|json|svg)$/i.test(r.rel) && /<\?(php|=|\s)/i.test(data.toString('utf8'))) {
           fail(`PHP code is not allowed in theme files. Remove PHP tags from ${r.rel}.`);
         }
@@ -296,6 +353,9 @@ export class ThemeInstallerService implements OnModuleInit {
           stableVersion: version,
           sortOrder: await this.prisma.theme.count(),
           enabled: true,
+          // a custom theme is private from the first moment (never shown to everyone, even briefly)
+          isPrivate: !!over?.isPrivate,
+          allowedTenantIds: over?.allowedTenantIds || [],
         },
       });
     }

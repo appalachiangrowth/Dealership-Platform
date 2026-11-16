@@ -72,7 +72,7 @@ export default function DealerInspector() {
         }
         desc={
           <>
-            {t.dealerCode} · {t.id} · design <b>{t.themeId}</b> ({t.channel.toLowerCase()}
+            {t.dealerCode} · {t.id} · theme <b>{t.themeId}</b> ({t.channel.toLowerCase()}
             {t.themePin && `, pinned ${t.themePin}`}) · {t.domains.map((d: any) => d.domain).join(', ') || 'no domain'}
           </>
         }
@@ -104,7 +104,7 @@ export default function DealerInspector() {
           { id: 'business', label: 'Business details' },
           { id: 'team', label: `Team (${data.users.length})` },
           { id: 'settings', label: 'Settings' },
-          { id: 'designs', label: 'Design licences' },
+          { id: 'themes', label: 'Theme licences' },
           { id: 'activity', label: 'Activity' },
         ]}
       />
@@ -197,9 +197,9 @@ export default function DealerInspector() {
               </Field>
             </div>
           </Card>
-          <Card title="Design release" actions={<Button size="sm" loading={busy} onClick={() => update({ themeId: f.themeId, channel: f.channel, themePin: f.themePin })}>Save</Button>}>
+          <Card title="Theme release" actions={<Button size="sm" loading={busy} onClick={() => update({ themeId: f.themeId, channel: f.channel, themePin: f.themePin })}>Save</Button>}>
             <div className="space-y-4">
-              <Field label="Design">
+              <Field label="Theme">
                 <Select value={f.themeId} onChange={(e) => setF({ ...f, themeId: e.target.value })}>
                   {themes.data?.themes.map((th: any) => (
                     <option key={th.id} value={th.id}>
@@ -208,7 +208,7 @@ export default function DealerInspector() {
                   ))}
                 </Select>
               </Field>
-              <Field label="Release channel" hint="Beta dealers get new design versions first.">
+              <Field label="Release channel" hint="Beta dealers get new theme versions first.">
                 <Select value={f.channel} onChange={(e) => setF({ ...f, channel: e.target.value })}>
                   <option value="STABLE">Stable</option>
                   <option value="BETA">Beta</option>
@@ -243,9 +243,9 @@ export default function DealerInspector() {
         </div>
       )}
 
-      {tab === 'designs' && (
+      {tab === 'themes' && (
         <Card pad={false}>
-          <Table head={['Design', 'Price', 'Access', '']}>
+          <Table head={['Theme', 'Price', 'Access', '']}>
             {themes.data?.themes.map((th: any) => {
               const lic = data.licenses.find((l: any) => l.themeId === th.id);
               return (

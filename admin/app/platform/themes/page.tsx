@@ -7,28 +7,38 @@ import { useToast } from '@/components/toast';
 import { Badge, Button, Card, Drawer, Field, Input, Loading, Modal, PageHeader, Select, StatusBadge, Table, Tabs, Td, Textarea, Toggle } from '@/components/ui';
 import { dateTime } from '@/lib/format';
 import { ThemeInstall } from '@/components/ThemeInstall';
+import { AddCustomTheme, VisibilityControl } from '@/components/CustomTheme';
+import { Globe, Lock, Plus } from 'lucide-react';
 
 export default function ThemesPage() {
   const { data, setData, loading } = useApi('/platform/themes');
   const requests = useApi('/platform/theme-requests');
   const settings = useApi('/platform/settings');
   const toast = useToast();
-  const [tab, setTab] = useState('designs');
+  const [tab, setTab] = useState('themes');
   const [edit, setEdit] = useState<any>(null);
   const [release, setRelease] = useState({ version: '', notes: '' });
   const [payment, setPayment] = useState<string | null>(null);
-  // "Delete design" confirmation
+  // "Delete theme" confirmation
   const [del, setDel] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
+  // Add New Custom Theme panel
+  const [adding, setAdding] = useState(false);
 
   if (loading || !data) return <Loading />;
   const pending = requests.data?.filter((r: any) => r.status === 'PENDING').length || 0;
 
   async function save() {
     try {
-      const { paid, price, currency, billing, priceNote, enabled, stableVersion, betaVersion, name, description } = edit;
-      setData(await api(`/platform/themes/${edit.id}`, { method: 'PATCH', body: { paid, price, currency, billing, priceNote, enabled, stableVersion, betaVersion, name, description } }));
-      toast.ok('Design saved');
+      const { paid, price, currency, billing, priceNote, enabled, stableVersion, betaVersion, name, description, isPrivate, allowedTenantIds } = edit;
+      if (isPrivate && !allowedTenantIds?.length) return toast.error('Choose at least one dealership for a private theme, or make it public.');
+      setData(
+        await api(`/platform/themes/${edit.id}`, {
+          method: 'PATCH',
+          body: { paid, price, currency, billing, priceNote, enabled, stableVersion, betaVersion, name, description, isPrivate: !!isPrivate, allowedTenantIds: isPrivate ? allowedTenantIds : [] },
+        }),
+      );
+      toast.ok('Theme saved');
       setEdit(null);
     } catch (e) {
       toast.error((e as Error).message);
@@ -37,12 +47,21 @@ export default function ThemesPage() {
 
   return (
     <>
-      <PageHeader title="Themes & releases" desc="Website designs, their prices and version releases. Dealers on the Beta channel get the beta version; a dealer can be pinned to a version." />
+      <PageHeader
+        title="Themes & releases"
+        desc="Website themes, their prices and version releases. Dealers on the Beta channel get the beta version; a dealer can be pinned to a version. Private themes are shown only to the dealerships they are assigned to."
+        actions={
+          <Button onClick={() => setAdding(true)} className="bg-violet-600 hover:bg-violet-700">
+            <Plus className="h-4 w-4" /> Add New Custom Theme
+          </Button>
+        }
+      />
+      <AddCustomTheme open={adding} onClose={() => setAdding(false)} onDone={(r) => setData(r)} />
       <Tabs
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: 'designs', label: 'Designs' },
+          { id: 'themes', label: 'Themes' },
           { id: 'install', label: 'Install & switch' },
           { id: 'requests', label: `Unlock requests${pending ? ` (${pending})` : ''}` },
           { id: 'payment', label: 'Payment instructions' },
@@ -50,7 +69,7 @@ export default function ThemesPage() {
         ]}
       />
       {tab === 'storefront' && <StorefrontFeatures />}
-      {tab === 'designs' && (
+      {tab === 'themes' && (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {data.themes.map((t: any) => (
             <Card key={t.id} pad={false}>
@@ -62,8 +81,24 @@ export default function ThemesPage() {
               <div className="p-5">
                 <div className="flex items-center justify-between">
                   <h3 className="font-heading font-bold">{t.name}</h3>
-                  {t.enabled ? <Badge color="green">Enabled</Badge> : <Badge>Hidden</Badge>}
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    {t.isPrivate ? (
+                      <Badge color="violet">
+                        <Lock className="h-3 w-3" /> Private
+                      </Badge>
+                    ) : (
+                      <Badge color="slate">
+                        <Globe className="h-3 w-3" /> Public
+                      </Badge>
+                    )}
+                    {t.enabled ? <Badge color="green">Enabled</Badge> : <Badge>Hidden</Badge>}
+                  </span>
                 </div>
+                {t.isPrivate && (
+                  <p className="mt-1 text-xs text-violet-700">
+                    Only for: <b>{t.allowedTenants?.length ? t.allowedTenants.map((a: any) => a.name).join(', ') : 'no dealership yet'}</b>
+                  </p>
+                )}
                 <p className="mt-1 text-xs text-slate-500">
                   {t.installed?.length > 0 && <>Installed {t.installed.join(', ')} · </>}
                   Stable <b>{t.stableVersion}</b>
@@ -71,7 +106,7 @@ export default function ThemesPage() {
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <Button size="sm" variant="secondary" onClick={() => setEdit({ ...t })}>
-                    Edit price & release
+                    Edit price, release & visibility
                   </Button>
                   <Button
                     size="sm"
@@ -79,10 +114,10 @@ export default function ThemesPage() {
                     disabled={t.id === 'classic' || t.dealers > 0}
                     title={
                       t.id === 'classic'
-                        ? 'Classic is the design new dealerships start with — hide it instead'
+                        ? 'Classic is the theme new dealerships start with — hide it instead'
                         : t.dealers > 0
-                          ? `${t.dealers} dealership${t.dealers === 1 ? ' uses' : 's use'} this design: switch ${t.dealers === 1 ? 'it' : 'them'} first (Install & switch)`
-                          : 'Delete this design'
+                          ? `${t.dealers} dealership${t.dealers === 1 ? ' uses' : 's use'} this theme: switch ${t.dealers === 1 ? 'it' : 'them'} first (Install & switch)`
+                          : 'Delete this theme'
                     }
                     onClick={() => setDel(t)}
                   >
@@ -90,7 +125,7 @@ export default function ThemesPage() {
                   </Button>
                 </div>
                 {t.dealers > 0 && t.id !== 'classic' && (
-                  <p className="mt-1.5 text-[11px] text-slate-400">To delete it, switch its {t.dealers} dealership{t.dealers === 1 ? '' : 's'} to another design first.</p>
+                  <p className="mt-1.5 text-[11px] text-slate-400">To delete it, switch its {t.dealers} dealership{t.dealers === 1 ? '' : 's'} to another theme first.</p>
                 )}
               </div>
             </Card>
@@ -105,7 +140,7 @@ export default function ThemesPage() {
       )}
       {tab === 'requests' && (
         <Card pad={false}>
-          <Table head={['Dealership', 'Design', 'Price', 'Requested', 'Message', 'Status', '']}>
+          <Table head={['Dealership', 'Theme', 'Price', 'Requested', 'Message', 'Status', '']}>
             {requests.data?.map((r: any) => (
               <tr key={r.id}>
                 <Td>
@@ -134,7 +169,7 @@ export default function ThemesPage() {
                           const amount = prompt('Amount received', String(Number(r.price)));
                           if (amount === null) return;
                           requests.setData(await api(`/platform/theme-requests/${r.id}/approve`, { body: { amount, note: 'Payment received' } }));
-                          toast.ok('Design unlocked for the dealer');
+                          toast.ok('Theme unlocked for the dealer');
                         }}
                       >
                         Payment received
@@ -158,7 +193,7 @@ export default function ThemesPage() {
         </Card>
       )}
       {tab === 'payment' && settings.data && (
-        <Card className="max-w-2xl" title="How dealers pay for a design">
+        <Card className="max-w-2xl" title="How dealers pay for a theme">
           <Textarea rows={8} value={payment ?? settings.data.payment.instructions} onChange={(e) => setPayment(e.target.value)} placeholder="Bank details, JazzCash / Easypaisa number, PayPal link…" />
           <Button
             className="mt-3"
@@ -174,7 +209,7 @@ export default function ThemesPage() {
       <Modal
         open={!!del}
         onClose={() => !deleting && setDel(null)}
-        title={`Delete ${del?.name || 'design'}?`}
+        title={`Delete ${del?.name || 'theme'}?`}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDel(null)} disabled={deleting}>
@@ -187,7 +222,7 @@ export default function ThemesPage() {
                 setDeleting(true);
                 try {
                   const r = await api(`/platform/themes/${del.id}`, { method: 'DELETE' });
-                  toast.ok(r?.message || 'Design deleted');
+                  toast.ok(r?.message || 'Theme deleted');
                   setDel(null);
                   setData(await api('/platform/themes'));
                 } catch (e) {
@@ -197,7 +232,7 @@ export default function ThemesPage() {
                 }
               }}
             >
-              Delete design
+              Delete theme
             </Button>
           </>
         }
@@ -225,12 +260,23 @@ export default function ThemesPage() {
       >
         {edit && (
           <div className="space-y-5">
-            <Toggle checked={edit.enabled} onChange={(v) => setEdit({ ...edit, enabled: v })} label="Show in the dealers’ design gallery" />
+            <Toggle checked={edit.enabled} onChange={(v) => setEdit({ ...edit, enabled: v })} label="Show in the dealers’ theme gallery" />
             <Field label="Description">
               <Textarea rows={2} value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} />
             </Field>
             <div className="rounded-xl border border-slate-200 p-4">
-              <Toggle checked={edit.paid} onChange={(v) => setEdit({ ...edit, paid: v })} label="Paid design" desc="Dealers can preview it but must request it before using it." />
+              <div className="mb-3 text-sm font-semibold text-slate-800">Visibility & dealership assignment</div>
+              <VisibilityControl
+                isPrivate={!!edit.isPrivate}
+                ids={edit.allowedTenantIds || []}
+                onChange={(v) => setEdit({ ...edit, isPrivate: v.isPrivate, allowedTenantIds: v.ids })}
+              />
+              {edit.isPrivate && edit.dealers > 0 && (
+                <p className="mt-2 text-xs text-slate-500">A dealership that already uses this theme keeps it, even if it is not on the list.</p>
+              )}
+            </div>
+            <div className="rounded-xl border border-slate-200 p-4">
+              <Toggle checked={edit.paid} onChange={(v) => setEdit({ ...edit, paid: v })} label="Paid theme" desc="Dealers can preview it but must request it before using it." />
               {edit.paid && (
                 <div className="mt-4 grid grid-cols-3 gap-3">
                   <Field label="Price">
@@ -295,7 +341,7 @@ export default function ThemesPage() {
                   Add release
                 </Button>
               </div>
-              <p className="mt-2 text-xs text-slate-500">A release records a new version of the design’s code in frontend/themes/{edit.id}. Point Beta to it, test with one dealer, then point Stable to it.</p>
+              <p className="mt-2 text-xs text-slate-500">A release records a new version of the theme’s code in frontend/themes/{edit.id}. Point Beta to it, test with one dealer, then point Stable to it.</p>
             </div>
           </div>
         )}
