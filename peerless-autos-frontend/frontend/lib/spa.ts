@@ -342,13 +342,13 @@ function fix(a){var h=a.getAttribute("href"),n=mapHref(h);if(n!=null&&n!==h){a.s
 function all(){busy=0;var a=D.querySelectorAll("a[href]");for(var i=0;i<a.length;i++)fix(a[i]);hideOff()}
 /* ---------- storefront switches (Financing / Trade-In off): hide links, buttons, sections, payment estimates ---------- */
 var F=X.F||{on:1},FR=F.on?null:new RegExp(F.fr,"i"),TR=F.on?null:new RegExp(F.tr,"i"),BL=F.bl||{};
-var EST=/(^|\s)(est\.?|estimated?)\s*\$?\s*[\d,.]+\s*\/\s*mo\b|\$\s*[\d,.]+\s*\/\s*mo(nth)?\b|\bper month\b|\b\d+(\.\d+)?%\s*APR\b/i;
-function txt(el){return String(el.textContent||"").replace(/\s+/g," ").trim()}
+var EST=/(^|\\s)(est\\.?|estimated?)\\s*\\$?\\s*[\\d,.]+\\s*\\/\\s*mo\\b|\\$\\s*[\\d,.]+\\s*\\/\\s*mo(nth)?\\b|\\bper month\\b|\\b\\d+(\\.\\d+)?%\\s*APR\\b/i;
+function txt(el){return String(el.textContent||"").replace(/\\s+/g," ").trim()}
 function offT(t){if(!t||t.length>60)return false;return (!F.fin&&FR.test(t))||(!F.trade&&TR.test(t))}
-function offName(n){n=low(n).replace(/^[#.\/]+/,"").replace(/\.html?$/,"");return !!BL[n]||(!F.fin&&/(^|-)financ/.test(n))||(!F.trade&&/(^|-)trade-?in(-|$)/.test(n))}
+function offName(n){n=low(n).replace(/^[#.\\/]+/,"").replace(/\\.html?$/,"");return !!BL[n]||(!F.fin&&/(^|-)financ/.test(n))||(!F.trade&&/(^|-)trade-?in(-|$)/.test(n))}
 function offH(h){if(!h)return false;var i=h.indexOf("#"),hh=i>-1?h.slice(i+1):"";if(hh&&offName(hh))return true;if(h.charAt(0)==="#")return false;
-  try{var u=new URL(h,D.baseURI);if(u.origin!==L.origin)return false;var p=low(u.pathname).replace(/^\/+|\/+$/g,"");return !!p&&(!!BL[p]||offName(p))}catch(e){return false}}
-function offSec(v){v=low(v);return (!F.fin&&/(^|[\s._-])(financ\w*|fin-calc\w*|loan-calc\w*|payment-calc\w*|pre-?approv\w*)($|[\s._-])/.test(v))||(!F.trade&&/(^|[\s._-])(trade-?in\w*|value-your-trade|trade-value|trade-appraisal)($|[\s._-])/.test(v))}
+  try{var u=new URL(h,D.baseURI);if(u.origin!==L.origin)return false;var p=low(u.pathname).replace(/^\\/+|\\/+$/g,"");return !!p&&(!!BL[p]||offName(p))}catch(e){return false}}
+function offSec(v){v=low(v);return (!F.fin&&/(^|[\\s._-])(financ\\w*|fin-calc\\w*|loan-calc\\w*|payment-calc\\w*|pre-?approv\\w*)($|[\\s._-])/.test(v))||(!F.trade&&/(^|[\\s._-])(trade-?in\\w*|value-your-trade|trade-value|trade-appraisal)($|[\\s._-])/.test(v))}
 function off(el){if(!el.hasAttribute("data-pa-off"))el.setAttribute("data-pa-off","")}
 function hideOff(){
   if(F.on)return;var i,el,q;

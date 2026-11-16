@@ -8,6 +8,7 @@
 import { backend } from './backend';
 import { h } from './php';
 import { outsideScripts } from './spa';
+import type { Theme } from './engine';
 
 export interface SeoMeta {
   title: string;
@@ -145,4 +146,44 @@ export function headScripts(o: { base?: boolean; vehicleId?: string }): string {
       `P.prototype=U.prototype;try{Object.setPrototypeOf(P,U)}catch(e){}window.URLSearchParams=P})();</script>`;
   }
   return out;
+}
+
+/* ───────────────── clean addresses for every design page (no .html) ───────────────── */
+
+/** design pages that are opened with ?id= and have their own clean address (vehicles: /inventory/<slug>) */
+const NO_DEFAULT_CLEAN = new Set(['index.html', 'vehicle.html']);
+/** design page names whose clean address differs from the file name */
+const CLEAN_ALIAS: Record<string, string> = { about: 'about-us' };
+
+/** "contact-us.html" → "/contact-us", "about.html" → "/about-us" (when the design has no about-us.html) */
+export function defaultCleanPath(template: string, templates: Set<string>): string {
+  const base = template.replace(/\.html?$/i, '').toLowerCase();
+  const alias = CLEAN_ALIAS[base];
+  return '/' + (alias && !templates.has(alias + '.html') ? alias : base);
+}
+
+/**
+ * Every link map the website uses: design address → clean address. Addresses set in Platform Admin › SEO & URLs
+ * win; every other design page gets its file name without .html (/inventory, /blog, /about-us, /financing …).
+ */
+export function cleanPages(theme: Theme | null | undefined, links: SeoLinks): Record<string, string> {
+  const out: Record<string, string> = {};
+  const pages = theme?.manifest.pages || [];
+  const templates = new Set(pages.map((p) => String(p.template || '').toLowerCase()));
+  for (const p of pages) {
+    const t = String(p.template || '').toLowerCase();
+    if (!t.endsWith('.html') || NO_DEFAULT_CLEAN.has(t) || t.includes('/')) continue;
+    out[t] = defaultCleanPath(t, templates);
+  }
+  for (const [from, to] of Object.entries(links.pages || {})) out[from.toLowerCase()] = to;
+  return out;
+}
+
+/** the design template shown at a clean address ("/blog" → "blog.html"), or null */
+export function templateForPath(theme: Theme, pages: Record<string, string>, rawPath: string): string | null {
+  const want = '/' + rawPath.toLowerCase().replace(/^\/+|\/+$/g, '');
+  if (want === '/') return null;
+  const own = new Set((theme.manifest.pages || []).map((p) => String(p.template || '').toLowerCase()));
+  for (const [from, to] of Object.entries(pages)) if (own.has(from) && to.toLowerCase() === want) return from;
+  return null;
 }

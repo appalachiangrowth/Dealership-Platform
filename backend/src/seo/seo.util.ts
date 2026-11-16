@@ -44,9 +44,19 @@ export const QUERY_PAGES = new Set(['vehicle', 'blog-post']);
 
 export const CUSTOM_PREFIX = 'custom:';
 
-/** The address a page has without any setting: "" (home), "<id>.html" (design page) or "<slug>" (Pages & SEO page). */
+/**
+ * The address a page has without any setting: "" (home), "<id>" (design page — the websites serve every design page
+ * without .html: /inventory, /blog, /about-us) or "<slug>" (Pages & SEO page).
+ */
 export function defaultPathOf(pageKey: string): string {
   if (pageKey === 'home') return '';
+  if (pageKey.startsWith(CUSTOM_PREFIX)) return pageKey.slice(CUSTOM_PREFIX.length);
+  return pageKey;
+}
+
+/** The design's own file address of a page ("used-cars.html"; Pages & SEO page: its slug) — keys of the websites' link map. */
+export function designPathOf(pageKey: string): string {
+  if (pageKey === 'home') return 'index.html';
   if (pageKey.startsWith(CUSTOM_PREFIX)) return pageKey.slice(CUSTOM_PREFIX.length);
   return `${pageKey}.html`;
 }

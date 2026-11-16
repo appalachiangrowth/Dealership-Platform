@@ -420,7 +420,7 @@ function PagesTab({ data, domainUrl, view, onSaved, toast }: { data: SeoData; do
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
               <div className="space-y-4">
                 <div>
-                  <FieldTop label="URL path" right={p.key === 'home' ? <span className="text-[11px] text-slate-400">The home page always lives at "/"</span> : <span className="text-[11px] text-slate-400">Empty = design address /{p.defaultPath}</span>} />
+                  <FieldTop label="URL path" right={p.key === 'home' ? <span className="text-[11px] text-slate-400">The home page always lives at "/"</span> : <span className="text-[11px] text-slate-400">Empty = /{p.defaultPath}</span>} />
                   <PathInput prefix={`${domainUrl}/`} value={d.path} onChange={(v) => set(p.key, { path: v })} placeholder={p.key === 'home' ? '' : p.defaultPath} disabled={p.key === 'home'} />
                   {moved && (
                     <p className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px] text-amber-700">

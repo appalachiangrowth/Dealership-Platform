@@ -6,12 +6,13 @@
  *   /sitemap.xml  /robots.txt           → generated per dealership
  *   /used-cars-for-sale  /inventory/2022-ford-f150-lariat … → clean addresses from Platform Admin › SEO & URLs
  *                                         (old addresses answer with a 301; see lib/seo.ts)
+ *   /inventory  /blog  /about-us  /contact-us … → every design page without .html (inventory.html → 301 → /inventory)
  * Photos (/uploads/…) are passed to the backend (next.config.ts), theme assets come from public/themes/.
  */
 import { backend, hostOf, originOf, securityHeaders, siteErrorPage, statePage, withTenant } from '@/lib/backend';
 import { loadTheme, themesInstalled, type Theme } from '@/lib/engine';
 import { renderPage, type ThemeContext } from '@/lib/page';
-import { applyMeta, headScripts, injectHead, resolveSeo, rewriteStaticLinks, seoLinks, seoSkipped, type SeoMeta, type SeoResolve } from '@/lib/seo';
+import { applyMeta, cleanPages, headScripts, injectHead, resolveSeo, rewriteStaticLinks, seoLinks, seoSkipped, templateForPath, type SeoLinks, type SeoMeta, type SeoResolve } from '@/lib/seo';
 import { outsideScripts, rewriteHashLinks, runtimeScript, spaConf, spaHashForKey, spaMatch, virtualizeHtml, virtualizeJs } from '@/lib/spa';
 import { allOn, blockedPaths, featureCss, featureOfPage, flagsOf, hideFeatures, hrefBlocked, markRoot, offText, themeFeatures } from '@/lib/features';
 import { injectNav, renderCustomPage, type CustomPage, type NavItem } from '@/lib/custom-pages';
@@ -134,6 +135,13 @@ type SeoOpts = {
   init?: { h?: string; v?: string };
 };
 
+const NO_SEO: SeoLinks = { base: 'inventory', pages: {} };
+/** the link map with every design page at its clean address (lib/seo.ts cleanPages) */
+const cleanLinks = (theme: Theme | null, links?: SeoLinks | null): SeoLinks => {
+  const l = links || NO_SEO;
+  return { ...l, pages: cleanPages(theme, l) };
+};
+
 const customSlugs = (ctx: ThemeContext) => new Set((ctx.pages || []).map((p) => String(p.slug).toLowerCase()));
 
 /**
@@ -144,7 +152,8 @@ async function finishHtml(html: string, ctx: ThemeContext, theme: Theme, host: s
   // Financing / Trade-In switches (lib/features.ts): applied even when SEO data is unavailable
   const flags = flagsOf(ctx);
   const featuresOff = !allOn(flags);
-  const links = o?.seo?.links || { base: 'inventory', pages: {} };
+  // every design page at its clean address (no .html); SEO & URLs settings win
+  const links = cleanLinks(theme, o?.seo?.links);
   const blocked = blockedPaths(flags, ctx, links.pages, theme);
   const heuristics = themeFeatures(theme).heuristics;
   if (!o?.seo) {
@@ -174,6 +183,37 @@ async function finishHtml(html: string, ctx: ThemeContext, theme: Theme, host: s
 }
 
 /**
+ * Old design addresses: /blog.html, /inventory.html?type=suv, /financing.html (a Pages & SEO page) → 301 to the clean
+ * address (/blog, /inventory?type=suv, /financing). The query is kept (blog-post.html?id=7 → /blog-post?id=7).
+ */
+async function htmlRedirect(req: Request, url: URL, host: string, rawPath: string, seo: SeoResolve) {
+  const { ctx, error } = await context(host);
+  if (error) return null;
+  const theme = loadTheme(ctx.theme.id, ctx.theme.version);
+  const file = rawPath.toLowerCase();
+  const pages = cleanLinks(theme, seo.links).pages;
+  if ((theme.manifest.pages || []).some((p) => String(p.template).toLowerCase() === file)) {
+    return pages[file] ? redirectTo(req, url, pages[file], 301, true) : null;
+  }
+  const slug = file.replace(/\.html?$/, '');
+  if (customSlugs(ctx).has(slug)) return redirectTo(req, url, pages[slug] || '/' + slug, 301, true);
+  return null;
+}
+
+/** a clean address of a design page (/blog → blog.html), with its title / description from SEO & URLs */
+async function cleanThemePage(req: Request, host: string, rawPath: string, seo: SeoResolve) {
+  const { ctx, error } = await context(host);
+  if (error) return null;
+  const theme = loadTheme(ctx.theme.id, ctx.theme.version);
+  const template = templateForPath(theme, cleanLinks(theme, seo.links).pages, rawPath);
+  if (!template) return null;
+  // the page's SEO & URLs texts (an API from before clean addresses only knows the design address)
+  const res = await resolveSeo(host, template);
+  const meta = res?.type === 'page' ? res.page.meta : undefined;
+  return themeResponse(req, host, ctx, theme, template, { seo, meta, path: rawPath.toLowerCase().replace(/^\/+|\/+$/g, '') });
+}
+
+/**
  * A page of a storefront feature switched off in Platform Admin (Financing / Trade-In): 302 to the home page.
  * 302, not 301, so turning the feature back on works at once.
  */
@@ -189,13 +229,13 @@ async function featureRedirect(req: Request, url: URL, host: string, rawPath: st
   } catch {
     /* design files missing: names only */
   }
-  return p && blockedPaths(flags, ctx, cleanPages, theme).has(p) ? redirectTo(req, url, '/', 302) : null;
+  return p && blockedPaths(flags, ctx, cleanLinks(theme, { base: '', pages: cleanPages }).pages, theme).has(p) ? redirectTo(req, url, '/', 302) : null;
 }
 
 /** 301 / 302 to a clean address on this website (keeps ?utm_… and ?tenant=, drops the old ?id=) */
-function redirectTo(_req: Request, url: URL, to: string, status: 301 | 302) {
+function redirectTo(_req: Request, url: URL, to: string, status: 301 | 302, keepId = false) {
   const q = new URLSearchParams(url.search);
-  q.delete('id');
+  if (!keepId) q.delete('id');
   const qs = q.toString();
   const target = to.startsWith('/') ? to : '/' + to;
   const hi = target.indexOf('#');
@@ -238,7 +278,7 @@ async function spaRoute(req: Request, url: URL, host: string, rawPath: string, s
   const slugs = customSlugs(ctx);
   const lowPath = rawPath.toLowerCase().replace(/\/+$/, '');
   if (slugs.has(lowPath) || (theme.manifest.pages || []).some((p) => p.template === lowPath)) return null;
-  const conf = spaConf(theme, seo.links, slugs, flagsOf(ctx));
+  const conf = spaConf(theme, cleanLinks(theme, seo.links), slugs, flagsOf(ctx));
   if (!conf) return null;
   const m = spaMatch(conf, lowPath, url.search);
   if (!m) return null;
@@ -264,7 +304,7 @@ async function seoPage(req: Request, url: URL, host: string, seo: Extract<SeoRes
   const own = key === 'home' ? { template: 'index.html' } : (theme.manifest.pages || []).find((p) => p.id === key);
   if (own) return themeResponse(req, host, ctx, theme, own.template, { seo, meta, path });
   // a single-page design: the page is a view of its home page
-  const conf = spaConf(theme, seo.links, customSlugs(ctx), flagsOf(ctx));
+  const conf = spaConf(theme, cleanLinks(theme, seo.links), customSlugs(ctx), flagsOf(ctx));
   const hash = conf ? spaHashForKey(conf, key) : null;
   const fallback = viewMeta(ctx, key);
   const m = { ...meta, title: meta.title || fallback.title, description: meta.description || fallback.description };
@@ -384,11 +424,13 @@ async function page(req: Request, { params }: Ctx) {
     // clean addresses from Platform Admin › SEO & URLs (design addresses when there are none)
     const seo = await seoLinks(host);
     const clean = seo?.pages || {};
-    const at = (def: string) => (clean[def.toLowerCase()] ? clean[def.toLowerCase()].replace(/^\/+/, '') : def);
+    // every design page at its clean address (no .html)
+    const cmap = cleanPages(theme, { base: '', pages: clean });
+    const at = (def: string) => (cmap[def.toLowerCase()] || '/' + def).replace(/^\/+/, '');
     const xmlEsc = (u: string) => u.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
     const seen = new Set<string>();
     // pages of storefront features switched off in Platform Admin (Financing / Trade-In) are left out
-    const offPaths = blockedPaths(flagsOf(ctx), ctx, clean, theme);
+    const offPaths = blockedPaths(flagsOf(ctx), ctx, cmap, theme);
     let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
     const add = (path: string, lastmod?: string) => {
       const u = t.site_url + '/' + path.replace(/^\/+/, '');
@@ -423,15 +465,25 @@ async function page(req: Request, { params }: Ctx) {
     if (off) return off;
   }
   if (seo?.type === 'redirect') return redirectTo(req, url, seo.to, seo.status);
+  // clean addresses work even with an API that has no SEO & URLs yet (previews keep the design's own addresses)
+  const seoOn: SeoResolve | null = seo || (seoSkipped(url) ? null : { type: 'none', links: NO_SEO });
+  if (seoOn && /^[a-z0-9][a-z0-9-]*\.html?$/i.test(rawPath) && rawPath.toLowerCase() !== 'vehicle.html') {
+    const go = await htmlRedirect(req, url, host, rawPath, seoOn);
+    if (go) return go;
+  }
   if (seo?.type === 'vehicle') return vehiclePage(req, host, seo);
   if (seo?.type === 'page') return seoPage(req, url, host, seo);
-  if (seo && /^[a-z0-9][a-z0-9\-\/.]*$/i.test(rawPath)) {
-    const spa = await spaRoute(req, url, host, rawPath, seo);
+  if (seoOn && rawPath && /^[a-z0-9][a-z0-9\-\/]*$/i.test(rawPath)) {
+    const page = await cleanThemePage(req, host, rawPath, seoOn);
+    if (page) return page;
+  }
+  if (seoOn && /^[a-z0-9][a-z0-9\-\/.]*$/i.test(rawPath)) {
+    const spa = await spaRoute(req, url, host, rawPath, seoOn);
     if (spa) return spa;
   }
 
   /* ---------------- custom pages: /financing (or /financing.html when no theme page has that name) ---------------- */
-  if (/^[a-z0-9][a-z0-9-]*$/.test(r)) return customPage(req, url, host, r, { seo });
+  if (/^[a-z0-9][a-z0-9-]*$/.test(r)) return customPage(req, url, host, r, { seo: seoOn });
 
   /* ---------------- theme pages ---------------- */
   if (!/^[a-z0-9][a-z0-9\-]*\.html$/.test(r)) return statePage(404, 'Page not found', 'The page you are looking for does not exist.');
@@ -444,13 +496,13 @@ async function page(req: Request, { params }: Ctx) {
 
   const theme = loadTheme(ctx.theme.id, ctx.theme.version);
   const page = (theme.manifest.pages || []).find((p) => p.template === r);
-  if (!page) return customPage(req, url, host, r.replace(/\.html$/, ''), { seo });
+  if (!page) return customPage(req, url, host, r.replace(/\.html$/, ''), { seo: seoOn });
 
   // ?pa_live=1 — live preview inside the Dealership Portal editors (texts / colours update while typing)
   const live = url.searchParams.get('pa_live') === '1';
   // menu links of the custom pages (not in the editor preview: the dealer edits the theme's own texts there)
   let html = injectNav(renderPage(ctx, theme, r, originOf(req), themePreview, live), theme, live ? [] : navItems(ctx), '', siteTokens(ctx.settings, originOf(req)));
-  if (!themePreview && !live) html = await finishHtml(html, ctx, theme, host, originOf(req), { seo, template: r });
+  if (!themePreview && !live) html = await finishHtml(html, ctx, theme, host, originOf(req), { seo: seoOn, template: r, path: r === 'index.html' ? '' : undefined });
   return new Response(html, {
     headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': themePreview || live ? 'no-store' : 'no-cache' }),
   });

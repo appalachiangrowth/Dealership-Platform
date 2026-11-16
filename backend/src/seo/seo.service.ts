@@ -21,6 +21,7 @@ import {
   TITLE_RANGE,
   VEHICLE_VARS,
   defaultPathOf,
+  designPathOf,
   fillTemplate,
   normalizePath,
   slugMatchesVehicle,
@@ -197,14 +198,14 @@ export class SeoService {
   private inventoryUrl(cfg: TenantCfg): string {
     const custom = cfg.rows.get('inventory')?.path;
     if (custom) return '/' + custom;
-    return cfg.inventoryPage ? '/inventory.html' : '/#/inventory';
+    return cfg.inventoryPage ? '/inventory' : '/#/inventory';
   }
 
   private links(cfg: TenantCfg): SeoLinks {
     const pages: Record<string, string> = {};
     for (const [key, r] of cfg.rows) {
       if (!r.path || key === 'home') continue;
-      pages[defaultPathOf(key)] = '/' + r.path;
+      pages[designPathOf(key)] = '/' + r.path;
     }
     return { base: cfg.base, pages };
   }
@@ -529,9 +530,9 @@ export class SeoService {
       const clash = effective.get(eff);
       if (clash !== undefined) throw new ConflictException(`"/${eff}" is used by both ${labels.get(clash)} and ${labels.get(key)}. Every page needs its own URL path.`);
       effective.set(eff, key);
-      // "about-us.html" also answers on "about-us"
-      if (eff.endsWith('.html')) {
-        const bare = eff.slice(0, -5);
+      // the design's file address ("about-us.html") still answers (301 to the clean one)
+      if (key !== 'home' && !key.startsWith(CUSTOM_PREFIX)) {
+        const bare = designPathOf(key);
         const other = effective.get(bare);
         if (other !== undefined && other !== key) throw new ConflictException(`"/${bare}" is used by both ${labels.get(other)} and ${labels.get(key)}. Every page needs its own URL path.`);
         effective.set(bare, key);
@@ -751,8 +752,8 @@ export class SeoService {
       const r = cfg.rows.get(k);
       if (!r || k === 'home') continue;
       if (r.path) return { type: 'redirect', to: '/' + r.path, status: 301, links };
-      // its own address: still gets the title / description set in Platform Admin
-      if (k.startsWith(CUSTOM_PREFIX) || p.endsWith('.html')) return { type: 'page', page: { key: k, path: defaultPathOf(k), meta: this.pageMeta(r) }, links };
+      // its default clean address (/about-us) or design address (about-us.html, the website 301s it): SEO & URLs texts
+      return { type: 'page', page: { key: k, path: defaultPathOf(k), meta: this.pageMeta(r) }, links };
     }
 
     // renamed addresses

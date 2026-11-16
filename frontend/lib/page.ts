@@ -90,7 +90,8 @@ export function renderPage(ctx: ThemeContext, theme: Theme, r: string, origin: s
     PREVIEW_BAR: themePreview && !live
       ? '<div style="position:fixed;left:12px;bottom:12px;z-index:99999;background:#7c2d12;color:#fff;font:600 12px/1 system-ui,sans-serif;padding:9px 12px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.25);pointer-events:none">Theme preview — not activated</div>'
       : '',
-    CANONICAL: h(tokens.site_url + '/' + (override ? override.path : r === 'index.html' ? '' : r)),
+    // clean address of the page (no .html); the storefront route sets the exact one (SEO & URLs) after rendering
+    CANONICAL: h(tokens.site_url + '/' + (override ? override.path : r === 'index.html' ? '' : r.replace(/\.html?$/i, ''))),
     OG_IMAGE: h(absSiteUrl(values['seo.home.share_image'] ? rel(values['seo.home.share_image']) : tokens.logo, tokens.site_url)),
   };
   if (override?.raw) Object.assign(raw, override.raw);
