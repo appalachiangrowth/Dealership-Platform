@@ -10,6 +10,8 @@ const FEATURES = [
   ['facebook', 'FB Poster', 'FB Poster menu in the Dealership Portal: posting to Facebook groups / Pages and Marketplace vehicle listings.'],
   ['cargurus', 'CarGurus', 'CarGurus feed uploads and the daily FTP upload.'],
   ['blog', 'Blog & news', 'Blog menu in the Dealership Portal and the blog on the website.'],
+  ['financing', 'Financing', 'Show or hide Financing links, sections, and calculator/application CTAs on the storefront.'],
+  ['tradeIn', 'Trade-In', 'Show or hide Trade-In links, sections, and valuation CTAs on the storefront.'],
 ];
 
 export default function FeaturesPage() {

@@ -23,7 +23,7 @@ export const PLATFORM_SETTINGS_SCHEMA: Record<string, Record<string, FieldType>>
     recaptchaSecret: ['secret', 200],
   },
   feeds: { cargurusCron: ['bool', 0], inventoryXml: ['bool', 0], facebookPoster: ['bool', 0] },
-  features: { facebook: ['bool', 0], cargurus: ['bool', 0], blog: ['bool', 0] },
+  features: { facebook: ['bool', 0], cargurus: ['bool', 0], blog: ['bool', 0], financing: ['bool', 0], tradeIn: ['bool', 0] },
   support: { email: ['email', 160], phone: ['text', 40], note: ['text', 400] },
   signup: { enabled: ['bool', 0], baseDomain: ['text', 120], theme: ['text', 40] },
   payment: { instructions: ['text', 3000] },
@@ -33,7 +33,8 @@ export const PLATFORM_SETTINGS_DEFAULTS: Record<string, Record<string, unknown>>
   smtp: { host: '', port: 465, secure: 'ssl', user: '', pass: '', from: '', fromName: '' },
   keys: { googleMaps: '', facebookAppId: '', facebookAppSecret: '', recaptchaSite: '', recaptchaSecret: '' },
   feeds: { cargurusCron: true, inventoryXml: true, facebookPoster: true },
-  features: { facebook: true, cargurus: true, blog: true },
+  // financing / tradeIn: on by default, so live dealerships keep showing them until turned off
+  features: { facebook: true, cargurus: true, blog: true, financing: true, tradeIn: true },
   support: { email: '', phone: '', note: '' },
   signup: { enabled: true, baseDomain: '', theme: 'classic' },
   payment: { instructions: '' },

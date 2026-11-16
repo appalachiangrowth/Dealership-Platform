@@ -12,7 +12,8 @@ import { backend, hostOf, originOf, securityHeaders, siteErrorPage, statePage, w
 import { loadTheme, themesInstalled, type Theme } from '@/lib/engine';
 import { renderPage, type ThemeContext } from '@/lib/page';
 import { applyMeta, headScripts, injectHead, resolveSeo, rewriteStaticLinks, seoLinks, seoSkipped, type SeoMeta, type SeoResolve } from '@/lib/seo';
-import { rewriteHashLinks, runtimeScript, spaConf, spaHashForKey, spaMatch, virtualizeHtml, virtualizeJs } from '@/lib/spa';
+import { outsideScripts, rewriteHashLinks, runtimeScript, spaConf, spaHashForKey, spaMatch, virtualizeHtml, virtualizeJs } from '@/lib/spa';
+import { allOn, blockedPaths, featureCss, featureOfPage, flagsOf, hideFeatures, hrefBlocked, markRoot, offText, themeFeatures } from '@/lib/features';
 import { injectNav, renderCustomPage, type CustomPage, type NavItem } from '@/lib/custom-pages';
 import { rel, siteTokens } from '@/lib/tokens';
 import { existsSync, statSync } from 'fs';
@@ -86,6 +87,20 @@ const ctxMemo = new Map<string, { at: number; ctx: ThemeContext }>();
  * (or from an older API): the published custom pages that are "shown in the menu", in their order.
  */
 function navItems(ctx: ThemeContext): NavItem[] {
+  // Financing / Trade-In switched off in Platform Admin: their menu entries are left out
+  const flags = flagsOf(ctx);
+  if (allOn(flags)) return navItemsAll(ctx);
+  const blocked = blockedPaths(flags, ctx);
+  const keep = (n: NavItem): NavItem | null => {
+    if ((n.slug && hrefBlocked(n.slug, flags, blocked)) || (n.url && hrefBlocked(n.url, flags, blocked)) || offText(n.label, flags)) return null;
+    if (!n.children) return n;
+    const children = n.children.map(keep).filter((c): c is NavItem => !!c);
+    return children.length || n.slug || n.url ? { ...n, children: children.length ? children : undefined } : null;
+  };
+  return navItemsAll(ctx).map(keep).filter((n): n is NavItem => !!n);
+}
+
+function navItemsAll(ctx: ThemeContext): NavItem[] {
   if (Array.isArray(ctx.menu)) {
     const entry = (e: unknown, top: boolean): NavItem | null => {
       if (!e || typeof e !== 'object') return null;
@@ -126,13 +141,24 @@ const customSlugs = (ctx: ThemeContext) => new Set((ctx.pages || []).map((p) => 
  * for single-page designs (lib/spa.ts) and the small helper scripts. Nothing changes when SEO data is unavailable.
  */
 async function finishHtml(html: string, ctx: ThemeContext, theme: Theme, host: string, origin: string, o?: SeoOpts): Promise<string> {
-  if (!o?.seo) return html;
+  // Financing / Trade-In switches (lib/features.ts): applied even when SEO data is unavailable
+  const flags = flagsOf(ctx);
+  const featuresOff = !allOn(flags);
+  const links = o?.seo?.links || { base: 'inventory', pages: {} };
+  const blocked = blockedPaths(flags, ctx, links.pages, theme);
+  const heuristics = themeFeatures(theme).heuristics;
+  if (!o?.seo) {
+    if (!featuresOff) return html;
+    const out = markRoot(hideFeatures(html, flags, blocked, outsideScripts, heuristics), flags);
+    return injectHead(out, featureCss(flags, theme) + runtimeScript({ conf: null, links, vehicles: {}, shell: false, flags, blocked, heuristics }));
+  }
   const site = siteTokens(ctx.settings, origin).site_url;
   let out = html;
   if (o.path !== undefined) out = applyMeta(out, o.meta || {}, site + '/' + o.path, site);
-  out = rewriteStaticLinks(out, o.seo.links);
-  const conf = spaConf(theme, o.seo.links, customSlugs(ctx));
+  out = rewriteStaticLinks(out, links);
+  const conf = spaConf(theme, links, customSlugs(ctx), flags);
   out = rewriteHashLinks(out, conf);
+  if (featuresOff) out = markRoot(hideFeatures(out, flags, blocked, outsideScripts, heuristics), flags);
   let vehicles: Record<string, string> | null = null;
   if (conf) {
     out = virtualizeHtml(out);
@@ -142,8 +168,28 @@ async function finishHtml(html: string, ctx: ThemeContext, theme: Theme, host: s
   return injectHead(
     out,
     headScripts({ base: !!o.path && o.path.includes('/'), vehicleId: o.vehicleId }) +
-      runtimeScript({ conf, links: o.seo.links, vehicles, shell, init: shell ? o.init : null }),
+      featureCss(flags, theme) +
+      runtimeScript({ conf, links, vehicles, shell, init: shell ? o.init : null, flags, blocked, heuristics }),
   );
+}
+
+/**
+ * A page of a storefront feature switched off in Platform Admin (Financing / Trade-In): 302 to the home page.
+ * 302, not 301, so turning the feature back on works at once.
+ */
+async function featureRedirect(req: Request, url: URL, host: string, rawPath: string, cleanPages: Record<string, string> = {}) {
+  const { ctx, error } = await context(host);
+  if (error) return null;
+  const flags = flagsOf(ctx);
+  if (allOn(flags)) return null;
+  const p = rawPath.toLowerCase().replace(/^\/+|\/+$/g, '');
+  let theme: Theme | null = null;
+  try {
+    theme = loadTheme(ctx.theme.id, ctx.theme.version);
+  } catch {
+    /* design files missing: names only */
+  }
+  return p && blockedPaths(flags, ctx, cleanPages, theme).has(p) ? redirectTo(req, url, '/', 302) : null;
 }
 
 /** 301 / 302 to a clean address on this website (keeps ?utm_… and ?tenant=, drops the old ?id=) */
@@ -192,7 +238,7 @@ async function spaRoute(req: Request, url: URL, host: string, rawPath: string, s
   const slugs = customSlugs(ctx);
   const lowPath = rawPath.toLowerCase().replace(/\/+$/, '');
   if (slugs.has(lowPath) || (theme.manifest.pages || []).some((p) => p.template === lowPath)) return null;
-  const conf = spaConf(theme, seo.links, slugs);
+  const conf = spaConf(theme, seo.links, slugs, flagsOf(ctx));
   if (!conf) return null;
   const m = spaMatch(conf, lowPath, url.search);
   if (!m) return null;
@@ -203,6 +249,14 @@ async function spaRoute(req: Request, url: URL, host: string, rawPath: string, s
 
 async function seoPage(req: Request, url: URL, host: string, seo: Extract<SeoResolve, { type: 'page' }>) {
   const { key, path, meta } = seo.page;
+  {
+    // a page of a switched-off storefront feature (Financing / Trade-In) → home
+    const { ctx: c } = await context(host);
+    const slug = key.startsWith('custom:') ? key.slice('custom:'.length) : key;
+    const title = (c?.pages || []).find((p: { slug: string; title: string }) => p.slug === slug)?.title || '';
+    const k = featureOfPage(slug, title);
+    if (c && k && !flagsOf(c)[k]) return redirectTo(req, url, '/', 302);
+  }
   if (key.startsWith('custom:')) return customPage(req, url, host, key.slice('custom:'.length), { seo, meta, path });
   const { ctx, error } = await context(host);
   if (error) return siteErrorPage(error);
@@ -210,7 +264,7 @@ async function seoPage(req: Request, url: URL, host: string, seo: Extract<SeoRes
   const own = key === 'home' ? { template: 'index.html' } : (theme.manifest.pages || []).find((p) => p.id === key);
   if (own) return themeResponse(req, host, ctx, theme, own.template, { seo, meta, path });
   // a single-page design: the page is a view of its home page
-  const conf = spaConf(theme, seo.links, customSlugs(ctx));
+  const conf = spaConf(theme, seo.links, customSlugs(ctx), flagsOf(ctx));
   const hash = conf ? spaHashForKey(conf, key) : null;
   const fallback = viewMeta(ctx, key);
   const m = { ...meta, title: meta.title || fallback.title, description: meta.description || fallback.description };
@@ -333,10 +387,12 @@ async function page(req: Request, { params }: Ctx) {
     const at = (def: string) => (clean[def.toLowerCase()] ? clean[def.toLowerCase()].replace(/^\/+/, '') : def);
     const xmlEsc = (u: string) => u.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
     const seen = new Set<string>();
+    // pages of storefront features switched off in Platform Admin (Financing / Trade-In) are left out
+    const offPaths = blockedPaths(flagsOf(ctx), ctx, clean, theme);
     let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
     const add = (path: string, lastmod?: string) => {
       const u = t.site_url + '/' + path.replace(/^\/+/, '');
-      if (seen.has(u)) return;
+      if (seen.has(u) || offPaths.has(path.replace(/^\/+/, '').toLowerCase())) return;
       seen.add(u);
       xml += `  <url><loc>${xmlEsc(u)}</loc>${lastmod ? `<lastmod>${xmlEsc(lastmod.slice(0, 10))}</lastmod>` : ''}</url>\n`;
     };
@@ -356,7 +412,16 @@ async function page(req: Request, { params }: Ctx) {
   /* ---------------- SEO & URLs: clean addresses, 301s for old ones, titles / descriptions ---------------- */
   // /index.html → / (a #view after it is kept by the browser and turned into its clean address on the page)
   if ((rawPath === 'index.html' || rawPath === 'index.php') && !seoSkipped(url)) return redirectTo(req, url, '/', 301);
+  if (!seoSkipped(url) && rawPath) {
+    const off = await featureRedirect(req, url, host, rawPath);
+    if (off) return off;
+  }
   const seo = seoSkipped(url) ? null : await resolveSeo(host, rawPath, r === 'vehicle.html' ? url.searchParams.get('id') || undefined : undefined);
+  if (seo && seo.type !== 'redirect' && rawPath) {
+    // a clean address set in SEO & URLs for a switched-off feature's page
+    const off = await featureRedirect(req, url, host, rawPath, seo.links.pages);
+    if (off) return off;
+  }
   if (seo?.type === 'redirect') return redirectTo(req, url, seo.to, seo.status);
   if (seo?.type === 'vehicle') return vehiclePage(req, host, seo);
   if (seo?.type === 'page') return seoPage(req, url, host, seo);

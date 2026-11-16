@@ -118,7 +118,7 @@ export default function DealerInspector() {
           <Card title="Features" className="sm:col-span-2">
             {Object.entries<boolean>(data.features).map(([k, v]) => (
               <div key={k} className="flex justify-between py-1 text-sm">
-                <span className="capitalize">{k}</span> {v ? <Badge color="green">On</Badge> : <Badge>Off</Badge>}
+                <span>{({ tradeIn: 'Trade-In', cargurus: 'CarGurus' } as Record<string, string>)[k] || k.charAt(0).toUpperCase() + k.slice(1)}</span> {v ? <Badge color="green">On</Badge> : <Badge>Off</Badge>}
               </div>
             ))}
           </Card>
@@ -221,8 +221,16 @@ export default function DealerInspector() {
           </Card>
           <Card title="Feature flags" actions={<Button size="sm" loading={busy} onClick={() => update({ features: f.features })}>Save</Button>}>
             <div className="space-y-3">
-              {['facebook', 'cargurus', 'blog'].map((k) => (
-                <Toggle key={k} checked={!!f.features[k]} onChange={(v) => setF({ ...f, features: { ...f.features, [k]: v } })} label={k.charAt(0).toUpperCase() + k.slice(1)} />
+              {(
+                [
+                  ['facebook', 'Facebook', ''],
+                  ['cargurus', 'Cargurus', ''],
+                  ['blog', 'Blog', ''],
+                  ['financing', 'Financing', 'Show or hide Financing links, sections, and calculator/application CTAs on the storefront.'],
+                  ['tradeIn', 'Trade-In', 'Show or hide Trade-In links, sections, and valuation CTAs on the storefront.'],
+                ] as const
+              ).map(([k, label, desc]) => (
+                <Toggle key={k} checked={f.features[k] !== false} onChange={(v) => setF({ ...f, features: { ...f.features, [k]: v } })} label={label} desc={desc || undefined} />
               ))}
             </div>
           </Card>

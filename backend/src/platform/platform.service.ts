@@ -177,6 +177,11 @@ export class PlatformService {
     }
     if ('themePin' in b) data.themePin = clean(b.themePin, 20);
     if ('notes' in b) data.notes = clean(b.notes, 1000);
+    // the storefront switches also arrive as enableFinancing / financingEnabled / enableTradeIn / tradeInEnabled
+    const alias: Record<string, string> = { enableFinancing: 'financing', financingEnabled: 'financing', enableTradeIn: 'tradeIn', tradeInEnabled: 'tradeIn' };
+    const aliased = Object.keys(alias).filter((k) => typeof b[k] === 'boolean');
+    if (aliased.length && !('features' in b)) b = { ...b, features: { ...((t.features && typeof t.features === 'object' ? t.features : {}) as Record<string, unknown>) } };
+    for (const k of aliased) (b.features as Record<string, unknown>)[alias[k]] = b[k];
     if ('features' in b && b.features && typeof b.features === 'object') {
       const f: Record<string, boolean> = {};
       for (const k of FEATURES) {

@@ -17,7 +17,11 @@ export interface CreateTenantInput {
   admin?: { login: string; password: string; name?: string; email?: string; phone?: string; source?: AccountSource; signupIp?: string };
 }
 
-export const FEATURES = ['facebook', 'cargurus', 'blog'] as const;
+/**
+ * Per-dealer feature flags (Platform Admin › Feature flags / Themes & releases › Storefront features / dealer Settings).
+ * financing / tradeIn: storefront Financing and Trade-In links, sections and CTAs (on unless turned off).
+ */
+export const FEATURES = ['facebook', 'cargurus', 'blog', 'financing', 'tradeIn'] as const;
 
 export function hashPassword(pw: string) {
   return bcrypt.hash(pw, 12);

@@ -79,3 +79,45 @@ A theme can describe its own dropdown in theme.json under `custom_page.nav[].dd`
 `{ "wrap": "<div class=\"has-sub\">{trigger}<div class=\"sub\">{items}</div></div>", "trigger": "<a href=\"{href}\">{label}</a>", "child": "<a href=\"{href}\">{label}</a>" }`
 and mark its mobile menu with `"mobile": true`.
 
+
+## Financing & Trade-In (Platform Admin switches)
+Platform Admin can turn **Financing** and **Trade-In** off per dealership (Themes & releases › Storefront features,
+Feature flags, or the dealership's Settings). Both are on by default. When one is off, the website hides it on every
+page of that dealership and sends visitors of its pages to the home page (302). A design takes part in three ways —
+use whichever fits; all three can be combined:
+
+**1. Declare the parts in theme.json (recommended for every design that has them):**
+```json
+"features": {
+  "financing": {
+    "pages":    ["financing.html"],
+    "routes":   ["#financing-page"],
+    "sections": ["#financing", ".hx-calculator", "[data-key=\"home.financing\"]"],
+    "paths":    ["get-approved"]
+  },
+  "tradeIn": {
+    "pages":    ["trade-in.html"],
+    "routes":   ["#trade-in-page"],
+    "sections": ["#trade-in", ".hx-trade-cta"]
+  }
+}
+```
+- `pages` — templates that are the feature's own pages (also list them in `pages` as usual). Off: 302 to `/`, left
+  out of menus and sitemap.xml.
+- `routes` — single-page views (hash). On: opened at the clean addresses `/financing` and `/trade-in` (or the address
+  set in SEO & URLs). Off: the home view opens instead.
+- `sections` — CSS selectors of sections, widgets, calculators, buttons, payment estimates. Off: hidden by CSS, also
+  when your scripts add them later.
+- `paths` — other addresses of the feature (e.g. a Pages & SEO page called `get-approved`).
+
+**2. Mark the markup** (templates and markup your scripts build): `data-pa-feature="financing"` or
+`data-pa-feature="tradeIn"` (several: `data-pa-feature="financing tradeIn"`). Off: hidden by CSS. A link that is the
+only thing in an `<li>` hides its `<li>` too.
+
+**3. Template tags and signals:** `{%if feature.financing%} … {%endif%}`, `{%if !feature.tradeIn%} … {%endif%}`
+(removed on the server), `window.SITE.features.financing` / `.tradeIn` in scripts, and on `<html>`:
+`data-pa-financing="off"`, `data-pa-trade-in="off"`, classes `pa-no-financing` / `pa-no-trade-in` for your CSS.
+
+Designs that declare nothing still work: the website then also matches links, buttons and sections by wording and
+names (Financing, Get pre-approved, Payment calculator, "Est. $…/mo", Trade-In, Value your trade, `#financing` …).
+A design that declares everything can turn that matching off with `"feature_heuristics": false` in theme.json.

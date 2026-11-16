@@ -188,13 +188,17 @@ export class PublicService {
     const saved = await this.prisma.designColors.findUnique({ where: { tenantId_themeId: { tenantId: t.id, themeId: theme.id } } });
     const settings: Record<string, unknown> = {};
     for (const k of PUBLIC_SETTINGS) settings[k] = s ? (s as Record<string, unknown>)[k] : '';
+    const features = await this.tenants.features(t);
     return {
       tenant: { id: t.id, name: t.name, dealerCode: t.dealerCode },
       theme: { id: theme.id, version: theme.version },
       values,
       settings,
       colors: (saved?.colors ?? {}) as Record<string, string>,
-      features: await this.tenants.features(t),
+      features,
+      /** Platform Admin storefront switches (same values as features.financing / features.tradeIn) */
+      financingEnabled: features.financing !== false,
+      tradeInEnabled: features.tradeIn !== false,
       /** custom pages from Platform Admin › Pages & SEO (menu links + sitemap) */
       pages,
       /** the header menu from Pages & SEO › Header menu (top-level links + dropdowns); null = automatic from `pages` */
@@ -268,7 +272,7 @@ export class PublicService {
         metaTitle: p.metaTitle,
         metaDescription: p.metaDescription,
       })),
-      leadForm: tenant?.leadForm ?? null,
+      leadForm: leadFormFor(tenant?.leadForm ?? null, await this.tenants.features(t)),
       updated: updated.getTime() ? updated.toISOString().replace(/\.\d{3}Z$/, 'Z') : '',
     };
   }
@@ -282,4 +286,15 @@ export class PublicService {
     ]);
     return { vehicles, posts, categories: Object.keys(CATEGORIES), xmlEnabled: !!(await this.platform.get('feeds', 'inventoryXml', true)) };
   }
+}
+
+/** The vehicle enquiry form: its "Trade-in?" / "Need financing?" questions are left out when that storefront feature is off. */
+function leadFormFor(form: unknown, features: Record<string, boolean>): unknown {
+  if (!form || typeof form !== 'object') return form ?? null;
+  const f = form as { fields?: Record<string, unknown> };
+  if (!f.fields || typeof f.fields !== 'object') return form;
+  const fields = { ...f.fields };
+  if (features.financing === false) fields.financing = 0;
+  if (features.tradeIn === false) fields.tradeIn = 0;
+  return { ...f, fields };
 }

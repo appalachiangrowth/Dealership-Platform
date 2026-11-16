@@ -50,7 +50,8 @@ export function renderPage(ctx: ThemeContext, theme: Theme, r: string, origin: s
   delete site._missing;
   site.tenant = ctx.tenant.id;
   site.theme = { id: theme.id, version: theme.version, url: theme.url };
-  site.features = { facebook: !!ctx.features.facebook, blog: !!ctx.features.blog };
+  // financing / tradeIn: Platform Admin storefront switches (on unless turned off)
+  site.features = { facebook: !!ctx.features.facebook, blog: !!ctx.features.blog, financing: ctx.features.financing !== false, tradeIn: ctx.features.tradeIn !== false };
   site.preview = false;
 
   // structured data for Google: real details only, never placeholders

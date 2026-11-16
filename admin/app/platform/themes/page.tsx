@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, mediaUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { useToast } from '@/components/toast';
@@ -46,8 +46,10 @@ export default function ThemesPage() {
           { id: 'install', label: 'Install & switch' },
           { id: 'requests', label: `Unlock requests${pending ? ` (${pending})` : ''}` },
           { id: 'payment', label: 'Payment instructions' },
+          { id: 'storefront', label: 'Storefront features' },
         ]}
       />
+      {tab === 'storefront' && <StorefrontFeatures />}
       {tab === 'designs' && (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {data.themes.map((t: any) => (
@@ -299,5 +301,102 @@ export default function ThemesPage() {
         )}
       </Drawer>
     </>
+  );
+}
+
+/* ───────────────── Storefront features: Financing / Trade-In per dealership ───────────────── */
+
+const STOREFRONT_FLAGS = [
+  ['financing', 'Financing', 'Show or hide Financing links, sections, and calculator/application CTAs on the storefront.'],
+  ['tradeIn', 'Trade-In', 'Show or hide Trade-In links, sections, and valuation CTAs on the storefront.'],
+] as const;
+type FlagKey = (typeof STOREFRONT_FLAGS)[number][0];
+
+function StorefrontFeatures() {
+  const toast = useToast();
+  const tenants = useApi<any[]>('/platform/tenants');
+  const settings = useApi('/platform/settings');
+  const [id, setId] = useState('');
+  const dealer = useApi(id ? `/platform/tenants/${encodeURIComponent(id)}` : null);
+  const [draft, setDraft] = useState<Record<FlagKey, boolean>>({ financing: true, tradeIn: true });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!id && tenants.data?.length) setId(tenants.data[0].id);
+  }, [tenants.data, id]);
+  useEffect(() => {
+    const f = dealer.data?.features;
+    if (f && dealer.data.tenant?.id === id) setDraft({ financing: f.financing !== false, tradeIn: f.tradeIn !== false });
+  }, [dealer.data, id]);
+
+  if (!tenants.data || !settings.data) return <Loading />;
+  const defaults = settings.data.features || {};
+  const effective = (t: any, k: FlagKey) => (typeof t.features?.[k] === 'boolean' ? t.features[k] : defaults[k] !== false);
+  const current = dealer.data?.tenant?.id === id ? dealer.data : null;
+  const dirty = !!current && STOREFRONT_FLAGS.some(([k]) => (current.features?.[k] !== false) !== draft[k]);
+
+  async function save() {
+    if (!current) return;
+    setSaving(true);
+    try {
+      // only this dealership's own overrides are sent, so its other flags keep following the platform defaults
+      await api(`/platform/tenants/${encodeURIComponent(id)}`, { method: 'PATCH', body: { features: { ...(current.featureOverrides || {}), ...draft } } });
+      toast.ok(`Saved — live on ${current.tenant?.name || 'the website'} now.`);
+      await Promise.all([dealer.reload(), tenants.reload()]);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+      <Card
+        title="Dealership storefront"
+        actions={
+          <Button size="sm" disabled={!dirty} loading={saving} onClick={save}>
+            Save
+          </Button>
+        }
+      >
+        <div className="space-y-5">
+          <Field label="Dealership">
+            <Select value={id} onChange={(e) => setId(e.target.value)}>
+              {tenants.data.map((t: any) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {!current ? (
+            <Loading />
+          ) : (
+            STOREFRONT_FLAGS.map(([k, label, desc]) => (
+              <Toggle key={k} checked={draft[k]} onChange={(v) => setDraft({ ...draft, [k]: v })} label={label} desc={desc} />
+            ))
+          )}
+          <p className="text-xs text-slate-500">
+            Off hides the feature on every page of this dealership&apos;s website (menus, footers, sections, vehicle-page buttons) and sends visitors of its pages to the home page.
+          </p>
+        </div>
+      </Card>
+      <Card title="All dealerships" pad={false}>
+        <Table head={['Dealership', ...STOREFRONT_FLAGS.map((f) => f[1])]}>
+          {tenants.data.map((t: any) => (
+            <tr key={t.id} className={t.id === id ? 'bg-blue-50/60' : 'cursor-pointer hover:bg-slate-50'} onClick={() => setId(t.id)}>
+              <Td className="font-semibold">{t.name}</Td>
+              {STOREFRONT_FLAGS.map(([k]) => (
+                <Td key={k}>
+                  {effective(t, k) ? <Badge color="green">On</Badge> : <Badge color="red">Off</Badge>}
+                  {typeof t.features?.[k] !== 'boolean' && <span className="ml-2 text-[11px] text-slate-400">default</span>}
+                </Td>
+              ))}
+            </tr>
+          ))}
+        </Table>
+      </Card>
+    </div>
   );
 }

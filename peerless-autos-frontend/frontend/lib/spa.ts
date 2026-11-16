@@ -13,6 +13,7 @@
  */
 import { rawTemplate, type Theme } from './engine';
 import type { SeoLinks } from './seo';
+import { FIN_TEXT, TRADE_TEXT, featureOfPage, themeFeatures, type Flags } from './features';
 
 export interface SpaRoute {
   /** the design's hash for the view (#/about, #about-page) */
@@ -50,10 +51,13 @@ const KEY_DEFAULTS: Record<string, [string, string]> = {
   contact: ['contact-us', '/contact'],
   blog: ['blog', '/blog'],
   financing: ['financing', '/financing'],
+  'trade-in': ['trade-in', '/trade-in'],
+  tradein: ['trade-in', '/trade-in'],
+  tradeIn: ['trade-in', '/trade-in'],
 };
 
 /** The design's single-page routes, or null for designs with real pages per view (Apex, Velocity, Halcyon). */
-export function spaConf(theme: Theme, links: SeoLinks, customSlugs: Set<string>): SpaConf | null {
+export function spaConf(theme: Theme, links: SeoLinks, customSlugs: Set<string>, flags: Flags = { financing: true, tradeIn: true }): SpaConf | null {
   const index = rawTemplate(theme, 'index.html');
   const hashRoutes = (theme.manifest.hash_routes || null) as Record<string, string> | null;
   const classic = /["']#\/inventory/.test(index) || /\.\/#\/inventory/.test(index);
@@ -108,6 +112,30 @@ export function spaConf(theme: Theme, links: SeoLinks, customSlugs: Set<string>)
     const slug = r.p.replace(/^\/+/, '');
     if (!r.full && r.k !== 'home' && customSlugs.has(slug)) r.full = 1;
   }
+  // views the design declares for Financing / Trade-In (theme.json "features" › routes): /financing, /trade-in
+  const tf = themeFeatures(theme);
+  const declared: Record<string, keyof Flags> = {};
+  for (const k of ['financing', 'tradeIn'] as const) {
+    for (const h of tf[k].routes) {
+      declared[h] = k;
+      if (!routes.some((r) => r.h === h)) {
+        const [key, def] = k === 'financing' ? ['financing', '/financing'] : ['trade-in', '/trade-in'];
+        add(h, key, def);
+      }
+    }
+  }
+  // views of a storefront feature switched off in Platform Admin (Financing / Trade-In) are not opened: home instead
+  const off = (h: string) => {
+    if (declared[h]) return !flags[declared[h]];
+    const k = featureOfPage(h.replace(/^#\/?/, ''));
+    return !!k && !flags[k];
+  };
+  const keepRoutes = routes.filter((r) => !off(r.h) && !(r.k && off('#' + r.k)));
+  const keepAlias = alias.filter((a) => !off(a.h) && !off(a.to));
+  routes.length = 0;
+  routes.push(...keepRoutes);
+  alias.length = 0;
+  alias.push(...keepAlias);
   const vehicle = classic ? 'classic' : /['"]#vehicle-['"]|#vehicle-\$\{/.test(index) ? 'vroomfox' : '';
   return { style: classic ? 'classic' : 'hash', home: classic ? '#/' : '#home', routes, alias, prefixes, vehicle, base: links.base || 'inventory' };
 }
@@ -239,9 +267,24 @@ export function runtimeScript(o: {
   shell: boolean;
   /** view to open: hash, or a vehicle id (VroomFox finds its hash once its data has loaded) */
   init?: { h?: string; v?: string } | null;
+  /** storefront switches (lib/features.ts) and the addresses of switched-off features */
+  flags?: Flags;
+  blocked?: Set<string>;
+  /** false = the design declares its Financing / Trade-In parts itself (no wording / name matching) */
+  heuristics?: boolean;
 }): string {
   const pages = Object.fromEntries(Object.entries(o.links.pages || {}).map(([k, v]) => [k.toLowerCase(), v]));
-  const cfg = { C: o.conf, P: pages, B: o.links.base || 'inventory', V: o.vehicles, S: o.shell && !!o.conf, I: o.init || null };
+  const fl = o.flags || { financing: true, tradeIn: true };
+  const F = {
+    on: fl.financing && fl.tradeIn,
+    fin: fl.financing,
+    trade: fl.tradeIn,
+    fr: FIN_TEXT.source,
+    tr: TRADE_TEXT.source,
+    bl: Object.fromEntries([...(o.blocked || [])].map((b) => [b, 1])),
+    h: o.heuristics !== false,
+  };
+  const cfg = { C: o.conf, P: pages, B: o.links.base || 'inventory', V: o.vehicles, S: o.shell && !!o.conf, I: o.init || null, F };
   return `<script data-pa>(function(){var X=${js(cfg)};${RUNTIME}})();</script>`;
 }
 
@@ -296,7 +339,30 @@ function mapHref(raw){
   }catch(e){}
   return null}
 function fix(a){var h=a.getAttribute("href"),n=mapHref(h);if(n!=null&&n!==h){a.setAttribute("data-pa-href",h);a.setAttribute("href",n)}}
-function all(){busy=0;var a=D.querySelectorAll("a[href]");for(var i=0;i<a.length;i++)fix(a[i])}
+function all(){busy=0;var a=D.querySelectorAll("a[href]");for(var i=0;i<a.length;i++)fix(a[i]);hideOff()}
+/* ---------- storefront switches (Financing / Trade-In off): hide links, buttons, sections, payment estimates ---------- */
+var F=X.F||{on:1},FR=F.on?null:new RegExp(F.fr,"i"),TR=F.on?null:new RegExp(F.tr,"i"),BL=F.bl||{};
+var EST=/(^|\s)(est\.?|estimated?)\s*\$?\s*[\d,.]+\s*\/\s*mo\b|\$\s*[\d,.]+\s*\/\s*mo(nth)?\b|\bper month\b|\b\d+(\.\d+)?%\s*APR\b/i;
+function txt(el){return String(el.textContent||"").replace(/\s+/g," ").trim()}
+function offT(t){if(!t||t.length>60)return false;return (!F.fin&&FR.test(t))||(!F.trade&&TR.test(t))}
+function offName(n){n=low(n).replace(/^[#.\/]+/,"").replace(/\.html?$/,"");return !!BL[n]||(!F.fin&&/(^|-)financ/.test(n))||(!F.trade&&/(^|-)trade-?in(-|$)/.test(n))}
+function offH(h){if(!h)return false;var i=h.indexOf("#"),hh=i>-1?h.slice(i+1):"";if(hh&&offName(hh))return true;if(h.charAt(0)==="#")return false;
+  try{var u=new URL(h,D.baseURI);if(u.origin!==L.origin)return false;var p=low(u.pathname).replace(/^\/+|\/+$/g,"");return !!p&&(!!BL[p]||offName(p))}catch(e){return false}}
+function offSec(v){v=low(v);return (!F.fin&&/(^|[\s._-])(financ\w*|fin-calc\w*|loan-calc\w*|payment-calc\w*|pre-?approv\w*)($|[\s._-])/.test(v))||(!F.trade&&/(^|[\s._-])(trade-?in\w*|value-your-trade|trade-value|trade-appraisal)($|[\s._-])/.test(v))}
+function off(el){if(!el.hasAttribute("data-pa-off"))el.setAttribute("data-pa-off","")}
+function hideOff(){
+  if(F.on)return;var i,el,q;
+  q=D.querySelectorAll("a[href],button,[role=button]");
+  for(i=0;i<q.length;i++){el=q[i];if(el.hasAttribute("data-pa-off"))continue;
+    if((F.h&&offT(txt(el)))||(el.tagName==="A"&&(offH(el.getAttribute("href"))||offH(el.getAttribute("data-pa-href")))))off(el)}
+  if(!F.h)return;
+  q=D.querySelectorAll('[id*="financ" i],[id*="trade" i],[data-key*="financ" i],[data-key*="trade" i],[data-section*="financ" i],[data-section*="trade" i],[class*="financ" i],[class*="trade" i]');
+  for(i=0;i<q.length;i++){el=q[i];if(el===D.body||el===D.documentElement)continue;
+    if(offSec(el.id||"")||offSec(el.getAttribute("data-key")||"")||offSec(el.getAttribute("data-section")||"")||offSec(typeof el.className==="string"?el.className:""))off(el)}
+  if(!F.fin){q=D.querySelectorAll(".est,.vd-est,[class*='payment' i],[class*='estimate' i],span,small,p");
+    for(i=0;i<q.length;i++){el=q[i];if(el.hasAttribute("data-pa-off")||el.childElementCount>3)continue;var t=txt(el);if(t&&t.length<240&&EST.test(t))off(el)}}
+  q=D.querySelectorAll("option");for(i=0;i<q.length;i++)if(offT(txt(q[i]))&&q[i].parentNode)q[i].parentNode.removeChild(q[i]);
+}
 function soon(){if(!busy){busy=1;(W.requestAnimationFrame||setTimeout)(all)}}
 W.PA_HREF=function(el){return el&&el.getAttribute?(el.getAttribute("data-pa-href")||el.getAttribute("href")):null};
 
