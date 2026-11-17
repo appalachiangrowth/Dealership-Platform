@@ -453,7 +453,7 @@ function usesLayoutOf(theme: Theme, kit: ThemeKit): boolean {
 const MENU_HINT = /(^|[\s"'_-])(nav|navbar|navigation|menu|drawer|offcanvas|sidebar|mobile)/i;
 const NOT_A_MENU = /breadcrumb|pagination|pager|social|footer|tabs?\b|filter|sort/i;
 /** links to other pages of the website (not #anchors, phone, e-mail, outside sites or dealer links) */
-const PAGE_LINK = /<a\s[^>]*href="(?!#|tel:|mailto:|https?:|\{%)[^"]+"/gi;
+const PAGE_LINK = /<a\s[^>]*href="(?!#"|tel:|mailto:|sms:|javascript:|https?:|\{%)[^"]+"/gi;
 
 /**
  * Finds the theme's header menu and mobile menu(s) in its templates, for designs that no kit knows.
@@ -787,6 +787,12 @@ export function injectNav(html: string, theme: Theme, items: NavItem[], current 
   if (!items.length) return html;
   const kit = kitFor(theme);
   const c: NavCtx = { kit, t, current };
+  html = injectNavServer(html, items, c);
+  return addNavRuntime(html, items, c);
+}
+
+function injectNavServer(html: string, items: NavItem[], c: NavCtx): string {
+  const kit = c.kit;
   let usesShared = false;
   for (const slot of kit.nav) {
     let at = html.indexOf(slot.open);
@@ -828,6 +834,76 @@ export function injectNav(html: string, theme: Theme, items: NavItem[], current 
   }
   return html;
 }
+
+/**
+ * The menus as the visitor's browser has them. Some designs build or rebuild their header / mobile menus with
+ * their own scripts, use markup no kit knows, or keep the mobile menu only on some pages — then the links added
+ * above are missing. This small script finds the site's menus on the page (the links in the header and the menus
+ * that share them) and adds every menu entry that is not there yet, copying a link of that menu so it looks the
+ * same. Entries already in a menu (from the server) are never added twice. Works for every installed design.
+ */
+function addNavRuntime(html: string, items: NavItem[], c: NavCtx): string {
+  if (html.includes('id="pa-nav-rt"')) return html;
+  const data = items
+    .filter((i) => i.slug || i.url || (i.children || []).length)
+    .map((i) => ({
+      l: i.label,
+      h: i.slug || i.url ? navHref(i, c) : '',
+      c: (i.children || []).filter((k) => k && k.label && (k.slug || k.url)).map((k) => ({ l: k.label, h: navHref(k, c) })),
+    }));
+  if (!data.length) return html;
+  const json = JSON.stringify({ items: data }).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
+  const css = html.includes('id="pa-nav-style"') ? '' : NAV_CSS;
+  const tag = `${css}<script id="pa-nav-rt">window.__PA_NAV=${json};${NAV_RUNTIME}</script>`;
+  return /<\/body>/i.test(html) ? html.replace(/<\/body>(?![\s\S]*<\/body>)/i, tag + '</body>') : html + tag;
+}
+
+const NAV_RUNTIME = `(function(){var D=window.__PA_NAV;if(!D||!D.items||!D.items.length||window.__paNavRt)return;window.__paNavRt=1;
+var HINT=/(^|[\\s_-])(nav|navbar|navigation|menu|menus|drawer|offcanvas|off-canvas|sidebar|mobile|header|topbar|links)/i;
+var BAD=/breadcrumb|pagination|pager|social|footer|tabs?\\b|filter|sort|share|lang|crumbs/i;
+var BTN=/(^|[\\s_-])(btn|button|cta|logo|brand)([\\s_-]|$)/i;
+function cls(e){var c=e.className;if(c&&typeof c==="object")c=c.baseVal||"";return String(c||"")+" "+(e.id||"")}
+function key(h){try{var u=new URL(h,location.href);if(u.origin!==location.origin)return u.href.replace(/\\/$/,"");var p=u.pathname.replace(/\\/index\\.html$/,"/").replace(/\\.html$/,"").replace(/\\/+$/,"")||"/";return p+(u.hash&&u.hash.length>2?u.hash:"")}catch(e){return String(h)}}
+function site(a){var h=a.getAttribute("href")||"";if(!h||h==="#"||/^(tel:|mailto:|sms:|javascript:)/i.test(h))return false;try{return new URL(h,location.href).origin===location.origin}catch(e){return false}}
+function skip(e){return !!(e.closest&&e.closest("footer,.pa-page,[data-pa-skip-nav]"))}
+function hinted(e){for(var x=e,i=0;x&&x!==document.body&&i<6;x=x.parentElement,i++){var t=x.tagName;if(t==="NAV"||t==="HEADER")return true;var c=cls(x);if(BAD.test(c)||/breadcrumb|pagination/i.test(x.getAttribute("aria-label")||""))return false;if(HINT.test(c))return true}return false}
+function unitOf(a){var p=a.parentElement;return p&&p.tagName==="LI"?p:a}
+function vis(e){var r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=="hidden"}
+function menus(){var hs=[],n=[],as=document.querySelectorAll("a[href]");
+for(var i=0;i<as.length;i++){var a=as[i];if(!site(a)||skip(a)||a.closest(".pa-dd-menu"))continue;var u=unitOf(a),h=u.parentElement;if(!h||!hinted(h))continue;var k=hs.indexOf(h);if(k<0){hs.push(h);n.push([u])}else if(n[k].indexOf(u)<0)n[k].push(u)}
+var out=[];for(var j=0;j<hs.length;j++)if(n[j].length>=2&&!(hs[j].closest("main")&&!hs[j].closest("nav,header")))out.push({el:hs[j],units:n[j]});
+var top=out.filter(function(m){return vis(m.el)&&m.el.getBoundingClientRect().top+scrollY<300}),ref={};
+top.forEach(function(m){m.units.forEach(function(u){var a=u.tagName==="A"?u:u.querySelector("a");if(a)ref[key(a.getAttribute("href"))]=1})});
+return out.filter(function(m){if(top.indexOf(m)>=0)return true;var o=0;m.units.forEach(function(u){var a=u.tagName==="A"?u:u.querySelector("a");if(a&&ref[key(a.getAttribute("href"))])o++});return top.length?o>=2:m.units.length>=3})}
+function scope(el){var sc=el;for(var x=el.parentElement,i=0;x&&i<6&&x.tagName!=="HEADER"&&x!==document.body;x=x.parentElement,i++){if(x.tagName==="NAV"||x.tagName==="ASIDE"||HINT.test(cls(x)))sc=x}return sc}
+function has(m,h){var as=scope(m.el).querySelectorAll("a[href]"),k=key(h);for(var i=0;i<as.length;i++)if(key(as[i].getAttribute("href"))===k)return true;return false}
+function setText(a,t){var w=document.createTreeWalker(a,4),best=null,n;while((n=w.nextNode()))if(n.nodeValue.trim()&&(!best||n.nodeValue.trim().length>best.nodeValue.trim().length))best=n;if(best){var s=document.createTreeWalker(a,4);while((n=s.nextNode()))if(n!==best&&n.nodeValue.trim()&&!(n.parentElement&&n.parentElement.closest("svg")))n.nodeValue="";best.nodeValue=t}else a.appendChild(document.createTextNode(t))}
+function clean(a,h,t,cur){cur=cur&&h&&h!=="#";a.setAttribute("href",h);a.removeAttribute("aria-current");a.removeAttribute("onclick");a.removeAttribute("target");a.removeAttribute("aria-haspopup");a.removeAttribute("aria-expanded");
+[].slice.call(a.attributes).forEach(function(x){if(/^data-/.test(x.name))a.removeAttribute(x.name)});
+if(a.classList)["active","is-active","current","selected","router-link-active","router-link-exact-active"].forEach(function(c){a.classList.remove(c)});
+setText(a,t);a.setAttribute("data-pa-nav","1");if(/^https?:/i.test(h)&&key(h).indexOf(location.origin)!==0){a.target="_blank";a.rel="noopener"}if(cur)a.setAttribute("aria-current","page")}
+function pick(m){for(var i=m.units.length-1;i>=0;i--){var u=m.units[i],a=u.tagName==="A"?u:u.querySelector("a");if(a&&!BTN.test(cls(a))&&!BTN.test(cls(u))&&u.querySelectorAll("a").length<=1)return u}return m.units[m.units.length-1]}
+function make(m,h,t){var u=pick(m).cloneNode(true),a=u.tagName==="A"?u:u.querySelector("a");if(u!==a&&u.querySelectorAll){var x=u.querySelectorAll("ul,ol,[class*=drop],[class*=sub]");for(var i=0;i<x.length;i++)x[i].parentNode&&x[i].parentNode.removeChild(x[i]);if(u.classList)["active","is-active","current","open","has-sub","has-dropdown"].forEach(function(c){u.classList.remove(c)})}
+clean(a,h,t,key(h)===key(location.href));return u}
+function where(m){var last=m.units[m.units.length-1],a=last.tagName==="A"?last:last.querySelector("a");if(a&&(BTN.test(cls(a))||BTN.test(cls(last))))return last;var nx=last.nextSibling;return nx}
+function add(m){var horiz=vis(m.el)&&m.el.getBoundingClientRect().height<120,before=where(m);
+D.items.forEach(function(i){var all=i.c||[],miss=all.filter(function(k){return !has(m,k.h)});
+var needTop=i.h?!has(m,i.h):(all.length>0&&miss.length===all.length);if(!needTop&&!miss.length)return;var nodes=[];
+if(horiz&&all.length){if(!needTop)return;var w=document.createElement(m.units[0].tagName==="LI"?"li":"span");w.className="pa-dd";
+var tr=make(m,i.h||"#",i.l),ta=tr.tagName==="A"?tr:tr.querySelector("a");ta.classList.add("pa-dd-trigger");ta.setAttribute("aria-haspopup","true");ta.setAttribute("aria-expanded","false");if(!i.h)ta.setAttribute("data-pa-dd-toggle","");
+var car=document.createElement("span");car.className="pa-dd-caret";car.setAttribute("aria-hidden","true");ta.appendChild(car);
+var mn=document.createElement("span");mn.className="pa-dd-menu";mn.setAttribute("role","menu");all.forEach(function(k){var x=document.createElement("a");x.className="pa-dd-link";x.setAttribute("role","menuitem");clean(x,k.h,k.l,key(k.h)===key(location.href));mn.appendChild(x)});
+w.appendChild(ta);w.appendChild(mn);nodes.push(w)}
+else{if(needTop){if(i.h)nodes.push(make(m,i.h,i.l));else{var lb=make(m,"#",i.l),la=lb.tagName==="A"?lb:lb.querySelector("a");la.removeAttribute("href");la.classList.add("pa-nav-label");nodes.push(lb)}}
+miss.forEach(function(k){var x=make(m,k.h,k.l),xa=x.tagName==="A"?x:x.querySelector("a");xa.classList.add("pa-nav-sub");nodes.push(x)})}
+nodes.forEach(function(nd){m.el.insertBefore(nd,before&&before.parentNode===m.el?before:null)})})}
+var runs=0,T=0;function ensure(){T=0;if(runs>60)return;runs++;try{menus().forEach(add)}catch(e){}}
+function soon(){if(!T)T=setTimeout(ensure,120)}
+document.addEventListener("click",function(ev){var t=ev.target&&ev.target.closest&&ev.target.closest(".pa-dd-trigger[data-pa-nav]");if(!t)return;var d=t.parentElement,small=innerWidth<=900||(window.matchMedia&&matchMedia("(hover: none)").matches);if(t.hasAttribute("data-pa-dd-toggle")||(small&&!d.classList.contains("pa-open"))){ev.preventDefault();var o=!d.classList.contains("pa-open");d.classList.toggle("pa-open",o);t.setAttribute("aria-expanded",o?"true":"false")}},true);
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",ensure);else ensure();
+window.addEventListener("load",soon);window.addEventListener("hashchange",soon);
+if(window.MutationObserver)new MutationObserver(function(ms){for(var i=0;i<ms.length;i++){var t=ms[i].target;if(t&&t.closest&&t.closest("[data-pa-nav]"))continue;return soon()}}).observe(document.documentElement,{childList:true,subtree:true});
+})();`;
 
 /* ============================================================================ text helpers */
 

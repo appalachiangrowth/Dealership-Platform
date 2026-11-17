@@ -54,6 +54,12 @@ a new version, or a design deleted and installed again — without code changes:
   class/id says nav/menu/drawer/mobile, above the footer, linking to 2+ pages), the content goes inside its `<main>`
   (or between `</header>` and the last `<footer>`), and the colours come from its `design.colors`.
 
+- in the visitor's browser, a small script (custom-pages.ts, NAV_RUNTIME) checks the menus once more: designs that
+  build or rebuild their menus with JavaScript, keep a different mobile menu on some pages, or use markup nothing above
+  recognised still get every header-menu entry. It finds the links in the header and the menus that share them, adds
+  only the entries that are missing (a copy of one of that menu's own links, so the styling matches) and never adds an
+  entry twice. A menu can be excluded with `data-pa-skip-nav`.
+
 If a design's menus are unusual, it can describe itself in theme.json (this always wins):
 
 ```json
