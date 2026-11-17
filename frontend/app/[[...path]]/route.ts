@@ -3,6 +3,7 @@
  *   /  /index.html  /used-cars.html …   → original theme page with the dealership's content
  *   /inventory.json                     → that dealership's published inventory (original format)
  *   /logo  /images/logo.png             → the dealer's logo, or the neutral "YOUR LOGO" badge
+ *   /favicon.ico                        → the dealer's favicon (Business details), or a neutral icon (never a 404)
  *   /sitemap.xml  /robots.txt           → generated per dealership
  *   /used-cars-for-sale  /inventory/2022-ford-f150-lariat … → clean addresses from Platform Admin › SEO & URLs
  *                                         (old addresses answer with a 301; see lib/seo.ts)
@@ -17,6 +18,7 @@ import { outsideScripts, rewriteHashLinks, runtimeScript, spaConf, spaHashForKey
 import { allOn, blockedPaths, featureCss, featureOfPage, flagsOf, hideFeatures, hrefBlocked, markRoot, offText, themeFeatures } from '@/lib/features';
 import { injectNav, renderCustomPage, type CustomPage, type NavItem } from '@/lib/custom-pages';
 import { rel, siteTokens } from '@/lib/tokens';
+import { applyFavicon, cleanInventoryPosts, faviconResponse, richPostRuntime } from '@/lib/site-extras';
 import { existsSync, statSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join, normalize } from 'path';
@@ -279,8 +281,9 @@ async function removedPage(req: Request, host: string, links: SeoLinks) {
 async function themeResponse(req: Request, host: string, ctx: ThemeContext, theme: Theme, template: string, o: SeoOpts) {
   const origin = originOf(req);
   const t = siteTokens(ctx.settings, origin);
-  const html = injectNav(renderPage(ctx, theme, template, origin, false, false), theme, navItems(ctx), '', t);
-  const out = await finishHtml(html, ctx, theme, host, origin, { ...o, template });
+  const html = applyFavicon(injectNav(renderPage(ctx, theme, template, origin, false, false), theme, navItems(ctx), '', t), ctx.settings?.faviconUrl);
+  // rich text blog articles: shown formatted in place of the design's plain paragraphs (lib/site-extras.ts)
+  const out = injectHead(await finishHtml(html, ctx, theme, host, origin, { ...o, template }), richPostRuntime());
   return new Response(out, { headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }) });
 }
 
@@ -379,7 +382,7 @@ async function customPage(req: Request, url: URL, host: string, slug: string, se
     const inv = await backend('/public/inventory.json', host);
     if (inv.ok) vehicles = ((await inv.json()) as { vehicles?: Record<string, unknown>[] }).vehicles || [];
   }
-  let html = renderCustomPage(ctx, theme, data.page, originOf(req), { vehicles, navPages: navItems(ctx), themePreview, preview: data.preview });
+  let html = applyFavicon(renderCustomPage(ctx, theme, data.page, originOf(req), { vehicles, navPages: navItems(ctx), themePreview, preview: data.preview }), ctx.settings?.faviconUrl);
   if (!data.preview && !themePreview) html = await finishHtml(html, ctx, theme, host, originOf(req), seoOpts);
   return new Response(html, {
     headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': data.preview || themePreview ? 'no-store' : 'no-cache' }),
@@ -406,9 +409,14 @@ async function page(req: Request, { params }: Ctx) {
   if (r === 'inventory.json') {
     const res = await backend('/public/inventory.json', host);
     if (!res.ok) return siteErrorPage(res);
-    return new Response(await res.text(), {
+    return new Response(cleanInventoryPosts(await res.text()), {
       headers: securityHeaders({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache, no-store, must-revalidate' }),
     });
+  }
+
+  if (r === 'favicon.ico') {
+    const { ctx } = await context(host);
+    return faviconResponse(ctx?.settings?.faviconUrl, url);
   }
 
   if (r === 'logo' || r === 'images/logo.png') {
@@ -535,6 +543,7 @@ async function page(req: Request, { params }: Ctx) {
   // menu links of the custom pages (not in the editor preview: the dealer edits the theme's own texts there)
   let html = injectNav(renderPage(ctx, theme, r, originOf(req), themePreview, live), theme, live ? [] : navItems(ctx), '', siteTokens(ctx.settings, originOf(req)));
   if (!themePreview && !live) html = await finishHtml(html, ctx, theme, host, originOf(req), { seo: seoOn, template: r, path: r === 'index.html' ? '' : undefined });
+  html = injectHead(applyFavicon(html, ctx.settings?.faviconUrl), richPostRuntime());
   return new Response(html, {
     headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': themePreview || live ? 'no-store' : 'no-cache' }),
   });

@@ -286,6 +286,8 @@ model TenantSettings {
   legalName     String @default("")
   tagline       String @default("")
   logo          String @default("")
+  /// browser-tab icon of the dealer website (.ico / .png / .svg / .webp; "/uploads/…" or https://…); "" = the design's own
+  faviconUrl    String @default("")
   phone         String @default("")
   email         String @default("")
   street        String @default("")
@@ -845,6 +847,10 @@ model SeoPage {
   ogImage         String   @default("")
   /// absolute URL; "" = the page's own clean address
   canonicalUrl    String   @default("")
+  /// focus keyword(s): <meta name="keywords">
+  mainKeyword     String   @default("")
+  /// JSON-LD structured data (validated JSON, printed in a <script type="application/ld+json">)
+  schemaMarkup    String   @default("")
   updatedBy       String   @default("")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

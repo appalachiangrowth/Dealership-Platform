@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { clean, cleanMl, slugify, strArray } from '../common/util.js';
+import { isRichHtml, sanitizeRichHtml } from './rich-html.js';
 import type { PostStatus, Prisma } from '../generated/prisma/client.js';
 import type { AuthUser } from '../common/auth.types.js';
 
@@ -9,7 +10,13 @@ function cleanPost(b: Record<string, unknown>): Prisma.BlogPostUncheckedUpdateIn
   const d: Record<string, unknown> = {};
   if ('title' in b) d.title = clean(b.title, 200);
   if ('excerpt' in b) d.excerpt = cleanMl(b.excerpt, 600);
-  if ('body' in b) d.body = cleanMl(b.body, 60000);
+  if ('body' in b) {
+    // rich text editor (HTML): only safe formatting is kept; older plain-text articles stay as they are
+    if (isRichHtml(b.body)) {
+      const html = sanitizeRichHtml(b.body, 400_000);
+      d.body = html.replace(/<p>\s*(<br>)?\s*<\/p>/g, '').trim() ? html : '';
+    } else d.body = cleanMl(b.body, 60000);
+  }
   if ('coverImage' in b) {
     const c = clean(b.coverImage, 600);
     d.coverImage = c.startsWith('/uploads/') || /^https?:\/\//.test(c) ? c : '';

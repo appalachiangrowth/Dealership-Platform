@@ -8,6 +8,7 @@ import {
   Clock,
   Eye,
   Globe,
+  AppWindow,
   Image as ImageIcon,
   Info,
   Link2,
@@ -21,7 +22,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { useSettings } from '@/lib/useSettings';
-import { mediaUrl } from '@/lib/api';
+import { api, mediaUrl } from '@/lib/api';
 import { useTenant } from '@/components/DealerShell';
 import { ErrorBox, Loading, cx } from '@/components/ui';
 import { uploadFiles } from '@/components/ImageUploader';
@@ -29,7 +30,7 @@ import { MapPicker } from '@/components/MapPicker';
 import { useToast } from '@/components/toast';
 
 const KEYS = [
-  'name', 'legalName', 'tagline', 'logo', 'phone', 'email', 'siteUrl', 'themeColor',
+  'name', 'legalName', 'tagline', 'logo', 'faviconUrl', 'phone', 'email', 'siteUrl', 'themeColor',
   'street', 'city', 'state', 'stateName', 'zip', 'country', 'lat', 'lng',
   'hours', 'hoursShort',
   'facebook', 'instagram', 'google', 'googleReviews', 'youtube', 'tiktok', 'messenger',
@@ -327,11 +328,13 @@ export default function BusinessPage() {
   const [showResults, setShowResults] = useState(false);
   const [gState, setGState] = useState<'' | 'busy' | 'ok' | 'nopin'>('');
   const [logoBusy, setLogoBusy] = useState(false);
+  const [favBusy, setFavBusy] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [resetKey, setResetKey] = useState(0);
   const [showMap, setShowMap] = useState<boolean | null>(null);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const logoRef = useRef<HTMLInputElement>(null);
+  const favRef = useRef<HTMLInputElement>(null);
 
   if (error) return <ErrorBox error={error} />;
   if (!form) return <Loading />;
@@ -408,6 +411,33 @@ export default function BusinessPage() {
     } finally {
       setLogoBusy(false);
       if (logoRef.current) logoRef.current.value = '';
+    }
+  };
+
+  /** the favicon is sent as it is (ICO / SVG / PNG keep their format and transparency) */
+  const uploadFavicon = async (files: FileList | null) => {
+    const f = files?.[0];
+    if (!f) return;
+    if (!/\.(ico|png|svg|webp|jpe?g|gif)$/i.test(f.name)) {
+      toast.error('Choose an ICO, PNG, SVG, WebP, JPG or GIF file.');
+      return;
+    }
+    if (f.size > 1024 * 1024) {
+      toast.error('A favicon must be smaller than 1 MB (32 × 32 or 64 × 64 pixels is enough).');
+      return;
+    }
+    setFavBusy(true);
+    try {
+      const form = new FormData();
+      form.append('files', f);
+      const r = await api<{ files: { url: string }[]; errors: { file: string; error: string }[] }>('/dealer/media?folder=favicon', { form });
+      if (r.errors.length) throw new Error(r.errors.map((e) => e.error).join('\n'));
+      put('faviconUrl', r.files[0]?.url || '');
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setFavBusy(false);
+      if (favRef.current) favRef.current.value = '';
     }
   };
 
@@ -777,6 +807,16 @@ export default function BusinessPage() {
             </div>
           </section>
 
+          {/* Favicon */}
+          <FaviconCard
+            value={val('faviconUrl')}
+            busy={favBusy}
+            name={val('name') || tenant?.name || 'Your dealership'}
+            onUpload={() => favRef.current?.click()}
+            onChange={(v) => put('faviconUrl', v)}
+          />
+          <input ref={favRef} type="file" accept=".ico,.png,.svg,.webp,.jpg,.jpeg,.gif,image/x-icon,image/png,image/svg+xml,image/webp" hidden onChange={(e) => void uploadFavicon(e.target.files)} />
+
           {/* Social links */}
           <section aria-labelledby="sc-h" className={CARD}>
             <CardHead icon={<Link2 className="h-[18px] w-[18px]" />} title="Social links" sub="Optional. Icons appear in your website footer." />
@@ -852,3 +892,106 @@ export default function BusinessPage() {
     </form>
   );
 }
+
+/** a typed favicon address is fine when it is an uploaded file or a web address of an icon / picture */
+function faviconProblem(v: string): string {
+  const s = v.trim();
+  if (!s) return '';
+  if (!(s.startsWith('/uploads/') || /^https?:\/\/[^\s"'<>]+$/i.test(s))) return 'Use a full address that starts with https://';
+  const ext = (s.split(/[?#]/)[0].match(/\.([a-z0-9]{2,5})$/i)?.[1] || '').toLowerCase();
+  if (ext && !['ico', 'png', 'svg', 'webp', 'jpg', 'jpeg', 'gif'].includes(ext)) return 'The address must point to an ICO, PNG, SVG, WebP, JPG or GIF file';
+  return '';
+}
+
+/** Business details › Favicon: the small icon in the browser tab, bookmarks and phone home screens. */
+function FaviconCard({ value, busy, name, onUpload, onChange }: { value: string; busy: boolean; name: string; onUpload: () => void; onChange: (v: string) => void }) {
+  const [broken, setBroken] = useState(false);
+  const src = value ? mediaUrl(value) : '';
+  const problem = faviconProblem(value);
+  const icon = (size: number) =>
+    busy ? (
+      <Loader2 className="animate-spin text-[#2563EB]" style={{ width: size * 0.6, height: size * 0.6 }} />
+    ) : src && !broken ? (
+      <img src={src} alt="" width={size} height={size} className="h-full w-full object-contain" onError={() => setBroken(true)} onLoad={() => setBroken(false)} />
+    ) : (
+      <Globe className="text-[#94A3B8]" style={{ width: size * 0.62, height: size * 0.62 }} />
+    );
+  return (
+    <section aria-labelledby="fv-h" className={CARD}>
+      <CardHead icon={<AppWindow className="h-[18px] w-[18px]" />} title="Favicon" sub="The small icon in the browser tab, bookmarks and phone home screens of your website." />
+      <div className="flex flex-col gap-4 p-5">
+        <div className="flex flex-wrap items-center gap-4">
+          {/* browser tab preview */}
+          <div className="w-[230px] flex-none overflow-hidden rounded-[10px] border border-[#E5E9F0] bg-[#DEE3EA]" aria-hidden>
+            <div className="flex items-end gap-1 px-2 pt-2">
+              <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-t-lg bg-white px-2.5">
+                <span className="flex h-4 w-4 flex-none items-center justify-center overflow-hidden">{icon(16)}</span>
+                <span className="truncate text-[11px] font-medium text-[#334155]">{name}</span>
+                <span className="ml-auto text-[11px] text-[#94A3B8]">×</span>
+              </div>
+              <span className="pb-2 text-sm text-[#64748B]">+</span>
+            </div>
+            <div className="flex h-7 items-center gap-1.5 bg-white px-2.5 text-[10px] text-[#64748B]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#CBD5E1]" />
+              <span className="truncate">yourdealership.com</span>
+            </div>
+          </div>
+          {/* 32 / 64 px previews */}
+          <div className="flex items-end gap-3">
+            <div className="flex flex-col items-center gap-1">
+              <span className="flex h-[32px] w-[32px] items-center justify-center overflow-hidden rounded-[6px] border border-[#E5E9F0] bg-[#F8FAFC]">{icon(32)}</span>
+              <span className="text-[10px] font-semibold text-[#64748B]">32 px</span>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <span className="flex h-[64px] w-[64px] items-center justify-center overflow-hidden rounded-[10px] border border-[#E5E9F0] bg-[#F8FAFC]">{icon(64)}</span>
+              <span className="text-[10px] font-semibold text-[#64748B]">64 px</span>
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className={cx(BTN_S, 'min-h-[38px]')} disabled={busy} onClick={onUpload}>
+            <Upload className="h-4 w-4" />
+            {value ? 'Replace' : 'Upload'}
+          </button>
+          {value && (
+            <button
+              type="button"
+              className="inline-flex min-h-[36px] items-center justify-center rounded-lg px-2.5 text-[13px] font-semibold text-[#B91C1C] hover:bg-[#FEF2F2]"
+              onClick={() => {
+                setBroken(false);
+                onChange('');
+              }}
+            >
+              Remove
+            </button>
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="fav-url" className={LBL}>
+            …or icon address (URL)
+          </label>
+          <div className={cx(FLD, 'min-h-[38px]', problem && 'border-[#DC2626]')}>
+            <input
+              id="fav-url"
+              type="url"
+              className={INP}
+              value={value}
+              onChange={(e) => {
+                setBroken(false);
+                onChange(e.target.value.trim());
+              }}
+              placeholder="https://yourdealership.com/favicon.png"
+            />
+          </div>
+          {problem ? (
+            <span className="text-xs font-medium text-[#B91C1C]">{problem}</span>
+          ) : broken && value ? (
+            <span className="text-xs font-medium text-[#B45309]">This picture could not be loaded. Check the address.</span>
+          ) : null}
+          <span className="text-xs text-[#526077]">Recommended: 32x32 or 64x64 PNG, ICO, or SVG. Without one, your website shows the design's own icon.</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+

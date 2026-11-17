@@ -17,6 +17,10 @@ export interface SeoMeta {
   ogDescription: string;
   ogImage: string;
   canonicalUrl: string;
+  /** Platform Admin › Pages & URLs › Main keyword → <meta name="keywords"> */
+  keywords?: string;
+  /** Platform Admin › Pages & URLs › Schema markup (JSON-LD) → <script type="application/ld+json"> */
+  schemaMarkup?: string;
 }
 
 export interface SeoLinks {
@@ -116,12 +120,34 @@ export function absUrl(u: string, siteUrl: string): string {
   return siteUrl.replace(/\/+$/, '') + '/' + u.replace(/^\/+/, '');
 }
 
+/**
+ * JSON-LD text → safe contents for <script type="application/ld+json"> ("" when it is not a JSON object / list of
+ * objects). Re-serialised, with "<", ">", "&" and line separators escaped so it can never close the script tag.
+ */
+export function jsonLd(raw: unknown): string {
+  const text = String(raw ?? '').trim();
+  if (!text) return '';
+  try {
+    const data = JSON.parse(text) as unknown;
+    const isObj = (x: unknown) => !!x && typeof x === 'object' && !Array.isArray(x);
+    if (!(isObj(data) || (Array.isArray(data) && data.length > 0 && data.every(isObj)))) return '';
+    return JSON.stringify(data)
+      .replace(/</g, '\\u003c')
+      .replace(/>/g, '\\u003e')
+      .replace(/&/g, '\\u0026')
+      .replace(/\u2028/g, '\\u2028')
+      .replace(/\u2029/g, '\\u2029');
+  } catch {
+    return '';
+  }
+}
+
 function setTag(head: string, find: RegExp, tag: string): string {
   return find.test(head) ? head.replace(find, () => tag) : head + tag;
 }
 
 /**
- * Writes the title / description / canonical / OpenGraph tags into <head>. Empty values keep the design's own
+ * Writes the title / description / canonical / OpenGraph / keywords tags and the page's JSON-LD into <head>. Empty values keep the design's own
  * tags; `canonical` is always set (the page's clean address unless Platform Admin set another one).
  */
 export function applyMeta(html: string, meta: Partial<SeoMeta>, canonical: string, siteUrl: string): string {
@@ -151,6 +177,10 @@ export function applyMeta(html: string, meta: Partial<SeoMeta>, canonical: strin
     head = setTag(head, /<meta\s[^>]*name=["']twitter:description["'][^>]*>/i, `<meta name="twitter:description" content="${h(ogDesc)}">`);
   }
   if (ogImage) head = setTag(head, /<meta\s[^>]*property=["']og:image["'][^>]*>/i, `<meta property="og:image" content="${h(ogImage)}">`);
+  const keywords = (meta.keywords || '').trim();
+  if (keywords) head = setTag(head, /<meta\s[^>]*name=["']keywords["'][^>]*>/i, `<meta name="keywords" content="${h(keywords)}">`);
+  const ld = jsonLd(meta.schemaMarkup);
+  if (ld) head += `<script type="application/ld+json" data-pa-schema>${ld}</script>`;
   return head + rest;
 }
 

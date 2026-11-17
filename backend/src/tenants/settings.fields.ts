@@ -1,6 +1,6 @@
 import { clean, isColor, isEmail, safeUrl } from '../common/util.js';
 
-type Kind = 'text' | 'email' | 'url' | 'image' | 'color' | 'int' | 'bool' | 'secret' | 'hours' | 'enum';
+type Kind = 'text' | 'email' | 'url' | 'image' | 'favicon' | 'color' | 'int' | 'bool' | 'secret' | 'hours' | 'enum';
 interface FieldDef {
   kind: Kind;
   max?: number;
@@ -15,6 +15,7 @@ export const SETTINGS_FIELDS: Record<string, FieldDef> = {
   legalName: { kind: 'text', max: 160, group: 'business' },
   tagline: { kind: 'text', max: 240, group: 'business' },
   logo: { kind: 'image', max: 400, group: 'business' },
+  faviconUrl: { kind: 'favicon', max: 600, group: 'business' },
   phone: { kind: 'text', max: 40, group: 'business' },
   email: { kind: 'email', max: 160, group: 'business' },
   street: { kind: 'text', max: 160, group: 'business' },
@@ -64,6 +65,9 @@ export const SETTINGS_FIELDS: Record<string, FieldDef> = {
   cargurusRemoteDir: { kind: 'text', max: 200, group: 'settings' },
   cargurusRemoteName: { kind: 'text', max: 120, group: 'settings' },
 };
+
+/** browser-tab icon formats accepted for faviconUrl */
+export const FAVICON_EXT = ['ico', 'png', 'svg', 'webp', 'jpg', 'jpeg', 'gif'];
 
 export const SECRET_FIELDS = Object.entries(SETTINGS_FIELDS)
   .filter(([, f]) => f.kind === 'secret')
@@ -175,6 +179,18 @@ export function cleanSettingsPatch(
       case 'image': {
         const s = clean(v, f.max);
         data[k] = s === '' || s.startsWith('/uploads/') || /^https?:\/\//.test(s) ? s : '';
+        break;
+      }
+      case 'favicon': {
+        // an uploaded file (/uploads/…) or a web address; when the address names a file type it must be an icon / picture
+        const s = clean(v, f.max);
+        if (s === '') data[k] = '';
+        else if (!(s.startsWith('/uploads/') || /^https?:\/\/[^\s"'<>]+$/i.test(s))) invalid.push(k);
+        else {
+          const ext = (s.split(/[?#]/)[0].match(/\.([a-z0-9]{2,5})$/i)?.[1] || '').toLowerCase();
+          if (ext && !FAVICON_EXT.includes(ext)) invalid.push(k);
+          else data[k] = s;
+        }
         break;
       }
       case 'color':

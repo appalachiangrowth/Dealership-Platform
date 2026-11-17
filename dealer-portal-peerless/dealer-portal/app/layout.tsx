@@ -7,6 +7,8 @@ export const metadata: Metadata = {
   title: 'Dealership Portal',
   description: 'Manage your dealership website, vehicles and inquiries',
   robots: { index: false, follow: false },
+  // public/favicon.ico (the Peerless build is served under /admin: NEXT_PUBLIC_BASE_PATH)
+  icons: { icon: `${process.env.NEXT_PUBLIC_BASE_PATH || ''}/favicon.ico`, shortcut: `${process.env.NEXT_PUBLIC_BASE_PATH || ''}/favicon.ico` },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

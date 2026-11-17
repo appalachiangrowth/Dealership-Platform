@@ -31,6 +31,26 @@ export function sniffImage(buf: Buffer): { ext: string; mime: string; width?: nu
 
 /** what the website / logo folder keeps as it is (transparent logos stay PNG); everything else becomes JPEG */
 const KEEP_IN_SITE = ['jpg', 'png', 'gif', 'webp'];
+/** favicons (folder "favicon") may also be .ico or .svg files */
+const KEEP_AS_FAVICON = [...KEEP_IN_SITE, 'ico', 'svg'];
+const FAVICON_MAX = 1024 * 1024;
+
+/**
+ * .ico and .svg, accepted only as favicons. An SVG must be a plain drawing: no scripts, event handlers, external
+ * links or embedded documents (the /uploads/ folder is also served with "Content-Security-Policy: default-src 'none'").
+ */
+export function sniffFavicon(buf: Buffer): { ext: string; mime: string; width?: number; height?: number } | null {
+  if (buf.length >= 6 && buf[0] === 0 && buf[1] === 0 && buf[2] === 1 && buf[3] === 0 && buf.readUInt16LE(4) > 0) {
+    return { ext: 'ico', mime: 'image/x-icon', width: buf[6] || 256, height: buf[7] || 256 };
+  }
+  const head = buf.subarray(0, 2048).toString('utf8').replace(/^\uFEFF/, '').trimStart();
+  if (!/^(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE svg[^>]*>\s*)?<svg[\s>]/i.test(head)) return null;
+  const text = buf.toString('utf8');
+  if (/<script|<foreignObject|<iframe|<embed|<object|<!ENTITY|\bon[a-z]+\s*=|javascript:|data:text\/html|(?:xlink:)?href\s*=\s*["']\s*(?!#)/i.test(text)) {
+    throw new BadRequestException('This SVG contains scripts or links. Please upload a plain SVG drawing, a PNG or an ICO file.');
+  }
+  return { ext: 'svg', mime: 'image/svg+xml' };
+}
 
 function jpegSize(buf: Buffer): { width?: number; height?: number } {
   let i = 2;
@@ -76,13 +96,19 @@ export class MediaService {
       const maxMb = s?.maxUploadMb || 12;
       if (file.size > maxMb * 1024 * 1024) throw new BadRequestException(`The photo is larger than ${maxMb} MB`);
     }
-    let kind = sniffImage(file.buffer);
-    if (!kind) throw new BadRequestException('Only photos can be uploaded (JPG, PNG, WebP, AVIF, HEIC, GIF or BMP)');
+    const favicon = folder === 'favicon';
+    if (favicon && file.size > FAVICON_MAX) throw new BadRequestException('A favicon must be smaller than 1 MB (32 × 32 or 64 × 64 pixels is enough).');
+    let kind = (favicon ? sniffFavicon(file.buffer) : null) ?? sniffImage(file.buffer);
+    if (!kind) {
+      throw new BadRequestException(favicon ? 'A favicon must be an ICO, PNG, SVG, WebP, JPG or GIF file' : 'Only photos can be uploaded (JPG, PNG, WebP, AVIF, HEIC, GIF or BMP)');
+    }
     let buffer = file.buffer;
     let enhanced = false;
     let enhanceNote = '';
-    const site = folder === 'site';
-    if (!site || !KEEP_IN_SITE.includes(kind.ext)) {
+    // favicons are stored with the logo and website images
+    const site = folder === 'site' || favicon;
+    if (favicon) folder = 'site';
+    if (!site || !(favicon ? KEEP_AS_FAVICON : KEEP_IN_SITE).includes(kind.ext)) {
       let jpg: Awaited<ReturnType<typeof toJpeg>>;
       try {
         jpg = await toJpeg(buffer);

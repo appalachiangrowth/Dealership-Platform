@@ -7,6 +7,7 @@ import { api, siteUrl } from '@/lib/api';
 import { useToast } from './toast';
 import { useTenant } from './DealerShell';
 import { SingleImage } from './ImageUploader';
+import { RichTextEditor } from './RichTextEditor';
 import { Button, Card, Field, Input, PageHeader, Textarea } from './ui';
 
 export function PostForm({ initial }: { initial: Record<string, any> }) {
@@ -74,9 +75,14 @@ export function PostForm({ initial }: { initial: Record<string, any> }) {
             <Field label="Short excerpt" hint="Shown on the blog list.">
               <Textarea rows={2} value={p.excerpt || ''} onChange={(e) => set('excerpt', e.target.value)} />
             </Field>
-            <Field label="Article" hint="Leave a blank line between paragraphs. ## for a heading. Links: [text](https://…)">
-              <Textarea rows={18} value={p.body || ''} onChange={(e) => set('body', e.target.value)} />
-            </Field>
+            <div>
+              <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-sm font-medium text-slate-700">Article</span>
+                <span className="text-xs text-slate-500">Headings, fonts, colours, lists, links and pictures appear on your website exactly as here.</span>
+              </div>
+              {/* the editor keeps its own content while typing: a new key only when another post is opened */}
+              <RichTextEditor key={p.id || 'new'} value={initial.body || ''} onChange={(html) => set('body', html)} />
+            </div>
           </div>
         </Card>
         <div className="space-y-6">

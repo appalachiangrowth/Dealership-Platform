@@ -27,6 +27,8 @@ type PageRow = {
   ogDescription: string;
   ogImage: string;
   canonicalUrl: string;
+  mainKeyword: string;
+  schemaMarkup: string;
   defaultTitle: string;
   defaultDescription: string;
 };
@@ -66,7 +68,7 @@ type SeoData = {
   redirects: { from: string; to: string; hits: number; createdAt: string }[];
 };
 
-type Draft = Pick<PageRow, 'key' | 'metaTitle' | 'metaDescription' | 'ogTitle' | 'ogDescription' | 'ogImage' | 'canonicalUrl'> & { path: string };
+type Draft = Pick<PageRow, 'key' | 'metaTitle' | 'metaDescription' | 'ogTitle' | 'ogDescription' | 'ogImage' | 'canonicalUrl' | 'mainKeyword' | 'schemaMarkup'> & { path: string };
 
 /* ───────────────────────── small pieces ───────────────────────── */
 
@@ -351,7 +353,146 @@ function toDraft(p: PageRow): Draft {
     ogDescription: p.ogDescription,
     ogImage: p.ogImage,
     canonicalUrl: p.canonicalUrl,
+    mainKeyword: p.mainKeyword ?? '',
+    schemaMarkup: p.schemaMarkup ?? '',
   };
+}
+
+/* ───────────────────────── canonical / keyword / JSON-LD checks (the backend checks the same) ───────────────────────── */
+
+function canonicalProblem(u: string): string {
+  const v = u.trim();
+  if (!v) return '';
+  return /^https?:\/\/[^\s"'<>]+\.[^\s"'<>]+$/i.test(v) ? '' : 'Use a full address, e.g. https://example.com/inventory';
+}
+
+/** "" = valid (or empty); otherwise what is wrong, with the line and column when JSON.parse says where */
+function schemaProblem(text: string): string {
+  const t = text.trim();
+  if (!t) return '';
+  if (t.length > 20000) return 'Longer than 20 000 characters.';
+  let data: unknown;
+  try {
+    data = JSON.parse(t);
+  } catch (e) {
+    const msg = (e as Error).message;
+    const pos = Number(/position (\d+)/.exec(msg)?.[1]);
+    if (Number.isFinite(pos)) {
+      const before = t.slice(0, pos);
+      const line = before.split('\n').length;
+      const col = pos - before.lastIndexOf('\n');
+      return `Invalid JSON at line ${line}, column ${col}: ${msg.replace(/ in JSON at position \d+.*$/, '').replace(/\s*\(line \d+ column \d+\)/, '')}`;
+    }
+    return `Invalid JSON: ${msg}`;
+  }
+  const isObj = (x: unknown) => !!x && typeof x === 'object' && !Array.isArray(x);
+  if (!(isObj(data) || (Array.isArray(data) && data.length > 0 && data.every(isObj)))) return 'Must be a JSON object, e.g. {"@context": "https://schema.org", "@type": "AutoDealer"}.';
+  return '';
+}
+
+function schemaWarning(text: string): string {
+  if (!text.trim() || schemaProblem(text)) return '';
+  try {
+    const d = JSON.parse(text) as Record<string, unknown> | Record<string, unknown>[];
+    const list = Array.isArray(d) ? d : [d];
+    if (!list.every((x) => typeof x['@context'] === 'string' || Array.isArray(x['@graph']))) return 'Tip: add "@context": "https://schema.org" so Google reads it.';
+    if (!list.every((x) => x['@type'] || Array.isArray(x['@graph']))) return 'Tip: add an "@type" (e.g. "AutoDealer", "WebPage", "FAQPage").';
+  } catch {
+    /* already reported */
+  }
+  return '';
+}
+
+function schemaTemplate(page: PageRow, url: string, dealer: string): string {
+  const data =
+    page.key === 'home'
+      ? { '@context': 'https://schema.org', '@type': 'AutoDealer', name: dealer, url, telephone: '', address: { '@type': 'PostalAddress', streetAddress: '', addressLocality: '', addressRegion: '', postalCode: '', addressCountry: 'US' } }
+      : { '@context': 'https://schema.org', '@type': 'WebPage', name: page.label, url, isPartOf: { '@type': 'WebSite', name: dealer } };
+  return JSON.stringify(data, null, 2);
+}
+
+/** is the focus keyword used in the title / description / address? */
+function KeywordChecks({ keyword, title, description, path }: { keyword: string; title: string; description: string; path: string }) {
+  const k = keyword.trim().toLowerCase();
+  if (!k) return null;
+  const slug = k.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const checks: [string, boolean][] = [
+    ['in meta title', title.toLowerCase().includes(k)],
+    ['in meta description', description.toLowerCase().includes(k)],
+    ['in URL path', !!slug && path.toLowerCase().includes(slug)],
+  ];
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {checks.map(([label, ok]) => (
+        <span key={label} className={cx('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold', ok ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500')}>
+          {ok ? '✓' : '–'} {label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** JSON-LD editor: monospace, live validation, Format JSON, a starting template */
+function SchemaField({ value, onChange, template }: { value: string; onChange: (v: string) => void; template: () => string }) {
+  const problem = schemaProblem(value);
+  const warning = schemaWarning(value);
+  const lines = Math.min(18, Math.max(5, value.split('\n').length + 1));
+  return (
+    <div>
+      <FieldTop
+        label="Schema markup (JSON-LD)"
+        right={
+          <span className="flex items-center gap-3">
+            {!value.trim() && (
+              <button type="button" className="text-[11px] font-semibold text-blue-700 hover:underline" onClick={() => onChange(template())}>
+                Insert template
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={!value.trim() || !!problem}
+              className="text-[11px] font-semibold text-blue-700 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 disabled:no-underline"
+              onClick={() => onChange(JSON.stringify(JSON.parse(value), null, 2))}
+            >
+              Format JSON
+            </button>
+            {value.trim() && (
+              <button type="button" className="text-[11px] font-semibold text-slate-500 hover:text-red-700" onClick={() => onChange('')}>
+                Clear
+              </button>
+            )}
+          </span>
+        }
+      />
+      <Textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={lines}
+        spellCheck={false}
+        placeholder={'{\n  "@context": "https://schema.org",\n  "@type": "AutoDealer",\n  "name": "…"\n}'}
+        className={cx('font-mono text-[12px] leading-5', problem ? 'border-red-400 bg-red-50/30 focus:border-red-500 focus:ring-red-500/20' : value.trim() && 'border-emerald-300')}
+        onKeyDown={(e) => {
+          // Tab inserts two spaces instead of leaving the box
+          if (e.key !== 'Tab' || e.shiftKey) return;
+          e.preventDefault();
+          const el = e.currentTarget;
+          const a = el.selectionStart;
+          const next = value.slice(0, a) + '  ' + value.slice(el.selectionEnd);
+          onChange(next);
+          requestAnimationFrame(() => el.setSelectionRange(a + 2, a + 2));
+        }}
+      />
+      {problem ? (
+        <p className="mt-1 text-[11px] font-medium text-red-700">✕ {problem}</p>
+      ) : value.trim() ? (
+        <p className="mt-1 text-[11px] font-medium text-emerald-700">
+          ✓ Valid JSON-LD — added to this page as &lt;script type=&quot;application/ld+json&quot;&gt;.{warning && <span className="ml-1 font-normal text-amber-700">{warning}</span>}
+        </p>
+      ) : (
+        <p className="mt-1 text-[11px] text-slate-400">Optional structured data for rich results (dealer details, FAQ, breadcrumbs…). Checked before saving.</p>
+      )}
+    </div>
+  );
 }
 
 function PagesTab({ data, domainUrl, view, onSaved, toast }: { data: SeoData; domainUrl: string; view: (p: string) => string; onSaved: () => void; toast: ToastApi }) {
@@ -362,9 +503,14 @@ function PagesTab({ data, domainUrl, view, onSaved, toast }: { data: SeoData; do
   useEffect(() => setDraft(initial), [initial]);
 
   const dirtyKeys = data.pages.filter((p) => JSON.stringify(draft[p.key]) !== JSON.stringify(initial[p.key])).map((p) => p.key);
+  const invalidKeys = dirtyKeys.filter((k) => schemaProblem(draft[k]?.schemaMarkup || '') || canonicalProblem(draft[k]?.canonicalUrl || ''));
   const set = (key: string, patch: Partial<Draft>) => setDraft((d) => ({ ...d, [key]: { ...d[key], ...patch } }));
 
   const save = async () => {
+    if (invalidKeys.length) {
+      toast.error(`Fix the canonical URL / schema markup of: ${invalidKeys.map((k) => data.pages.find((p) => p.key === k)?.label || k).join(', ')}`);
+      return;
+    }
     setSaving(true);
     try {
       const res = await api<{ moved: { from: string; to: string }[] }>(`/platform/seo/${encodeURIComponent(data.dealer.id)}/pages`, {
@@ -390,11 +536,12 @@ function PagesTab({ data, domainUrl, view, onSaved, toast }: { data: SeoData; do
           <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Find a page…" className="pl-9" />
         </div>
         <div className="flex items-center gap-2">
+          {invalidKeys.length > 0 && <span className="text-xs font-semibold text-red-700">{invalidKeys.length} page{invalidKeys.length > 1 ? 's have' : ' has'} an error</span>}
           {dirtyKeys.length > 0 && <span className="text-xs font-semibold text-amber-700">{dirtyKeys.length} page{dirtyKeys.length > 1 ? 's' : ''} changed</span>}
           <Button variant="secondary" disabled={!dirtyKeys.length || saving} onClick={() => setDraft(initial)}>
             <Undo2 className="h-4 w-4" /> Discard
           </Button>
-          <Button disabled={!dirtyKeys.length} loading={saving} onClick={save}>
+          <Button disabled={!dirtyKeys.length || invalidKeys.length > 0} loading={saving} onClick={save}>
             Save changes
           </Button>
         </div>
@@ -441,8 +588,32 @@ function PagesTab({ data, domainUrl, view, onSaved, toast }: { data: SeoData; do
                   <FieldTop label="Meta description" right={<Counter value={d.metaDescription} range={data.ranges.description} fallback={p.defaultDescription} />} />
                   <Textarea value={d.metaDescription} onChange={(e) => set(p.key, { metaDescription: e.target.value })} placeholder={p.defaultDescription || 'Set by the design'} maxLength={400} className="min-h-[72px]" />
                 </div>
+                <div>
+                  <FieldTop label="Canonical URL" right={<span className="text-[11px] text-slate-400">Empty = this page&apos;s own address</span>} />
+                  <Input
+                    value={d.canonicalUrl}
+                    onChange={(e) => set(p.key, { canonicalUrl: e.target.value })}
+                    placeholder={url}
+                    className={cx(canonicalProblem(d.canonicalUrl) && 'border-red-400 focus:border-red-500 focus:ring-red-500/20')}
+                  />
+                  {canonicalProblem(d.canonicalUrl) ? (
+                    <p className="mt-1 text-[11px] font-medium text-red-700">{canonicalProblem(d.canonicalUrl)}</p>
+                  ) : (
+                    <p className="mt-1 text-[11px] text-slate-400">Tells Google which address is the main one when the same content is reachable at several addresses.</p>
+                  )}
+                </div>
+                <div>
+                  <FieldTop label="Main keyword" right={<span className="text-[11px] text-slate-400">Focus keyword · &lt;meta name=&quot;keywords&quot;&gt;</span>} />
+                  <Input value={d.mainKeyword} onChange={(e) => set(p.key, { mainKeyword: e.target.value })} placeholder={`used cars for sale in ${data.vehicleSettings.dealer.city || '[city]'}`} maxLength={200} />
+                  <KeywordChecks keyword={d.mainKeyword} title={d.metaTitle || p.defaultTitle} description={d.metaDescription || p.defaultDescription} path={effective} />
+                </div>
+                <SchemaField
+                  value={d.schemaMarkup}
+                  onChange={(v) => set(p.key, { schemaMarkup: v })}
+                  template={() => schemaTemplate(p, d.canonicalUrl.trim() || url, data.dealer.name)}
+                />
                 <details className="group rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
-                  <summary className="cursor-pointer select-none text-xs font-semibold text-slate-600">OpenGraph & canonical (optional — default to the address, title and description above)</summary>
+                  <summary className="cursor-pointer select-none text-xs font-semibold text-slate-600">OpenGraph (optional — defaults to the title and description above)</summary>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <Field label="Share title (og:title)">
                       <Input value={d.ogTitle} onChange={(e) => set(p.key, { ogTitle: e.target.value })} placeholder={d.metaTitle || p.defaultTitle || 'Meta title'} />
@@ -452,9 +623,6 @@ function PagesTab({ data, domainUrl, view, onSaved, toast }: { data: SeoData; do
                     </Field>
                     <Field label="Share description (og:description)" className="sm:col-span-2">
                       <Textarea value={d.ogDescription} onChange={(e) => set(p.key, { ogDescription: e.target.value })} placeholder={d.metaDescription || p.defaultDescription || 'Meta description'} className="min-h-[60px]" />
-                    </Field>
-                    <Field label="Canonical URL" hint={`Leave empty to use ${url}`} className="sm:col-span-2">
-                      <Input value={d.canonicalUrl} onChange={(e) => set(p.key, { canonicalUrl: e.target.value })} placeholder={url} />
                     </Field>
                   </div>
                 </details>

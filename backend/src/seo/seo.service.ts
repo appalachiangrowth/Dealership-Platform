@@ -39,6 +39,10 @@ export interface SeoMeta {
   ogDescription: string;
   ogImage: string;
   canonicalUrl: string;
+  /** focus keyword(s) → <meta name="keywords">; "" = none */
+  keywords: string;
+  /** JSON-LD (validated JSON text) → <script type="application/ld+json">; "" = none */
+  schemaMarkup: string;
 }
 
 /** Link map for the website: design address ("used-cars.html", "financing") → clean address ("/used-cars-for-sale"). */
@@ -93,7 +97,7 @@ const VEHICLE_SELECT = {
 } satisfies Prisma.VehicleSelect;
 type VehicleRow = Prisma.VehicleGetPayload<{ select: typeof VEHICLE_SELECT }>;
 
-const EMPTY_META: SeoMeta = { title: '', description: '', ogTitle: '', ogDescription: '', ogImage: '', canonicalUrl: '' };
+const EMPTY_META: SeoMeta = { title: '', description: '', ogTitle: '', ogDescription: '', ogImage: '', canonicalUrl: '', keywords: '', schemaMarkup: '' };
 const CFG_TTL = 15_000;
 const ENSURE_TTL = 60_000;
 /** old addresses that still lead to vehicles (the platform's earlier vehicle pages) */
@@ -224,6 +228,8 @@ export class SeoService {
       ogDescription: r.ogDescription || r.metaDescription,
       ogImage: r.ogImage,
       canonicalUrl: r.canonicalUrl,
+      keywords: r.mainKeyword,
+      schemaMarkup: r.schemaMarkup,
     };
   }
 
@@ -231,7 +237,7 @@ export class SeoService {
     const vars = templateVars(v, cfg.dealer);
     const title = sv?.metaTitle || v.metaTitle || fillTemplate(cfg.titleTpl, vars);
     const description = sv?.metaDescription || v.metaDescription || fillTemplate(cfg.descTpl, vars);
-    return { title, description, ogTitle: title, ogDescription: description, ogImage: v.images[0] || '', canonicalUrl: '' };
+    return { title, description, ogTitle: title, ogDescription: description, ogImage: v.images[0] || '', canonicalUrl: '', keywords: '', schemaMarkup: '' };
   }
 
   /* ───────────────────────── vehicle slugs ───────────────────────── */
@@ -388,6 +394,8 @@ export class SeoService {
         ogDescription: r?.ogDescription ?? '',
         ogImage: r?.ogImage ?? '',
         canonicalUrl: r?.canonicalUrl ?? '',
+        mainKeyword: r?.mainKeyword ?? '',
+        schemaMarkup: r?.schemaMarkup ?? '',
         defaultTitle: p.kind === 'custom' ? clean(p.seo?.title, 200) || p.label : p.seoGroup ? content[`${p.seoGroup}.title`] || '' : '',
         defaultDescription: p.kind === 'custom' ? clean(p.seo?.description, 400) : p.seoGroup ? content[`${p.seoGroup}.description`] || '' : '',
         updatedAt: r?.updatedAt ?? null,
@@ -480,7 +488,7 @@ export class SeoService {
     };
   }
 
-  /** PUT pages: [{ key, path, metaTitle, metaDescription, ogTitle, ogDescription, ogImage, canonicalUrl }] */
+  /** PUT pages: [{ key, path, metaTitle, metaDescription, ogTitle, ogDescription, ogImage, canonicalUrl, mainKeyword, schemaMarkup }] */
   async savePages(tenantId: string, b: Record<string, unknown>, u: AuthUser) {
     const t = await this.tenantOr404(tenantId);
     const input = Array.isArray(b.pages) ? (b.pages as Record<string, unknown>[]) : null;
@@ -515,6 +523,8 @@ export class SeoService {
             if (c && !/^https?:\/\//i.test(c)) throw new BadRequestException(`${label}: the canonical URL must be a full address (https://…).`);
             return c;
           })(),
+          mainKeyword: str(p.mainKeyword, 200),
+          schemaMarkup: cleanSchemaMarkup(p.schemaMarkup, label),
         },
       });
     }
@@ -798,4 +808,25 @@ export class SeoService {
       },
     };
   }
+}
+
+/**
+ * JSON-LD for a page (Platform Admin › SEO & URLs › Pages & URLs): must be valid JSON — one object (or a list of
+ * objects), at most 20 000 characters. Stored as typed (so the editor shows the admin's own formatting).
+ */
+export function cleanSchemaMarkup(v: unknown, label: string): string {
+  const text = String(v ?? '').replace(/\r\n?/g, '\n').trim();
+  if (!text) return '';
+  if (text.length > 20_000) throw new BadRequestException(`${label}: the schema markup is longer than 20 000 characters.`);
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    throw new BadRequestException(`${label}: the schema markup is not valid JSON (${(e as Error).message}).`);
+  }
+  const isObj = (x: unknown) => !!x && typeof x === 'object' && !Array.isArray(x);
+  if (!(isObj(data) || (Array.isArray(data) && data.length > 0 && data.every(isObj)))) {
+    throw new BadRequestException(`${label}: the schema markup must be a JSON object such as {"@context": "https://schema.org", "@type": "AutoDealer", …}.`);
+  }
+  return text;
 }

@@ -23,7 +23,7 @@ export class SeoAdminController {
     return this.seo.adminGet(dealerId, q);
   }
 
-  /** { pages: [{ key, path, metaTitle, metaDescription, ogTitle, ogDescription, ogImage, canonicalUrl }] } */
+  /** { pages: [{ key, path, metaTitle, metaDescription, ogTitle, ogDescription, ogImage, canonicalUrl, mainKeyword, schemaMarkup }] } */
   @Put(':dealerId/pages')
   pages(@Param('dealerId') dealerId: string, @Body() b: Record<string, unknown>, @CurrentUser() u: AuthUser) {
     return this.seo.savePages(dealerId, b, u);

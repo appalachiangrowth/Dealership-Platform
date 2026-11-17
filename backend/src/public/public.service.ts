@@ -4,6 +4,7 @@ import { TenantsService } from '../tenants/tenants.service.js';
 import { ContentService } from '../content/content.service.js';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service.js';
 import { clean } from '../common/util.js';
+import { isRichHtml, richHtmlToText } from '../posts/rich-html.js';
 import type { Prisma, Tenant } from '../generated/prisma/client.js';
 import { publishedMenuFor, publishedPagesFor } from '../site-pages/site-pages.service.js';
 
@@ -33,7 +34,7 @@ export interface PublicVehicleQuery {
 }
 
 const PUBLIC_SETTINGS = [
-  'name', 'legalName', 'tagline', 'logo', 'phone', 'email', 'street', 'city', 'state', 'stateName', 'zip', 'country', 'lat', 'lng',
+  'name', 'legalName', 'tagline', 'logo', 'faviconUrl', 'phone', 'email', 'street', 'city', 'state', 'stateName', 'zip', 'country', 'lat', 'lng',
   'hours', 'hoursWeek', 'hoursWeekend', 'hoursShort', 'facebook', 'instagram', 'google', 'googleReviews', 'youtube', 'tiktok',
   'messenger', 'siteUrl', 'themeColor',
 ] as const;
@@ -169,7 +170,8 @@ export class PublicService {
       take: 3,
       omit: { body: true },
     });
-    return { post: p, more };
+    const rich = isRichHtml(p.body);
+    return { post: { ...p, format: rich ? 'html' : 'text', text: rich ? richHtmlToText(p.body) : p.body }, more };
   }
 
   /**
@@ -270,7 +272,10 @@ export class PublicService {
         date: p.publishedAt ? p.publishedAt.toISOString().slice(0, 10) : '',
         image: rel(p.coverImage),
         excerpt: p.excerpt,
-        content: p.body,
+        // rich text editor articles: plain text for the designs (paragraphs, word counts) + the formatted HTML,
+        // which the website shows in place of the plain paragraphs (frontend lib/site-extras.ts)
+        content: isRichHtml(p.body) ? richHtmlToText(p.body) : p.body,
+        contentHtml: isRichHtml(p.body) ? p.body : '',
         metaTitle: p.metaTitle,
         metaDescription: p.metaDescription,
       })),

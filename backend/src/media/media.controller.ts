@@ -23,7 +23,8 @@ export class MediaController {
   }
 
   /**
-   * POST /dealer/media (multipart, field "files", up to 30 photos). ?folder=site for logo/website images.
+   * POST /dealer/media (multipart, field "files", up to 30 photos). ?folder=site for logo/website images,
+   * ?folder=favicon for the website's browser-tab icon (.ico / .svg allowed too, ≤ 1 MB).
    * Vehicle photos (no folder) are always stored as .jpeg, whatever format was uploaded.
    * ?enhance=1 for vehicle photos: Auto White Studio Background (each file says enhanced true / false).
    */
@@ -36,7 +37,7 @@ export class MediaController {
     @Query('folder') folder?: string,
     @Query('enhance') enhance?: string,
   ) {
-    const opts = { enhance: /^(1|true|yes|on)$/i.test(enhance || '') && folder !== 'site' };
+    const opts = { enhance: /^(1|true|yes|on)$/i.test(enhance || '') && folder !== 'site' && folder !== 'favicon' };
     const out = [];
     const errors = [];
     for (const f of files || []) {
