@@ -4,13 +4,18 @@
  *  2. mapHeaders()   pre-flight: the 12 mandatory vehicle columns must exist in the file
  *  3. ingestRows()   every row → record with normalized values, _raw, _issues, _warn
  *  4. dealerMeta()   dealership identity merged into every row (columns 14-20)
- *  5. csv()          the 20 CarGurus columns in the exact CarGurus order
+ *  5. csv()          the 26 CarGurus columns in the exact CarGurus order — ALWAYS all 26, never anything else
+ *
+ * COLUMNS is the single source of truth for every CarGurus CSV (SFTP feed, master CSV, audit preview, dry run):
+ * 20 original columns + Engine, Fuel Type, Horsepower, Body Style, Drivetrain, Doors (empty when unknown).
+ * Other vehicle details and the dealer's own extra file columns (Interior Color, MSRP, Condition…) never go in.
  *  6. audit()        summary for the Platform Admin banner
  */
 
 export type ColumnKey =
   | 'vin' | 'make' | 'model' | 'year' | 'trim' | 'price' | 'mileage' | 'images' | 'ext' | 'comments' | 'stock' | 'trans' | 'options' | 'processing_fee'
-  | 'dealer_id' | 'dealer_name' | 'dealer_street' | 'dealer_city' | 'dealer_state' | 'dealer_zip' | 'dealer_crm_email';
+  | 'dealer_id' | 'dealer_name' | 'dealer_street' | 'dealer_city' | 'dealer_state' | 'dealer_zip' | 'dealer_crm_email'
+  | 'engine' | 'fuel_type' | 'horsepower' | 'body_style' | 'drivetrain' | 'doors';
 
 export const COLUMNS: [ColumnKey, string, boolean, 'vehicle' | 'dealer'][] = [
   ['vin', 'VIN', true, 'vehicle'],
@@ -33,12 +38,23 @@ export const COLUMNS: [ColumnKey, string, boolean, 'vehicle' | 'dealer'][] = [
   ['dealer_state', 'Dealer State', true, 'dealer'],
   ['dealer_zip', 'Dealer ZIP', true, 'dealer'],
   ['dealer_crm_email', 'Dealer CRM Email', true, 'dealer'],
+  // columns 21-26: always in the file, empty when the vehicle has no value (not required by CarGurus)
+  ['engine', 'Engine', false, 'vehicle'],
+  ['fuel_type', 'Fuel Type', false, 'vehicle'],
+  ['horsepower', 'Horsepower', false, 'vehicle'],
+  ['body_style', 'Body Style', false, 'vehicle'],
+  ['drivetrain', 'Drivetrain', false, 'vehicle'],
+  ['doors', 'Doors', false, 'vehicle'],
 ];
+
+/** the 6 detail columns 21-26 (record field names) */
+export const DETAIL_KEYS = ['engine', 'fuel_type', 'horsepower', 'body_style', 'drivetrain', 'doors'] as const;
+export type DetailKey = (typeof DETAIL_KEYS)[number];
 
 const LABEL = Object.fromEntries(COLUMNS.map((c) => [c[0], c[1]])) as Record<ColumnKey, string>;
 export const label = (k: ColumnKey) => LABEL[k];
 
-type VehicleKey = 'vin' | 'make' | 'model' | 'year' | 'trim' | 'price' | 'mileage' | 'images' | 'ext' | 'comments' | 'stock' | 'trans' | 'options' | 'processing_fee';
+type VehicleKey = 'vin' | 'make' | 'model' | 'year' | 'trim' | 'price' | 'mileage' | 'images' | 'ext' | 'comments' | 'stock' | 'trans' | 'options' | 'processing_fee' | DetailKey;
 
 export const ALIASES: Record<VehicleKey, string[]> = {
   vin: ['vin', 'vinnumber', 'vehiclevin'],
@@ -55,6 +71,12 @@ export const ALIASES: Record<VehicleKey, string[]> = {
   stock: ['stocknumber', 'stock', 'stockno', 'stocknum', 'stock#'],
   trans: ['transmissiontype', 'transmission', 'trans'],
   options: ['installedoptions', 'options', 'features'],
+  engine: ['engine', 'enginedescription', 'enginesize'],
+  fuel_type: ['fueltype', 'fuel'],
+  horsepower: ['horsepower', 'hp'],
+  body_style: ['bodystyle', 'body', 'bodytype'],
+  drivetrain: ['drivetrain', 'drivetype', 'drive'],
+  doors: ['doors', 'numberofdoors', 'doorcount'],
 };
 
 export const VEHICLE_MANDATORY: VehicleKey[] = ['vin', 'make', 'model', 'year', 'trim', 'price', 'mileage', 'images', 'ext', 'comments', 'stock', 'trans'];
@@ -86,10 +108,17 @@ export interface CgRecord {
   stock: string;
   trans: string;
   options: string;
+  /** columns 21-26 (absent on batches saved before the 26-column file: exported as "") */
+  engine?: string;
+  fuel_type?: string;
+  horsepower?: string;
+  body_style?: string;
+  drivetrain?: string;
+  doors?: string;
   _raw: Record<string, string>;
   _issues: Partial<Record<ColumnKey, string[]>>;
   _warn: Partial<Record<ColumnKey, string[]>>;
-  /** additional columns of the dealer's file (header → value) — not checked, added at the end of the master CSV */
+  /** additional columns of the dealer's file (header → value) — kept for the website only, NEVER in any CarGurus CSV */
   _extra?: Record<string, string>;
 }
 
@@ -473,6 +502,12 @@ export function ingestRows(headers: string[] | null, rows: (string[] | Record<st
         .map((s) => s.trim())
         .filter(Boolean)
         .join(', '),
+      engine: raw.engine.replace(/\s+/g, ' '),
+      fuel_type: raw.fuel_type.replace(/\s+/g, ' '),
+      horsepower: raw.horsepower.replace(/\s+/g, ' '),
+      body_style: raw.body_style.replace(/\s+/g, ' '),
+      drivetrain: raw.drivetrain.replace(/\s+/g, ' '),
+      doors: raw.doors.replace(/\s+/g, ' '),
       _raw: raw,
       _issues: iss,
       _warn: wrn,
@@ -544,6 +579,8 @@ export function exportValues(r: CgRecord, m: DealerMeta): string[] {
     m.state,
     m.zip,
     m.crmEmail,
+    // 21-26: always present, "" when unknown
+    ...DETAIL_KEYS.map((k) => String(r[k] ?? '').replace(/\s+/g, ' ').trim()),
   ];
 }
 
@@ -551,37 +588,21 @@ function csvCell(v: string) {
   return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
 }
 
-/** Additional column names of the records, in the order they first appear (never one of the 20 CarGurus columns). */
-export function extraHeaders(records: CgRecord[]): string[] {
-  const feeKeys = ['processingfee', 'processing_fee', 'profee', 'docfee', 'documentationfee', 'dealerfee', 'adminfee'];
-  const taken = new Set([...headerRow().map(norm), ...feeKeys]);
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const r of records)
-    for (const h of Object.keys(r._extra || {})) {
-      const n = norm(h);
-      if (!h.trim() || taken.has(n) || seen.has(n)) continue;
-      seen.add(n);
-      out.push(h);
-    }
-  return out;
-}
-
 /**
- * The 20 CarGurus columns in CarGurus order. withExtra (CarGurus master CSV for the Platform Admin): the dealer's
- * additional file columns are added at the END, so the 20 CarGurus columns keep their exact order and names.
+ * Every CarGurus CSV (SFTP feed, Platform Admin master CSV, website CarGurus file): exactly the 26 COLUMNS in
+ * CarGurus order, and nothing else — the dealer's additional columns are never written.
  */
-export function csv(records: CgRecord[], m: DealerMeta, onlyValid = false, withExtra = false): string {
-  const extra = withExtra ? extraHeaders(records) : [];
-  const lines = [[...headerRow(), ...extra].map(csvCell).join(',')];
+export function csv(records: CgRecord[], m: DealerMeta, onlyValid = false): string {
+  const lines = [headerRow().map(csvCell).join(',')];
   for (const r of records) {
     if (onlyValid && !recordValid(r)) continue;
-    const ex = r._extra || {};
-    const byNorm = new Map(Object.entries(ex).map(([k, v]) => [norm(k), v]));
-    lines.push([...exportValues(r, m), ...extra.map((h) => String(ex[h] ?? byNorm.get(norm(h)) ?? ''))].map(csvCell).join(','));
+    lines.push(exportValues(r, m).map(csvCell).join(','));
   }
   return lines.join('\n') + '\n';
 }
+
+/** the header of feeds approved before the 26-column file (first 20 columns) */
+export const LEGACY_HEADER = COLUMNS.slice(0, 20).map((c) => c[1]);
 
 /** Dealer columns of the CarGurus file (filled in automatically from the dealership profile, never kept as extra). */
 export const DEALER_COLUMN_NORMS = new Set(COLUMNS.filter((c) => c[3] === 'dealer').map((c) => norm(c[1])));

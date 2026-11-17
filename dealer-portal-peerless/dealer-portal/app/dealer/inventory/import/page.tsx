@@ -75,6 +75,9 @@ const IMP_CG: [string, string, 'req' | 'opt'][] = [
   ['vin', 'VIN', 'req'], ['make', 'Make', 'req'], ['model', 'Model', 'req'], ['year', 'Year', 'req'], ['trim', 'Trim', 'req'], ['price', 'Price', 'req'],
   ['mileage', 'Mileage', 'req'], ['images', 'Image URLs', 'req'], ['exteriorColor', 'Exterior Color', 'req'], ['description', 'Dealer comments on vehicle', 'req'],
   ['stockNumber', 'Stock Number', 'req'], ['transmission', 'Transmission Type', 'req'], ['features', 'Installed Options', 'opt'],
+  // CarGurus columns 21-26: always in the CarGurus file (empty when unknown), not required
+  ['engine', 'Engine', 'opt'], ['fuelType', 'Fuel Type', 'opt'], ['horsepower', 'Horsepower', 'opt'],
+  ['bodyStyle', 'Body Style', 'opt'], ['drivetrain', 'Drivetrain', 'opt'], ['doors', 'Doors', 'opt'],
 ];
 const CG_REQ_N = IMP_CG.filter((c) => c[2] === 'req').length; // 12 mandatory CarGurus fields
 /** CarGurus name → field (for "Fix") */
@@ -86,7 +89,7 @@ const CG_FIELDS = new Set(IMP_CG.map((c) => c[0]));
 
 const impNorm = (h: string) => String(h || '').toLowerCase().replace(/[^a-z0-9#]/g, '');
 const impGuess = (h: string) => IMP_FIELDS.find((f) => f[2].includes(impNorm(h)))?.[0] || '';
-/** Columns of the file that are not one of the CarGurus columns: kept with each vehicle and added to the CarGurus master CSV. */
+/** Columns of the file that are not one of the CarGurus columns: kept with each vehicle for the website — never sent to CarGurus. */
 const extraColumns = (headers: string[], map: Record<string, string>) =>
   headers.filter((h) => !(map[h] && CG_FIELDS.has(map[h])) && !DEALER_COLS.has(impNorm(h))).slice(0, 60);
 
@@ -302,12 +305,12 @@ function channelsFrom(op: unknown): Channels {
 const channelNames = (c: Channels) => [c.cargurus && 'CarGurus', c.marketplace && 'Facebook Marketplace'].filter(Boolean).join(' & ') || 'Website only';
 
 function downloadTemplate() {
-  // CarGurus columns + the two more Facebook Marketplace needs
+  // the CarGurus vehicle columns (incl. Engine … Doors) + Interior Color, which Facebook Marketplace also needs
   const csv =
-    [...IMP_CG.map((c) => c[1]), 'Body Style', 'Interior Color'].join(',') +
+    [...IMP_CG.map((c) => c[1]), 'Interior Color'].join(',') +
     '\r\n' +
-    '1HGCM82633A004352,Honda,Accord,2003,EX,6995,142000,https://yourdealership.com/photos/accord-1.jpg|https://yourdealership.com/photos/accord-2.jpg,Silver,"One owner, clean history",A100,Automatic,Sunroof | Leather seats,Sedan,Black\r\n' +
-    '2T1BURHE3JC012345,Toyota,Corolla,2018,LE,15990,40210,https://yourdealership.com/photos/corolla-1.png,White,Great fuel economy,C200,CVT,Backup camera | Bluetooth,Sedan,Gray\r\n';
+    '1HGCM82633A004352,Honda,Accord,2003,EX,6995,142000,https://yourdealership.com/photos/accord-1.jpg|https://yourdealership.com/photos/accord-2.jpg,Silver,"One owner, clean history",A100,Automatic,Sunroof | Leather seats,2.4L I4,Gasoline,160,Sedan,FWD,4,Black\r\n' +
+    '2T1BURHE3JC012345,Toyota,Corolla,2018,LE,15990,40210,https://yourdealership.com/photos/corolla-1.png,White,Great fuel economy,C200,CVT,Backup camera | Bluetooth,1.8L I4,Gasoline,132,Sedan,FWD,4,Gray\r\n';
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }));
   a.download = 'inventory-template.csv';
@@ -599,7 +602,7 @@ export default function ImportPage() {
             <ul className="mt-4 list-disc space-y-1.5 pl-5 text-sm text-slate-600">
               {channels?.cargurus && (
                 <li>
-                  All columns are <b>required by CarGurus</b> except Installed Options: every vehicle needs a <b>Trim</b>, <b>Exterior Color</b>, <b>Transmission Type</b> and <b>Dealer comments</b> too.
+                  All columns are <b>required by CarGurus</b> except Installed Options, Engine, Fuel Type, Horsepower, Body Style, Drivetrain and Doors (sent when filled in): every vehicle needs a <b>Trim</b>, <b>Exterior Color</b>, <b>Transmission Type</b> and <b>Dealer comments</b> too.
                 </li>
               )}
               <li>
@@ -756,7 +759,7 @@ export default function ImportPage() {
             {kept.length > 0 && (
               <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
                 <b>{kept.length} additional column{kept.length === 1 ? '' : 's'} kept with your vehicles:</b> {kept.join(', ')}.{' '}
-                <span className="text-blue-800">{R.cgOn ? 'They are not checked by CarGurus and are added at the end of the CarGurus master CSV.' : 'They are saved with each vehicle.'}</span>
+                <span className="text-blue-800">{R.cgOn ? 'They are saved with each vehicle for your website and are never sent to CarGurus.' : 'They are saved with each vehicle.'}</span>
               </div>
             )}
 

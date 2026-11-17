@@ -78,7 +78,7 @@ export function vehicleExtra(v: Vehicle): Record<string, string> {
   return out;
 }
 
-/** Vehicle fields that are not one of the 20 CarGurus columns, shown after them (in this order) when filled in. */
+/** Vehicle details beyond the CarGurus columns (website / other uses only — never written to a CarGurus CSV). */
 const STANDARD_EXTRA: [string, keyof Vehicle & string][] = [
   ['Vehicle Type', 'vehicleType'],
   ['Body Style', 'bodyStyle'],
@@ -101,7 +101,7 @@ const STANDARD_EXTRA: [string, keyof Vehicle & string][] = [
 /**
  * Inventory feeds per dealership, built live from the database:
  *  - inventory.xml (public)
- *  - CarGurus CSV of the website inventory (20 columns, only vehicles passing every CarGurus check)
+ *  - CarGurus CSV of the website inventory (the 26 CarGurus columns, only vehicles passing every CarGurus check)
  * ONE eligibility rule for the XML: published + valid 17-char VIN + at least one public photo + no duplicates.
  */
 @Injectable()
@@ -183,6 +183,13 @@ export class FeedsService {
         stock: v.stockNumber,
         trans: v.transmission,
         options: [...v.features, ...v.safetyFeatures],
+        // CarGurus columns 21-26
+        engine: v.engine,
+        fuel_type: v.fuelType,
+        horsepower: v.horsepower,
+        body_style: v.bodyStyle,
+        drivetrain: v.drivetrain,
+        doors: v.doors,
       };
     });
   }
@@ -266,11 +273,8 @@ export class FeedsService {
   async cargurusFromInventory(tenantId: string) {
     const { t, s, site } = await this.context(tenantId);
     const vehicles = await this.prisma.vehicle.findMany({ where: { tenantId, status: 'PUBLISHED', syndicateCargurus: true }, orderBy: { createdAt: 'desc' } });
+    // the 26 CarGurus columns only: the vehicles' other details / additional columns are not attached
     const records = cg.ingestRows(null, this.inventoryRows(vehicles, site));
-    records.forEach((r, i) => {
-      const ex = vehicleExtra(vehicles[i]);
-      if (Object.keys(ex).length) r._extra = ex;
-    });
     const meta = this.dealerMeta(t, s, site);
     const skipped = records
       .map((r, i) => ({ id: vehicles[i].id, name: [r.year || '', r.make, r.model].join(' ').trim(), issues: Object.values(r._issues).flat() }))
