@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Car, ExternalLink, FileText, Globe, Link2, Lock, RefreshCw, Search, Undo2, Wand2 } from 'lucide-react';
+import { ArrowRight, Car, ExternalLink, FileText, Globe, Image as ImageIcon, Link2, Lock, RefreshCw, Search, Undo2, Wand2 } from 'lucide-react';
 import { UrlRedirects } from '@/components/UrlRedirects';
+import { MediaLibrary } from '@/components/MediaLibrary';
 import { api, mediaUrl, siteUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { money, num } from '@/lib/format';
@@ -217,7 +218,7 @@ export default function SeoManager() {
   const toast = useToast();
   const tenants = useApi<Tenant[]>('/platform/tenants');
   const [selected, setSelected] = useState('');
-  const [tab, setTab] = useState<'pages' | 'vehicles' | 'redirects'>('pages');
+  const [tab, setTab] = useState<'pages' | 'vehicles' | 'redirects' | 'images'>('pages');
   const [vq, setVq] = useState('');
   const [vqLive, setVqLive] = useState('');
   const [vpage, setVpage] = useState(1);
@@ -226,7 +227,7 @@ export default function SeoManager() {
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     if (q.get('dealer')) setSelected(q.get('dealer')!);
-    if (q.get('tab') === 'vehicles' || q.get('tab') === 'redirects') setTab(q.get('tab') as 'vehicles' | 'redirects');
+    if (q.get('tab') === 'vehicles' || q.get('tab') === 'redirects' || q.get('tab') === 'images') setTab(q.get('tab') as 'vehicles' | 'redirects' | 'images');
   }, []);
   useEffect(() => {
     if (!selected && tenants.data?.length) setSelected(tenants.data[0].id);
@@ -310,13 +311,15 @@ export default function SeoManager() {
           { id: 'pages', label: <span className="inline-flex items-center gap-1.5"><FileText className="h-4 w-4" /> Pages & URLs</span> },
           { id: 'vehicles', label: <span className="inline-flex items-center gap-1.5"><Car className="h-4 w-4" /> Vehicle URLs & Meta</span> },
           { id: 'redirects', label: <span className="inline-flex items-center gap-1.5"><Link2 className="h-4 w-4" /> URL Redirects</span> },
+          { id: 'images', label: <span className="inline-flex items-center gap-1.5"><ImageIcon className="h-4 w-4" /> Images</span> },
         ]}
         value={tab}
-        onChange={(v) => setTab(v === 'vehicles' || v === 'redirects' ? v : 'pages')}
+        onChange={(v) => setTab(v === 'vehicles' || v === 'redirects' || v === 'images' ? v : 'pages')}
       />
 
-      {tab !== 'redirects' && seo.error && <ErrorBox error={seo.error} retry={seo.reload} />}
-      {tab !== 'redirects' && !data && !seo.error && <Loading />}
+      {tab !== 'redirects' && tab !== 'images' && seo.error && <ErrorBox error={seo.error} retry={seo.reload} />}
+      {tab !== 'redirects' && tab !== 'images' && !data && !seo.error && <Loading />}
+      {tab === 'images' && selected && <MediaLibrary key={selected} dealerId={selected} dealerName={data?.dealer.name || tenant?.name || ''} siteBase={domainUrl} />}
       {tab === 'redirects' && selected && (
         <UrlRedirects key={selected} dealerId={selected} dealerName={data?.dealer.name || tenant?.name || ''} view={view} />
       )}
@@ -411,23 +414,112 @@ function schemaTemplate(page: PageRow, url: string, dealer: string): string {
   return JSON.stringify(data, null, 2);
 }
 
-/** is the focus keyword used in the title / description / address? */
-function KeywordChecks({ keyword, title, description, path }: { keyword: string; title: string; description: string; path: string }) {
-  const k = keyword.trim().toLowerCase();
-  if (!k) return null;
-  const slug = k.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  const checks: [string, boolean][] = [
-    ['in meta title', title.toLowerCase().includes(k)],
-    ['in meta description', description.toLowerCase().includes(k)],
-    ['in URL path', !!slug && path.toLowerCase().includes(slug)],
-  ];
+/** "a, b" (stored) ⇄ ["a", "b"] (chips) */
+const splitKeywords = (v: string) =>
+  v
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean);
+
+/**
+ * Main keyword(s) as removable chips (like WordPress tags): Enter or "," turns the typed text into a chip,
+ * Backspace in the empty box removes the last one, pasting "a, b, c" adds three. Stored as "a, b, c".
+ */
+function KeywordTags({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  const tags = splitKeywords(value);
+  const [text, setText] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const add = (raw: string) => {
+    const next = [...tags];
+    for (const k of raw.split(',').map((x) => x.replace(/\s+/g, ' ').trim().slice(0, 80)).filter(Boolean)) {
+      if (!next.some((t) => t.toLowerCase() === k.toLowerCase()) && next.length < 30) next.push(k);
+    }
+    if (next.length !== tags.length) onChange(next.join(', '));
+    setText('');
+  };
+  const remove = (i: number) => onChange(tags.filter((_, j) => j !== i).join(', '));
   return (
-    <div className="mt-1.5 flex flex-wrap gap-1.5">
-      {checks.map(([label, ok]) => (
-        <span key={label} className={cx('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold', ok ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500')}>
-          {ok ? '✓' : '–'} {label}
+    <div
+      className="flex min-h-[40px] cursor-text flex-wrap items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1.5 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20"
+      onClick={() => inputRef.current?.focus()}
+    >
+      {tags.map((t, i) => (
+        <span key={t + i} className="inline-flex max-w-full items-center gap-1 rounded-full bg-blue-50 py-0.5 pl-2.5 pr-1 text-[12px] font-semibold text-blue-800 ring-1 ring-blue-200">
+          <span className="truncate">{t}</span>
+          <button
+            type="button"
+            aria-label={`Remove ${t}`}
+            className="flex h-4 w-4 items-center justify-center rounded-full text-blue-500 hover:bg-blue-200 hover:text-blue-900"
+            onClick={(e) => {
+              e.stopPropagation();
+              remove(i);
+            }}
+          >
+            ×
+          </button>
         </span>
       ))}
+      <input
+        ref={inputRef}
+        value={text}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v.includes(',')) add(v);
+          else setText(v);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            add(text);
+          } else if (e.key === 'Backspace' && !text && tags.length) {
+            e.preventDefault();
+            remove(tags.length - 1);
+          }
+        }}
+        onBlur={() => text.trim() && add(text)}
+        onPaste={(e) => {
+          const v = e.clipboardData.getData('text');
+          if (/[,\n]/.test(v)) {
+            e.preventDefault();
+            add(text + v.replace(/\n/g, ','));
+          }
+        }}
+        placeholder={tags.length ? 'Add another keyword…' : placeholder}
+        className="h-7 min-w-[160px] flex-1 border-0 bg-transparent px-1 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+        aria-label="Add a keyword"
+      />
+    </div>
+  );
+}
+
+/** is each keyword used in the title / description / address? */
+function KeywordChecks({ keyword, title, description, path }: { keyword: string; title: string; description: string; path: string }) {
+  const tags = splitKeywords(keyword);
+  if (!tags.length) return null;
+  const t = title.toLowerCase();
+  const d = description.toLowerCase();
+  const pth = path.toLowerCase();
+  const mark = (ok: boolean, label: string) => (
+    <span className={cx('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold', ok ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500')}>
+      {ok ? '✓' : '–'} {label}
+    </span>
+  );
+  return (
+    <div className="mt-2 space-y-1">
+      {tags.map((k) => {
+        const kl = k.toLowerCase();
+        const slug = kl.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        return (
+          <div key={k} className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-0.5 max-w-[220px] truncate text-[11px] font-semibold text-slate-600" title={k}>
+              {k}
+            </span>
+            {mark(t.includes(kl), 'in meta title')}
+            {mark(d.includes(kl), 'in meta description')}
+            {mark(!!slug && pth.includes(slug), 'in URL path')}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -603,8 +695,8 @@ function PagesTab({ data, domainUrl, view, onSaved, toast }: { data: SeoData; do
                   )}
                 </div>
                 <div>
-                  <FieldTop label="Main keyword" right={<span className="text-[11px] text-slate-400">Focus keyword · &lt;meta name=&quot;keywords&quot;&gt;</span>} />
-                  <Input value={d.mainKeyword} onChange={(e) => set(p.key, { mainKeyword: e.target.value })} placeholder={`used cars for sale in ${data.vehicleSettings.dealer.city || '[city]'}`} maxLength={200} />
+                  <FieldTop label="Main keywords" right={<span className="text-[11px] text-slate-400">Press Enter or comma to add · &lt;meta name=&quot;keywords&quot;&gt;</span>} />
+                  <KeywordTags value={d.mainKeyword} onChange={(v) => set(p.key, { mainKeyword: v })} placeholder={`used cars for sale in ${data.vehicleSettings.dealer.city || '[city]'}`} />
                   <KeywordChecks keyword={d.mainKeyword} title={d.metaTitle || p.defaultTitle} description={d.metaDescription || p.defaultDescription} path={effective} />
                 </div>
                 <SchemaField

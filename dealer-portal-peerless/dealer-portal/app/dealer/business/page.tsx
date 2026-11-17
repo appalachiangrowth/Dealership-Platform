@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Check,
@@ -893,21 +893,12 @@ export default function BusinessPage() {
   );
 }
 
-/** a typed favicon address is fine when it is an uploaded file or a web address of an icon / picture */
-function faviconProblem(v: string): string {
-  const s = v.trim();
-  if (!s) return '';
-  if (!(s.startsWith('/uploads/') || /^https?:\/\/[^\s"'<>]+$/i.test(s))) return 'Use a full address that starts with https://';
-  const ext = (s.split(/[?#]/)[0].match(/\.([a-z0-9]{2,5})$/i)?.[1] || '').toLowerCase();
-  if (ext && !['ico', 'png', 'svg', 'webp', 'jpg', 'jpeg', 'gif'].includes(ext)) return 'The address must point to an ICO, PNG, SVG, WebP, JPG or GIF file';
-  return '';
-}
-
 /** Business details › Favicon: the small icon in the browser tab, bookmarks and phone home screens. */
 function FaviconCard({ value, busy, name, onUpload, onChange }: { value: string; busy: boolean; name: string; onUpload: () => void; onChange: (v: string) => void }) {
   const [broken, setBroken] = useState(false);
-  const src = value ? mediaUrl(value) : '';
-  const problem = faviconProblem(value);
+  useEffect(() => setBroken(false), [value]);
+  // what the upload returns is "/uploads/…" (older values may lack the first "/")
+  const src = value ? mediaUrl(/^uploads\//i.test(value) ? `/${value}` : value) : '';
   const icon = (size: number) =>
     busy ? (
       <Loader2 className="animate-spin text-[#2563EB]" style={{ width: size * 0.6, height: size * 0.6 }} />
@@ -951,7 +942,7 @@ function FaviconCard({ value, busy, name, onUpload, onChange }: { value: string;
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className={cx(BTN_S, 'min-h-[38px]')} disabled={busy} onClick={onUpload}>
             <Upload className="h-4 w-4" />
-            {value ? 'Replace' : 'Upload'}
+            {busy ? 'Uploading…' : value ? 'Replace' : 'Upload Favicon'}
           </button>
           {value && (
             <button
@@ -967,28 +958,10 @@ function FaviconCard({ value, busy, name, onUpload, onChange }: { value: string;
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="fav-url" className={LBL}>
-            …or icon address (URL)
-          </label>
-          <div className={cx(FLD, 'min-h-[38px]', problem && 'border-[#DC2626]')}>
-            <input
-              id="fav-url"
-              type="url"
-              className={INP}
-              value={value}
-              onChange={(e) => {
-                setBroken(false);
-                onChange(e.target.value.trim());
-              }}
-              placeholder="https://yourdealership.com/favicon.png"
-            />
-          </div>
-          {problem ? (
-            <span className="text-xs font-medium text-[#B91C1C]">{problem}</span>
-          ) : broken && value ? (
-            <span className="text-xs font-medium text-[#B45309]">This picture could not be loaded. Check the address.</span>
-          ) : null}
-          <span className="text-xs text-[#526077]">Recommended: 32x32 or 64x64 PNG, ICO, or SVG. Without one, your website shows the design's own icon.</span>
+          {broken && value ? <span className="text-xs font-medium text-[#B45309]">This icon could not be shown. Please upload it again.</span> : null}
+          <span className="text-xs text-[#526077]">
+            Recommended: 32x32 or 64x64 PNG, ICO, or SVG. Click Save to show it on your whole website. Without one, your website shows the design&apos;s own icon.
+          </span>
         </div>
       </div>
     </section>

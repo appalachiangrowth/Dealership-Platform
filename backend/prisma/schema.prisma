@@ -624,10 +624,18 @@ model MediaFile {
   originalName String   @default("")
   uploadedBy   String   @default("")
   createdAt    DateTime @default(now())
+  /// Platform Admin › SEO & URLs › Images (attachment details). altText / title are added to this picture's <img>
+  /// on the dealer website when the design gives none.
+  altText       String    @default("")
+  title         String    @default("")
+  caption       String    @default("")
+  description   String    @default("")
+  metaUpdatedAt DateTime?
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, createdAt])
+  @@index([tenantId, url])
 }
 
 // ───────────────────────── CarGurus pipeline ─────────────────────────

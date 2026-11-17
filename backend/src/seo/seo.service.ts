@@ -523,7 +523,7 @@ export class SeoService {
             if (c && !/^https?:\/\//i.test(c)) throw new BadRequestException(`${label}: the canonical URL must be a full address (https://…).`);
             return c;
           })(),
-          mainKeyword: str(p.mainKeyword, 200),
+          mainKeyword: cleanKeywords(p.mainKeyword),
           schemaMarkup: cleanSchemaMarkup(p.schemaMarkup, label),
         },
       });
@@ -829,4 +829,28 @@ export function cleanSchemaMarkup(v: unknown, label: string): string {
     throw new BadRequestException(`${label}: the schema markup must be a JSON object such as {"@context": "https://schema.org", "@type": "AutoDealer", …}.`);
   }
   return text;
+}
+
+/**
+ * Main keyword(s) of a page: a list of tags (Platform Admin › Pages & URLs) stored as "keyword 1, keyword 2" —
+ * exactly what <meta name="keywords"> needs. Accepts an array or a comma-separated text; duplicates removed.
+ */
+export function cleanKeywords(v: unknown): string {
+  const list = (Array.isArray(v) ? v : String(v ?? '').split(/[,\n]/))
+    .map((k) => String(k ?? '').replace(/[\u0000-\u001f<>"]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80))
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const k of list) {
+    if (seen.has(k.toLowerCase())) continue;
+    seen.add(k.toLowerCase());
+    out.push(k);
+  }
+  let s = '';
+  for (const k of out.slice(0, 30)) {
+    const next = s ? `${s}, ${k}` : k;
+    if (next.length > 600) break;
+    s = next;
+  }
+  return s;
 }

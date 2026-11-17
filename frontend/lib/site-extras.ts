@@ -3,6 +3,9 @@
  *   · favicon   — the dealership's own browser-tab icon (Business details › Favicon), and /favicon.ico never 404s
  *   · rich blog — articles written in the dealer portal's rich text editor are shown with their formatting
  *                 (headings, colours, lists, images …) in every design, see richPostRuntime()
+ *   · alt text  — alt text / title saved in Platform Admin › SEO & URLs › Images go on every <img> of that picture
+ *                 that has none of its own: in the page HTML (applyMediaMeta) and in what the design draws later
+ *                 from inventory.json (richPostRuntime)
  */
 import { h } from './php';
 import { isRichHtml, sanitizeRichHtml } from './rich-html';
@@ -45,6 +48,39 @@ export function applyFavicon(html: string, raw: unknown): string {
   const head = html.slice(0, end).replace(/<link\b[^>]*\brel\s*=\s*["']?(?:shortcut icon|icon|apple-touch-icon(?:-precomposed)?|mask-icon)["']?[^>]*>/gi, '');
   const out = head + html.slice(end);
   return /<head[^>]*>/i.test(out) ? out.replace(/<head[^>]*>/i, (m) => m + faviconTags(href)) : faviconTags(href) + out;
+}
+
+export type MediaMeta = Record<string, { a?: string; t?: string }>;
+
+/** "/uploads/x.jpg?w=800", "https://site/uploads/x.jpg", "uploads/x.jpg" → "/uploads/x.jpg" ("" = not an uploaded file) */
+export function mediaKey(src: string): string {
+  const v = String(src || '');
+  const i = v.indexOf('uploads/');
+  if (i < 0 || (i > 0 && v[i - 1] !== '/')) return '';
+  return '/' + v.slice(i).split(/[?#]/)[0];
+}
+
+/**
+ * Pictures in the page HTML: an <img> of an uploaded picture with no (or an empty) alt text gets the alt text saved
+ * for it, and its title when it has none. Pictures inside scripts (design templates) are handled in the browser.
+ */
+export function applyMediaMeta(html: string, meta: MediaMeta | undefined | null): string {
+  if (!meta || !Object.keys(meta).length || !html.includes('uploads/')) return html;
+  return html.replace(/<img\b([^>]*)>/gi, (tag, attrs: string) => {
+    const src = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(attrs);
+    if (!src) return tag;
+    const m = meta[mediaKey(src[1] ?? src[2] ?? '')];
+    if (!m) return tag;
+    let a = attrs;
+    if (m.a) {
+      const alt = /\salt\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(a);
+      if (!alt) a = ` alt="${h(m.a)}" data-pa-alt="1"` + a;
+      else if (!(alt[1] ?? alt[2] ?? '').trim()) a = a.replace(alt[0], ` alt="${h(m.a)}" data-pa-alt="1"`);
+    }
+    if (m.t && !/\stitle\s*=/i.test(a)) a = ` title="${h(m.t)}" data-pa-title="1"` + a;
+    const selfClose = /\/\s*$/.test(a);
+    return `<img${selfClose ? a.replace(/\/\s*$/, '') : a}${selfClose ? ' /' : ''}>`;
+  });
 }
 
 /** /favicon.ico: the dealership's favicon (302), else the neutral icon — never a 404 */
@@ -95,23 +131,30 @@ const ARTICLE_CSS =
 export function richPostRuntime(): string {
   return (
     `<style data-pa-article>${ARTICLE_CSS}</style>` +
-    '<script data-pa>(function(){if(window.__paRich)return;window.__paRich=1;var M=[],T=0;' +
+    '<script data-pa>(function(){if(window.__paRich)return;window.__paRich=1;var M=[],T=0,MM=null;' +
     'function N(s){return String(s||"").replace(/\\s+/g,"")}' +
     'function take(d){try{(d&&d.posts||[]).forEach(function(p){if(!p||!p.contentHtml||!p.content)return;var k=String(p.id);' +
-    'for(var i=0;i<M.length;i++)if(M[i].k===k)return;var t=String(p.content).split(/\\n\\s*\\n/).map(N).filter(Boolean);if(t.length)M.push({k:k,t:t,h:String(p.contentHtml)})});if(M.length)go()}catch(e){}}' +
+    'for(var i=0;i<M.length;i++)if(M[i].k===k)return;var t=String(p.content).split(/\\n\\s*\\n/).map(N).filter(Boolean);if(t.length)M.push({k:k,t:t,h:String(p.contentHtml)})});' +
+    'if(d&&d.mediaMeta&&typeof d.mediaMeta==="object"){var any=0;for(var q in d.mediaMeta){any=1;break}MM=any?d.mediaMeta:null}if(M.length||MM)go()}catch(e){}}' +
+    // alt text / title of uploaded pictures (Platform Admin › SEO & URLs › Images)
+    'function K(u){u=String(u||"");var i=u.indexOf("uploads/");if(i<0||(i>0&&u.charAt(i-1)!=="/"))return "";return "/"+u.slice(i).split(/[?#]/)[0]}' +
+    'function one(im){var m=MM[K(im.getAttribute("src"))],oa=im.getAttribute("data-pa-alt")==="1",ot=im.getAttribute("data-pa-title")==="1";' +
+    'if(m&&m.a){var a=im.getAttribute("alt");if(!a||!a.trim()||oa){if(a!==m.a)im.setAttribute("alt",m.a);im.setAttribute("data-pa-alt","1")}}else if(oa){im.setAttribute("alt","");im.removeAttribute("data-pa-alt")}' +
+    'if(m&&m.t){if(!im.getAttribute("title")||ot){if(im.getAttribute("title")!==m.t)im.setAttribute("title",m.t);im.setAttribute("data-pa-title","1")}}else if(ot){im.removeAttribute("title");im.removeAttribute("data-pa-title")}}' +
+    'function alts(){if(!MM)return;var ims=document.getElementsByTagName("img");for(var i=0;i<ims.length;i++)one(ims[i])}' +
     'function inv(u){return /(^|\\/)inventory\\.json([?#]|$)/.test(String(u||""))}' +
     'var F=window.fetch;if(F){window.fetch=function(i){var u=typeof i==="string"?i:(i&&i.url)||"",r=F.apply(this,arguments);' +
     'if(inv(u)&&r&&r.then)r.then(function(x){try{x.clone().json().then(take,function(){})}catch(e){}},function(){});return r}}' +
     'var X=window.XMLHttpRequest&&XMLHttpRequest.prototype;if(X){var O=X.open,S=X.send;X.open=function(m,u){this.__paInv=inv(u);return O.apply(this,arguments)};' +
     'X.send=function(){var x=this;function d(){if(x.__paDone||x.readyState!==4)return;x.__paDone=1;try{if(x.status>=200&&x.status<300)take(JSON.parse(x.responseText))}catch(e){}}' +
     'if(x.__paInv&&x.addEventListener)x.addEventListener("load",d);var r=S.apply(this,arguments);if(x.__paInv)d();return r}}' +
-    'function apply(){T=0;var ps=document.getElementsByTagName("p"),n=[],i,j;for(i=0;i<ps.length;i++)n.push(N(ps[i].textContent));' +
+    'function apply(){T=0;alts();if(!M.length)return;var ps=document.getElementsByTagName("p"),n=[],i,j;for(i=0;i<ps.length;i++)n.push(N(ps[i].textContent));' +
     'M.forEach(function(e){var best=null;for(i=0;i<ps.length;i++){if(n[i]!==e.t[0])continue;var p=ps[i];if(p.closest&&p.closest(".pa-article"))continue;' +
     'var run=[p],s=p,ok=1;for(j=1;j<e.t.length;j++){s=s.nextElementSibling;if(!s||s.tagName!=="P"||N(s.textContent)!==e.t[j]){ok=0;break}run.push(s)}if(ok)best=run}' +
     'if(!best)return;var b=document.createElement("div");b.className="pa-article";b.innerHTML=e.h;best[0].parentNode.insertBefore(b,best[0]);' +
     'best.forEach(function(x){x.parentNode&&x.parentNode.removeChild(x)});ps=document.getElementsByTagName("p");n=[];for(i=0;i<ps.length;i++)n.push(N(ps[i].textContent))})}' +
     'function go(){if(!T)T=setTimeout(apply,40)}' +
-    'if(window.MutationObserver)new MutationObserver(function(){if(M.length)go()}).observe(document.documentElement,{childList:true,subtree:true});' +
+    'if(window.MutationObserver)new MutationObserver(function(){if(M.length||MM)go()}).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:["src"]});' +
     '})();</script>'
   );
 }

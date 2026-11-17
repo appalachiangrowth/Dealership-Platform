@@ -183,7 +183,11 @@ export function cleanSettingsPatch(
       }
       case 'favicon': {
         // an uploaded file (/uploads/…) or a web address; when the address names a file type it must be an icon / picture
-        const s = clean(v, f.max);
+        let s = clean(v, f.max);
+        // what the upload returns ("/uploads/…"), "uploads/…", or the full address of an uploaded file
+        if (/^uploads\//i.test(s)) s = '/' + s;
+        const up = /^https?:\/\/[^/]+(\/(?:api\/)?uploads\/.+)$/i.exec(s);
+        if (up) s = up[1].replace(/^\/api\//, '/');
         if (s === '') data[k] = '';
         else if (!(s.startsWith('/uploads/') || /^https?:\/\/[^\s"'<>]+$/i.test(s))) invalid.push(k);
         else {

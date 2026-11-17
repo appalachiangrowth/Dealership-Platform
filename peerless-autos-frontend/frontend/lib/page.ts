@@ -19,6 +19,8 @@ export interface ThemeContext {
   pages?: { slug: string; title: string; navLabel: string; showInNav: boolean; navOrder: number; noindex: boolean }[];
   /** the header menu from Pages & SEO › Header menu: top-level entries and dropdowns (null / missing = automatic from `pages`) */
   menu?: MenuEntry[] | null;
+  /** alt text / title per uploaded picture (Platform Admin › SEO & URLs › Images) */
+  mediaMeta?: Record<string, { a?: string; t?: string }>;
 }
 
 /** a header menu entry: a custom page (slug), an address or quick link (url), or a dropdown title; children = its dropdown */

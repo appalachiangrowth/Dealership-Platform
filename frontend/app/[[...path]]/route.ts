@@ -18,7 +18,7 @@ import { outsideScripts, rewriteHashLinks, runtimeScript, spaConf, spaHashForKey
 import { allOn, blockedPaths, featureCss, featureOfPage, flagsOf, hideFeatures, hrefBlocked, markRoot, offText, themeFeatures } from '@/lib/features';
 import { injectNav, renderCustomPage, type CustomPage, type NavItem } from '@/lib/custom-pages';
 import { rel, siteTokens } from '@/lib/tokens';
-import { applyFavicon, cleanInventoryPosts, faviconResponse, richPostRuntime } from '@/lib/site-extras';
+import { applyFavicon, applyMediaMeta, cleanInventoryPosts, faviconResponse, richPostRuntime } from '@/lib/site-extras';
 import { existsSync, statSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join, normalize } from 'path';
@@ -281,7 +281,7 @@ async function removedPage(req: Request, host: string, links: SeoLinks) {
 async function themeResponse(req: Request, host: string, ctx: ThemeContext, theme: Theme, template: string, o: SeoOpts) {
   const origin = originOf(req);
   const t = siteTokens(ctx.settings, origin);
-  const html = applyFavicon(injectNav(renderPage(ctx, theme, template, origin, false, false), theme, navItems(ctx), '', t), ctx.settings?.faviconUrl);
+  const html = applyMediaMeta(applyFavicon(injectNav(renderPage(ctx, theme, template, origin, false, false), theme, navItems(ctx), '', t), ctx.settings?.faviconUrl), ctx.mediaMeta);
   // rich text blog articles: shown formatted in place of the design's plain paragraphs (lib/site-extras.ts)
   const out = injectHead(await finishHtml(html, ctx, theme, host, origin, { ...o, template }), richPostRuntime());
   return new Response(out, { headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }) });
@@ -382,7 +382,7 @@ async function customPage(req: Request, url: URL, host: string, slug: string, se
     const inv = await backend('/public/inventory.json', host);
     if (inv.ok) vehicles = ((await inv.json()) as { vehicles?: Record<string, unknown>[] }).vehicles || [];
   }
-  let html = applyFavicon(renderCustomPage(ctx, theme, data.page, originOf(req), { vehicles, navPages: navItems(ctx), themePreview, preview: data.preview }), ctx.settings?.faviconUrl);
+  let html = applyMediaMeta(applyFavicon(renderCustomPage(ctx, theme, data.page, originOf(req), { vehicles, navPages: navItems(ctx), themePreview, preview: data.preview }), ctx.settings?.faviconUrl), ctx.mediaMeta);
   if (!data.preview && !themePreview) html = await finishHtml(html, ctx, theme, host, originOf(req), seoOpts);
   return new Response(html, {
     headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': data.preview || themePreview ? 'no-store' : 'no-cache' }),
@@ -543,7 +543,7 @@ async function page(req: Request, { params }: Ctx) {
   // menu links of the custom pages (not in the editor preview: the dealer edits the theme's own texts there)
   let html = injectNav(renderPage(ctx, theme, r, originOf(req), themePreview, live), theme, live ? [] : navItems(ctx), '', siteTokens(ctx.settings, originOf(req)));
   if (!themePreview && !live) html = await finishHtml(html, ctx, theme, host, originOf(req), { seo: seoOn, template: r, path: r === 'index.html' ? '' : undefined });
-  html = injectHead(applyFavicon(html, ctx.settings?.faviconUrl), richPostRuntime());
+  html = injectHead(applyMediaMeta(applyFavicon(html, ctx.settings?.faviconUrl), ctx.mediaMeta), richPostRuntime());
   return new Response(html, {
     headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': themePreview || live ? 'no-store' : 'no-cache' }),
   });

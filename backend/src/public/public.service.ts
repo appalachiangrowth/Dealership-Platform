@@ -5,6 +5,7 @@ import { ContentService } from '../content/content.service.js';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service.js';
 import { clean } from '../common/util.js';
 import { isRichHtml, richHtmlToText } from '../posts/rich-html.js';
+import { mediaMetaFor } from '../media/media-meta.js';
 import type { Prisma, Tenant } from '../generated/prisma/client.js';
 import { publishedMenuFor, publishedPagesFor } from '../site-pages/site-pages.service.js';
 
@@ -207,6 +208,8 @@ export class PublicService {
       pages,
       /** the header menu from Pages & SEO › Header menu (top-level links + dropdowns); null = automatic from `pages` */
       menu: await publishedMenuFor(this.prisma, t.id, pages),
+      /** alt text / title per picture (Platform Admin › SEO & URLs › Images), for <img> tags without their own */
+      mediaMeta: await mediaMetaFor(this.prisma, t.id),
     };
   }
 
@@ -281,6 +284,8 @@ export class PublicService {
       })),
       leadForm: leadFormFor(tenant?.leadForm ?? null, await this.tenants.features(t)),
       updated: updated.getTime() ? updated.toISOString().replace(/\.\d{3}Z$/, 'Z') : '',
+      /** alt text / title per picture, used by the website for pictures the design draws (lib/site-extras.ts) */
+      mediaMeta: await mediaMetaFor(this.prisma, t.id),
     };
   }
 
