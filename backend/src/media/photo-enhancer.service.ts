@@ -3,25 +3,24 @@ import { createHash } from 'crypto';
 import { existsSync } from 'fs';
 import { cpus } from 'os';
 import { isAbsolute, join } from 'path';
-import { CUSTOM, CUSTOM_LAYOUT, DEFAULT_PRESET, PRESET_MAP, PRESETS, TRANSPARENT, TRANSPARENT_LAYOUT, type StudioPreset } from './studio-backgrounds.js';
+import { CUSTOM, CUSTOM_LAYOUT, DEFAULT_PRESET, PRESET_MAP, PRESETS, TRANSPARENT, TRANSPARENT_CLEAN, TRANSPARENT_LAYOUT, type StudioPreset } from './studio-backgrounds.js';
 
 /**
  * VEHICLE PHOTO STUDIO (background replacement)
  *
  * 1. CUT-OUT (slow part, once per photo, cached): the vehicle is separated from its background with a segmentation
- *    model, then the mask is cleaned so ONLY the whole vehicle stays:
- *      - stray pieces (other cars, poles, lot clutter) not attached to the vehicle are removed,
- *      - faint left-overs around it are cleared (no halo, no "ghost" of the old background),
- *      - closed holes inside the vehicle (windows the model left out) are filled, so the glass keeps its own
- *        reflections instead of turning white or showing the new background through it,
- *      - the soft anti-aliased edge stays, and its colour is taken from the vehicle (no grey / green fringe),
- *      - the vehicle gets a gentle, uniform exposure / contrast correction (same curve on R, G and B: the paint
- *        colour and plate are not changed, nothing is painted or generated).
- * 2. COMPOSITE (fast, well under a second): the cut-out is placed on one of the studio scenes (studio-backgrounds.ts),
- *    a custom photo, or nothing (transparent PNG), standing on the floor line, with
- *      - a contact shadow traced from the real bottom outline (darkest under the tyres, lighter under the body),
- *      - a soft ambient shadow, and on shiny floors a fading reflection,
- *      - the scene's light matched with a small exposure gain.
+ *    model, then the mask is cleaned so ONLY the photographed vehicle stays (see refineMask):
+ *      - narrow bridges to parked cars behind it are broken (morphological opening of the confident core) and the
+ *        centred piece is kept; large lobes rising above the body's outline (a hood / roof behind the fender or
+ *        A-pillar) are pruned, while mirrors, spoiler, roof rails, bumper lips and wheels are kept;
+ *      - semi-transparent "ghosts" (uncertain model pixels) only count in a thin band around the vehicle;
+ *      - closed holes (windows the model left out) are filled, so the glass keeps its own reflections;
+ *      - the edge is pulled in ~1.6 px (0.5 px at the tyre contact line) with a smooth ~2.5 px feather, and the colour
+ *        of the edge band comes from the vehicle 4.5 px+ inside (no sky / asphalt / neighbour-car fringe);
+ *      - gentle exposure / contrast (brightness curve, colour ratios kept: paint and plate unchanged).
+ * 2. COMPOSITE (fast): the cut-out is placed on a studio scene (studio-backgrounds.ts), a custom photo, or nothing
+ *    (transparent PNG, with or without shadow), with a contact shadow + ambient occlusion and (shiny floors) a
+ *    reflection that follow the vehicle's own ground line (the line through its tyres — sloped in 3/4 views).
  *    Switching scenes re-uses the cached cut-out: no second segmentation.
  *
  * Runs on this server, offline: sharp (Apache-2.0), onnxruntime-node (MIT) and the ISNet "general use" model
@@ -370,15 +369,16 @@ export class VehiclePhotoEnhancerService implements OnModuleDestroy {
 
     const raw = await this.predictMask(work.data, W, H);
     if (!raw) return { ok: false, reason: 'no vehicle found in the photo' };
-    const alpha = await refineMask(sharp, raw, W, H);
-    if (!alpha) return { ok: false, reason: 'no vehicle found in the photo' };
+    const refined = await refineMask(sharp, raw, W, H);
+    if (!refined) return { ok: false, reason: 'no vehicle found in the photo' };
+    const alpha = refined.alpha;
     const box = subjectBox(alpha, W, H);
     if (!box) return { ok: false, reason: 'no vehicle found in the photo' };
     const check = isExteriorShot(box, W, H);
     if (check) return { ok: false, reason: check };
 
     // edge colour from the vehicle itself (no fringe of the old background), then the gentle exposure correction
-    const rgb = await decontaminateEdges(sharp, work.data, alpha, W, H);
+    const rgb = await decontaminateEdges(sharp, work.data, alpha, refined.dist, W, H);
     autoTone(rgb, alpha);
 
     const bw = box.x1 - box.x0 + 1;
@@ -404,7 +404,11 @@ export class VehiclePhotoEnhancerService implements OnModuleDestroy {
     const hit = this.bgCache.get(k);
     if (hit) return hit;
     const sharp = this.sharp!;
-    let png = await sharp(Buffer.from(p.svg(w, h))).resize(w, h, { fit: 'cover' }).removeAlpha().png({ compressionLevel: 2 }).toBuffer();
+    // drawn at most 1600 px wide (the scenes are soft light and blur, so scaling up loses nothing visible) — faster
+    const scale = Math.min(1, 1600 / w);
+    const dw = Math.round(w * scale);
+    const dh = Math.round(h * scale);
+    let png = await sharp(Buffer.from(p.svg(dw, dh))).resize(w, h, { fit: 'fill', kernel: 'lanczos3' }).removeAlpha().png({ compressionLevel: 2 }).toBuffer();
     const sigma = (p.blur / 100) * w;
     if (sigma >= 0.6) png = await sharp(png).blur(sigma).removeAlpha().png({ compressionLevel: 2 }).toBuffer();
     this.bgCache.set(k, png);
@@ -420,9 +424,10 @@ export class VehiclePhotoEnhancerService implements OnModuleDestroy {
     const sharp = await this.loadSharp();
     if (!sharp) throw new Error('image packages are not installed');
     const want = choice.background || '';
-    const id = want === TRANSPARENT ? TRANSPARENT : want === CUSTOM && choice.custom ? CUSTOM : PRESET_MAP.has(want) ? want : DEFAULT_PRESET;
+    const id = want === TRANSPARENT || want === TRANSPARENT_CLEAN ? want : want === CUSTOM && choice.custom ? CUSTOM : PRESET_MAP.has(want) ? want : DEFAULT_PRESET;
+    const transparent = id === TRANSPARENT || id === TRANSPARENT_CLEAN;
     const preset = PRESET_MAP.get(id);
-    const L: Layout = preset ?? (id === TRANSPARENT ? TRANSPARENT_LAYOUT : CUSTOM_LAYOUT);
+    const L: Layout = preset ?? (transparent ? TRANSPARENT_LAYOUT : CUSTOM_LAYOUT);
 
     // canvas: the photo's own aspect ratio (4:3 … 2.1:1), long side 1600 … 2400 px
     let aspect = c.W / c.H;
@@ -455,27 +460,19 @@ export class VehiclePhotoEnhancerService implements OnModuleDestroy {
 
     const layers: Record<string, unknown>[] = [];
     // shiny floor: the vehicle mirrored below the tyres, fading out
+    const gl = groundLine(subRaw, sw, sh);
+    // shiny floor: the vehicle mirrored at its own ground line, fading out
     if (L.reflection > 0 && groundY < OH - 2) {
-      const rh = Math.max(2, Math.min(OH - groundY, sh, Math.round(sh * 0.42)));
-      const flipped = await sharp(subRaw, { raw: { width: sw, height: sh, channels: 4 } })
-        .flip()
-        .extract({ left: 0, top: 0, width: sw, height: rh })
-        .raw()
-        .toBuffer();
-      for (let y = 0; y < rh; y++) {
-        const f = L.reflection * Math.pow(1 - y / rh, 2);
-        for (let x = 0, i = y * sw * 4 + 3; x < sw; x++, i += 4) flipped[i] = Math.round(flipped[i] * f);
-      }
-      const refl = await sharp(flipped, { raw: { width: sw, height: rh, channels: 4 } }).blur(Math.max(1, sh * 0.009)).png().toBuffer();
-      layers.push({ input: refl, left, top: groundY - 1 });
+      const rh = Math.max(2, Math.min(OH - groundY, Math.round(sh * 0.42)));
+      layers.push({ input: await floorReflection(sharp, subRaw, gl, sw, sh, rh, L.reflection), left, top });
     }
-    // ground shadow traced from the vehicle's bottom outline
-    layers.push({ input: await groundShadow(sharp, subRaw, sw, sh, left, top, groundY, OW, OH, L.shadow), left: 0, top: 0 });
+    // contact shadow + ambient occlusion along the ground line (not on the "clean" transparent cut-out)
+    if (id !== TRANSPARENT_CLEAN && L.shadow > 0) layers.push({ input: await groundShadow(sharp, gl, sw, sh, left, top, OW, OH, L.shadow), left: 0, top: 0 });
     layers.push({ input: subject, left, top });
 
     let out: Buffer;
     let mime: 'image/jpeg' | 'image/png' = 'image/jpeg';
-    if (id === TRANSPARENT) {
+    if (transparent) {
       out = await sharp({ create: { width: OW, height: OH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
         .composite(layers)
         .png({ compressionLevel: 6 })
@@ -529,123 +526,262 @@ export class VehiclePhotoEnhancerService implements OnModuleDestroy {
 
 /* ---------------- mask clean-up ---------------- */
 
-/**
- * Raw model mask → final alpha (W × H), or null when nothing solid is left:
- *  1. soft threshold (faint noise → 0, nearly solid → 255, the anti-aliased edge stays soft);
- *  2. ONLY the vehicle: the largest solid piece plus small pieces next to it / pieces inside its box (a mirror or
- *     antenna the model drew detached); everything else (other cars, people, poles) goes;
- *  3. no left-overs: soft pixels away from the kept vehicle are cleared (no halo / smudge of the old lot);
- *  4. glass: closed holes inside the vehicle (up to 18 % of its area: windows, gaps the model missed) are filled, so
- *     the windows keep their own reflections instead of showing the new background.
- */
-export async function refineMask(sharp: SharpFn, raw: Buffer, W: number, H: number): Promise<Buffer | null> {
-  const n = W * H;
-  const a = Buffer.alloc(n);
-  for (let i = 0; i < n; i++) {
-    const v = raw[i];
-    a[i] = v < 32 ? 0 : v > 224 ? 255 : Math.round(((v - 32) / 192) * 255);
-  }
+type Mask = Uint8Array;
 
-  // 2. connected solid pieces (4-neighbour)
+/** approximate Euclidean distance (px) from every non-zero pixel of m to the nearest zero pixel (image edge: no bound) */
+export function distInside(m: Mask, W: number, H: number): Float32Array {
+  const n = W * H;
+  const d = new Float32Array(n);
+  const INF = 1e9;
+  const D2 = Math.SQRT2;
+  for (let i = 0; i < n; i++) d[i] = m[i] ? INF : 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0, i = y * W; x < W; x++, i++) {
+      if (!d[i]) continue;
+      let v = d[i];
+      if (x > 0 && d[i - 1] + 1 < v) v = d[i - 1] + 1;
+      if (y > 0) {
+        if (d[i - W] + 1 < v) v = d[i - W] + 1;
+        if (x > 0 && d[i - W - 1] + D2 < v) v = d[i - W - 1] + D2;
+        if (x < W - 1 && d[i - W + 1] + D2 < v) v = d[i - W + 1] + D2;
+      }
+      d[i] = v;
+    }
+  for (let y = H - 1; y >= 0; y--)
+    for (let x = W - 1, i = y * W + W - 1; x >= 0; x--, i--) {
+      if (!d[i]) continue;
+      let v = d[i];
+      if (x < W - 1 && d[i + 1] + 1 < v) v = d[i + 1] + 1;
+      if (y < H - 1) {
+        if (d[i + W] + 1 < v) v = d[i + W] + 1;
+        if (x < W - 1 && d[i + W + 1] + D2 < v) v = d[i + W + 1] + D2;
+        if (x > 0 && d[i + W - 1] + D2 < v) v = d[i + W - 1] + D2;
+      }
+      d[i] = v;
+    }
+  return d;
+}
+
+/** pixels within r px of m (dilation) */
+function dilate(m: Mask, W: number, H: number, r: number): Mask {
+  const inv = new Uint8Array(W * H);
+  for (let i = 0; i < inv.length; i++) inv[i] = m[i] ? 0 : 1;
+  const d = distInside(inv, W, H);
+  const out = new Uint8Array(W * H);
+  for (let i = 0; i < out.length; i++) out[i] = m[i] || d[i] <= r ? 1 : 0;
+  return out;
+}
+
+type Piece = { id: number; area: number; x0: number; y0: number; x1: number; y1: number; sx: number; sy: number; border: boolean };
+
+/** 4-connected pieces of m: label per pixel (-1 = none) and their stats */
+function pieces(m: Mask, W: number, H: number): { label: Int32Array; list: Piece[] } {
+  const n = W * H;
   const label = new Int32Array(n).fill(-1);
   const stack = new Int32Array(n);
-  const pieces: { area: number; x0: number; y0: number; x1: number; y1: number }[] = [];
+  const list: Piece[] = [];
   for (let s = 0; s < n; s++) {
-    if (a[s] < 128 || label[s] >= 0) continue;
-    const id = pieces.length;
-    const pc = { area: 0, x0: W, y0: H, x1: 0, y1: 0 };
+    if (!m[s] || label[s] >= 0) continue;
+    const pc: Piece = { id: list.length, area: 0, x0: W, y0: H, x1: 0, y1: 0, sx: 0, sy: 0, border: false };
     let sp = 0;
     stack[sp++] = s;
-    label[s] = id;
+    label[s] = pc.id;
     while (sp) {
       const p = stack[--sp];
       const x = p % W;
       const y = (p - x) / W;
       pc.area++;
+      pc.sx += x;
+      pc.sy += y;
       if (x < pc.x0) pc.x0 = x;
       if (x > pc.x1) pc.x1 = x;
       if (y < pc.y0) pc.y0 = y;
       if (y > pc.y1) pc.y1 = y;
-      if (x > 0 && a[p - 1] >= 128 && label[p - 1] < 0) (label[p - 1] = id), (stack[sp++] = p - 1);
-      if (x < W - 1 && a[p + 1] >= 128 && label[p + 1] < 0) (label[p + 1] = id), (stack[sp++] = p + 1);
-      if (y > 0 && a[p - W] >= 128 && label[p - W] < 0) (label[p - W] = id), (stack[sp++] = p - W);
-      if (y < H - 1 && a[p + W] >= 128 && label[p + W] < 0) (label[p + W] = id), (stack[sp++] = p + W);
+      if (x === 0 || y === 0 || x === W - 1 || y === H - 1) pc.border = true;
+      if (x > 0 && m[p - 1] && label[p - 1] < 0) (label[p - 1] = pc.id), (stack[sp++] = p - 1);
+      if (x < W - 1 && m[p + 1] && label[p + 1] < 0) (label[p + 1] = pc.id), (stack[sp++] = p + 1);
+      if (y > 0 && m[p - W] && label[p - W] < 0) (label[p - W] = pc.id), (stack[sp++] = p - W);
+      if (y < H - 1 && m[p + W] && label[p + W] < 0) (label[p + W] = pc.id), (stack[sp++] = p + W);
     }
-    pieces.push(pc);
+    list.push(pc);
   }
-  if (!pieces.length) return null;
-  let main = 0;
-  for (let i = 1; i < pieces.length; i++) if (pieces[i].area > pieces[main].area) main = i;
-  const M = pieces[main];
-  if (M.area < n * 0.02) return null;
-  const pad = Math.round(Math.max(W, H) * 0.02);
-  const keep = new Uint8Array(pieces.length);
-  keep[main] = 1;
-  for (let i = 0; i < pieces.length; i++) {
-    const p = pieces[i];
-    if (i === main || p.area < M.area * 0.0005) continue;
-    const touches = p.x1 >= M.x0 - pad && p.x0 <= M.x1 + pad && p.y1 >= M.y0 - pad && p.y0 <= M.y1 + pad;
-    const inside = p.x0 >= M.x0 && p.x1 <= M.x1 && p.y0 >= M.y0 && p.y1 <= M.y1;
-    // inside the vehicle box, or a small piece right next to it — never a large separate object (a car beside it)
-    if (inside || (touches && p.area < M.area * 0.03)) keep[i] = 1;
-  }
-  const solid = Buffer.alloc(n);
+  return { label, list };
+}
+
+/** closed holes of m (not reachable from the image border) up to maxArea px each are filled (windows, gaps) */
+function fillHoles(m: Mask, W: number, H: number, maxArea: number): Mask {
+  const inv = new Uint8Array(W * H);
+  for (let i = 0; i < inv.length; i++) inv[i] = m[i] ? 0 : 1;
+  const { label, list } = pieces(inv, W, H);
+  const fill = new Uint8Array(list.length);
+  for (const p of list) if (!p.border && p.area <= maxArea) fill[p.id] = 1;
+  const out = Uint8Array.from(m);
+  for (let i = 0; i < out.length; i++) if (label[i] >= 0 && fill[label[i]]) out[i] = 1;
+  return out;
+}
+
+const mbox = (m: Mask, W: number, H: number) => {
+  let x0 = W, y0 = H, x1 = -1, y1 = -1, area = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0, i = y * W; x < W; x++, i++)
+      if (m[i]) {
+        area++;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+  return { x0, y0, x1, y1, area };
+};
+
+/**
+ * Raw model mask → final alpha (W × H) + distance of every pixel to the vehicle's edge, or null:
+ *  1. soft threshold; closed holes (windows the model left out) filled so the glass keeps its own reflections;
+ *  2. PRIMARY VEHICLE ONLY — necks broken: the confident core (alpha ≥ 0.85) is opened (eroded, then grown back) so a
+ *     parked car touching the vehicle through a narrow bridge (roofline, mirror, hood edge) becomes a separate piece;
+ *     the piece chosen is the largest weighted by how central it is in the frame (the photographed car is centred);
+ *  3. lobe pruning: a stronger opening gives the compact body; parts sticking out of it are kept when they are
+ *     vehicle-sized details (mirrors, spoiler, roof rails, bumper lips, wheels) and removed when they are large lobes
+ *     rising above the body's outline or leaving its width / the frame (the hood or roof of a car parked behind);
+ *  4. uncertain (0.2 … 0.85) pixels count only in a thin band around the kept vehicle: semi-transparent "ghosts" of
+ *     neighbouring cars, sky or asphalt are dropped;
+ *  5. edge: the boundary is pulled in by ~1.6 px (0.5 px at the tyres' contact line, so the bottom stays solid) and
+ *     given a smooth ~2.5 px feather — no jagged steps, no light fringe.
+ */
+export async function refineMask(sharp: SharpFn, raw: Buffer, W: number, H: number): Promise<{ alpha: Buffer; dist: Float32Array } | null> {
+  const n = W * H;
+  const maxDim = Math.max(W, H);
+  // 1.
+  const B = new Uint8Array(n);
+  const C = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
-    const l = label[i];
-    if (l >= 0) {
-      if (keep[l]) solid[i] = 255;
-      else a[i] = 0;
-    }
+    B[i] = raw[i] >= 128 ? 1 : 0;
+    C[i] = raw[i] >= 217 ? 1 : 0;
   }
+  const bArea = B.reduce((a, v) => a + v, 0);
+  if (bArea < n * 0.02) return null;
+  const Bf = fillHoles(B, W, H, bArea * 0.18);
+  // filled holes (and the soft rim around them) are part of the confident core
+  const holes = new Uint8Array(n);
+  for (let i = 0; i < n; i++) holes[i] = Bf[i] && !B[i] ? 1 : 0;
+  const rim = dilate(holes, W, H, Math.max(4, Math.round(maxDim * 0.004)));
+  for (let i = 0; i < n; i++) if (rim[i] && Bf[i]) C[i] = 1;
+  if (C.reduce((a, v) => a + v, 0) < n * 0.015) for (let i = 0; i < n; i++) C[i] = Bf[i]; // weak model output: use the binary mask
 
-  // 3. soft pixels away from the kept vehicle are cleared
-  const r = Math.max(2, Math.round(Math.max(W, H) / 350));
-  const near = await sharp(solid, { raw: { width: W, height: H, channels: 1 } }).blur(r).toColourspace('b-w').raw().toBuffer();
-  if (near.length === n) for (let i = 0; i < n; i++) if (near[i] < 6 && a[i] < 255) a[i] = 0;
-
-  // 4. closed holes (not connected to the photo's border) inside the vehicle → filled
-  const seen = new Uint8Array(n);
-  let sp = 0;
-  const push = (p: number) => {
-    if (!seen[p] && a[p] < 128) {
-      seen[p] = 1;
-      stack[sp++] = p;
-    }
+  // 2. neck opening + centre-weighted choice
+  const r1 = Math.max(3, Math.round(maxDim * 0.006));
+  const dC = distInside(C, W, H);
+  const E = new Uint8Array(n);
+  for (let i = 0; i < n; i++) E[i] = dC[i] > r1 ? 1 : 0;
+  let { label, list } = pieces(E, W, H);
+  const salience = (p: Piece) => {
+    const cx = p.sx / p.area / W - 0.5;
+    const cy = p.sy / p.area / H - 0.55;
+    return p.area * Math.exp(-((cx / 0.38) ** 2 + (cy / 0.45) ** 2)) * (p.border && p.area < n * 0.1 ? 0.5 : 1);
   };
-  for (let x = 0; x < W; x++) push(x), push((H - 1) * W + x);
-  for (let y = 0; y < H; y++) push(y * W), push(y * W + W - 1);
-  while (sp) {
-    const p = stack[--sp];
-    const x = p % W;
-    if (x > 0) push(p - 1);
-    if (x < W - 1) push(p + 1);
-    if (p >= W) push(p - W);
-    if (p < n - W) push(p + W);
+  let main: Piece | undefined = list.sort((a, b) => salience(b) - salience(a))[0];
+  let core: Mask;
+  if (main) {
+    const seed = new Uint8Array(n);
+    for (let i = 0; i < n; i++) seed[i] = label[i] === main.id ? 1 : 0;
+    const grown = dilate(seed, W, H, r1 + 0.5);
+    core = new Uint8Array(n);
+    for (let i = 0; i < n; i++) core[i] = grown[i] && C[i] ? 1 : 0;
+  } else core = Uint8Array.from(C);
+
+  // 3. lobe pruning
+  const cb = mbox(core, W, H);
+  if (cb.area < n * 0.015) return null;
+  const R2 = Math.max(r1 * 2, Math.round((cb.x1 - cb.x0 + 1) * 0.03));
+  const dM = distInside(core, W, H);
+  const E2 = new Uint8Array(n);
+  for (let i = 0; i < n; i++) E2[i] = dM[i] > R2 ? 1 : 0;
+  ({ label, list } = pieces(E2, W, H));
+  main = list.sort((a, b) => b.area - a.area)[0];
+  let body: Mask = core;
+  if (main) {
+    const seed = new Uint8Array(n);
+    for (let i = 0; i < n; i++) seed[i] = label[i] === main.id ? 1 : 0;
+    const grown = dilate(seed, W, H, R2 + 0.5);
+    body = new Uint8Array(n);
+    for (let i = 0; i < n; i++) body[i] = grown[i] && core[i] ? 1 : 0;
   }
-  let vehicleArea = 0;
-  for (let i = 0; i < n; i++) if (a[i] >= 128) vehicleArea++;
-  const hole = new Int32Array(n).fill(-1);
-  const holeArea: number[] = [];
-  for (let s = 0; s < n; s++) {
-    if (seen[s] || a[s] >= 128 || hole[s] >= 0) continue;
-    const id = holeArea.length;
-    let area = 0;
-    sp = 0;
-    stack[sp++] = s;
-    hole[s] = id;
-    while (sp) {
-      const p = stack[--sp];
-      area++;
-      const x = p % W;
-      if (x > 0 && !seen[p - 1] && a[p - 1] < 128 && hole[p - 1] < 0) (hole[p - 1] = id), (stack[sp++] = p - 1);
-      if (x < W - 1 && !seen[p + 1] && a[p + 1] < 128 && hole[p + 1] < 0) (hole[p + 1] = id), (stack[sp++] = p + 1);
-      if (p >= W && !seen[p - W] && a[p - W] < 128 && hole[p - W] < 0) (hole[p - W] = id), (stack[sp++] = p - W);
-      if (p < n - W && !seen[p + W] && a[p + W] < 128 && hole[p + W] < 0) (hole[p + W] = id), (stack[sp++] = p + W);
-    }
-    holeArea.push(area);
+  const bb = mbox(body, W, H);
+  const top = new Int32Array(W).fill(-1); // body's top outline per column
+  for (let x = bb.x0; x <= bb.x1; x++)
+    for (let y = bb.y0; y <= bb.y1; y++)
+      if (body[y * W + x]) {
+        top[x] = y;
+        break;
+      }
+  const near = dilate(body, W, H, 2);
+  const prot = new Uint8Array(n);
+  for (let i = 0; i < n; i++) prot[i] = core[i] && !near[i] ? 1 : 0;
+  const pr = pieces(prot, W, H);
+  const keepP = new Uint8Array(pr.list.length);
+  for (const p of pr.list) {
+    let above = 0;
+    let outside = 0;
+    for (let y = p.y0; y <= p.y1; y++)
+      for (let x = p.x0; x <= p.x1; x++) {
+        const i = y * W + x;
+        if (pr.label[i] !== p.id) continue;
+        if (x < bb.x0 || x > bb.x1) outside++;
+        else if (top[x] < 0 || y < top[x]) above++;
+      }
+    const upper = p.sy / p.area < bb.y0 + (bb.y1 - bb.y0) * 0.6;
+    const lobe = upper && (above + outside) / p.area > 0.6 && (p.area > bb.area * 0.025 || outside / p.area > 0.25 || p.border);
+    const stray = p.border && p.area > bb.area * 0.003 && upper;
+    keepP[p.id] = lobe || stray ? 0 : 1;
   }
-  if (holeArea.length) for (let i = 0; i < n; i++) if (hole[i] >= 0 && holeArea[hole[i]] <= vehicleArea * 0.18) a[i] = 255;
-  return a;
+  const veh = new Uint8Array(n);
+  for (let i = 0; i < n; i++) veh[i] = body[i] || (core[i] && near[i]) || (pr.label[i] >= 0 && keepP[pr.label[i]]) ? 1 : 0;
+
+  // 4. uncertain pixels only in a thin band around the vehicle (+ small soft details attached to it)
+  const ringR = Math.max(2, Math.round(maxDim * 0.0025));
+  const ring = dilate(veh, W, H, ringR);
+  const F = new Uint8Array(n);
+  const soft = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (veh[i] || (Bf[i] && ring[i])) F[i] = 1;
+    else if (Bf[i]) soft[i] = 1;
+  }
+  const vb = mbox(F, W, H);
+  const sp = pieces(soft, W, H);
+  const ring2 = dilate(F, W, H, 1.5);
+  for (const p of sp.list) {
+    if (p.area > vb.area * 0.006 || p.border) continue;
+    let touches = false;
+    for (let y = p.y0; y <= p.y1 && !touches; y++)
+      for (let x = p.x0; x <= p.x1; x++) {
+        const i = y * W + x;
+        if (sp.label[i] === p.id && ring2[i]) {
+          touches = true;
+          break;
+        }
+      }
+    if (touches) for (let y = p.y0; y <= p.y1; y++) for (let x = p.x0; x <= p.x1; x++) if (sp.label[y * W + x] === p.id) F[y * W + x] = 1;
+  }
+  const Ff = fillHoles(F, W, H, mbox(F, W, H).area * 0.18);
+
+  // 5. smooth, slightly pulled-in edge
+  const dist = distInside(Ff, W, H);
+  const fb = mbox(Ff, W, H);
+  if (fb.area < n * 0.02) return null;
+  const contactY = fb.y1 - (fb.y1 - fb.y0) * 0.05;
+  const hard = Buffer.alloc(n);
+  for (let y = 0; y < H; y++) {
+    const e = y >= contactY ? 0.5 : 1.6;
+    for (let x = 0, i = y * W; x < W; x++, i++) hard[i] = dist[i] > e ? 255 : 0;
+  }
+  const smooth = await sharp(hard, { raw: { width: W, height: H, channels: 1 } }).blur(1.1).toColourspace('b-w').raw().toBuffer();
+  if (smooth.length !== n) return { alpha: hard, dist };
+  const alpha = Buffer.alloc(n);
+  for (let i = 0; i < n; i++) {
+    const v = (smooth[i] - 64) / 127;
+    alpha[i] = v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255);
+  }
+  return { alpha, dist };
 }
 
 /**
@@ -689,86 +825,166 @@ export function autoTone(rgb: Buffer, alpha: Buffer) {
 }
 
 /**
- * The shadow layer (RGBA, OW × OH, black with alpha), drawn at ¼ size then scaled up:
- *  - contact shadow: for every column of the vehicle, a dark band from its lowest point down to the floor line —
- *    strongest where the vehicle touches the floor (tyres), fading where the body is higher up;
- *  - ambient: a soft wide oval under the whole vehicle.
+ * Where the vehicle meets the floor, per column of the (resized) cut-out: the lower envelope (convex hull from below)
+ * of its lowest solid pixels — the line through the tyres' contact points, which slopes in a 3/4 view. low[x] is the
+ * lowest solid pixel of each column (-1 when the column is empty).
  */
-async function groundShadow(sharp: SharpFn, subRaw: Buffer, sw: number, sh: number, left: number, top: number, groundY: number, OW: number, OH: number, strength: number): Promise<Buffer> {
-  const S = 4;
-  const w = Math.ceil(OW / S);
-  const h = Math.ceil(OH / S);
-  const contact = Buffer.alloc(w * h);
-  const fade = Math.max(2, sh * 0.05);
-  for (let x = 0; x < sw; x++) {
-    let low = -1;
-    for (let y = sh - 1; y >= Math.floor(sh * 0.5); y--)
+export function groundLine(subRaw: Buffer, sw: number, sh: number): { low: Int32Array; ground: Float32Array } {
+  const low = new Int32Array(sw).fill(-1);
+  for (let x = 0; x < sw; x++)
+    for (let y = sh - 1; y >= Math.floor(sh * 0.4); y--)
       if (subRaw[(y * sw + x) * 4 + 3] >= 128) {
-        low = y;
+        low[x] = y;
         break;
       }
-    if (low < 0) continue;
-    const wgt = Math.exp(-(sh - 1 - low) / fade); // how far above the floor this column ends
-    const cx = Math.floor((left + x) / S);
-    if (cx < 0 || cx >= w) continue;
-    const y0 = Math.max(0, Math.floor((top + low - sh * 0.01) / S));
-    const y1 = Math.min(h - 1, Math.ceil((groundY + sh * 0.01) / S));
-    const v = Math.round(255 * wgt);
-    for (let y = y0; y <= y1; y++) {
-      const i = y * w + cx;
-      if (contact[i] < v) contact[i] = v;
+  const pts: [number, number][] = [];
+  for (let x = 0; x < sw; x++) if (low[x] >= 0) pts.push([x, -low[x]]); // y up
+  const hull: [number, number][] = [];
+  for (const p of pts) {
+    while (hull.length >= 2) {
+      const a = hull[hull.length - 2];
+      const b = hull[hull.length - 1];
+      if ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) <= 0) hull.pop();
+      else break;
+    }
+    hull.push(p);
+  }
+  const ground = new Float32Array(sw).fill(sh - 1);
+  if (hull.length) {
+    let k = 0;
+    for (let x = 0; x < sw; x++) {
+      while (k < hull.length - 2 && hull[k + 1][0] < x) k++;
+      const a = hull[k];
+      const b = hull[Math.min(k + 1, hull.length - 1)];
+      const t = b[0] === a[0] ? 0 : Math.max(0, Math.min(1, (x - a[0]) / (b[0] - a[0])));
+      ground[x] = -(a[1] + (b[1] - a[1]) * t);
+      if (x < hull[0][0]) ground[x] = -hull[0][1];
+      if (x > hull[hull.length - 1][0]) ground[x] = -hull[hull.length - 1][1];
     }
   }
-  const cb = await sharp(contact, { raw: { width: w, height: h, channels: 1 } }).blur(Math.max(0.6, (sh * 0.012) / S)).toColourspace('b-w').raw().toBuffer();
-  const src = cb.length === w * h ? cb : contact;
-  const alpha = Buffer.alloc(w * h);
-  const ecx = (left + sw / 2) / S;
-  const ecy = (groundY - sh * 0.01) / S;
-  const rx = (sw * 0.56) / S;
-  const ry = Math.max(2, (sh * 0.085) / S);
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) {
-      const dx = (x - ecx) / rx;
-      const dy = (y - ecy) / ry;
-      const amb = Math.exp(-(dx * dx + dy * dy) * 1.6);
-      alpha[y * w + x] = Math.min(255, Math.round(255 * strength * Math.max(0.9 * (src[y * w + x] / 255), 0.42 * amb)));
-    }
-  const black = Buffer.alloc(w * h * 3);
-  const small = await sharp(black, { raw: { width: w, height: h, channels: 3 } }).joinChannel(alpha, { raw: { width: w, height: h, channels: 1 } }).raw().toBuffer();
-  return sharp(small, { raw: { width: w, height: h, channels: 4 } }).resize(OW, OH, { fit: 'fill', kernel: 'cubic' }).png({ compressionLevel: 1 }).toBuffer();
+  return { low, ground };
 }
 
 /**
- * Colour of every half-transparent edge pixel = average colour of the solid vehicle pixels around it
- * (blur of colour×solid ÷ blur of solid). Solid and fully transparent pixels are not changed.
+ * The shadow layer (RGBA, OW × OH, black with alpha), drawn at ¼ size then scaled up, following the ground line:
+ *  - contact shadow: dark where the vehicle touches the floor (tyres), fading where its underside is higher;
+ *  - ambient occlusion: a tight dark band along the ground line under the whole vehicle;
+ *  - soft shadow: a wide, light band around it (fading past the bumpers).
  */
-async function decontaminateEdges(sharp: SharpFn, rgb: Buffer, alpha: Buffer, W: number, H: number): Promise<Buffer> {
+async function groundShadow(sharp: SharpFn, gl: { low: Int32Array; ground: Float32Array }, sw: number, sh: number, left: number, top: number, OW: number, OH: number, strength: number): Promise<Buffer> {
+  const S = 4;
+  const w = Math.ceil(OW / S);
+  const h = Math.ceil(OH / S);
+  const contact = new Float32Array(w * h);
+  const amb = new Float32Array(w * h);
+  const fade = Math.max(2, sh * 0.03);
+  const sAo = Math.max(1, (sh * 0.022) / S);
+  const sWide = Math.max(2, (sh * 0.07) / S);
+  const ext = Math.round(sw * 0.035);
+  let first = 0;
+  while (first < sw && gl.low[first] < 0) first++;
+  let last = sw - 1;
+  while (last > 0 && gl.low[last] < 0) last--;
+  for (let x = first - ext; x <= last + ext; x++) {
+    const cx = Math.floor((left + x) / S);
+    if (cx < 0 || cx >= w) continue;
+    const xi = Math.max(first, Math.min(last, x));
+    const g = top + gl.ground[xi];
+    const endFade = x < first ? Math.exp(-(((first - x) / (ext * 0.5)) ** 2)) : x > last ? Math.exp(-(((x - last) / (ext * 0.5)) ** 2)) : 1;
+    // ambient occlusion + wide soft shadow, centred just under the ground line
+    const gy = (g + sh * 0.004) / S;
+    for (let y = Math.max(0, Math.floor(gy - 4 * sWide)); y <= Math.min(h - 1, Math.ceil(gy + 4 * sWide)); y++) {
+      const dy = y - gy;
+      const ao = 0.6 * Math.exp(-((dy / sAo) ** 2)) + 0.28 * Math.exp(-((dy / sWide) ** 2));
+      const i = y * w + cx;
+      const v = ao * endFade;
+      if (v > amb[i]) amb[i] = v;
+    }
+    // contact: from the column's lowest point down to the ground line, strongest where they meet
+    if (x >= first && x <= last && gl.low[x] >= 0) {
+      const gap = gl.ground[x] - gl.low[x];
+      const wgt = Math.exp(-gap / fade);
+      const y0 = Math.max(0, Math.floor((top + gl.low[x] - sh * 0.006) / S));
+      const y1 = Math.min(h - 1, Math.ceil((g + sh * 0.006) / S));
+      for (let y = y0; y <= y1; y++) {
+        const i = y * w + cx;
+        if (wgt > contact[i]) contact[i] = wgt;
+      }
+    }
+  }
+  const c8 = Buffer.alloc(w * h);
+  for (let i = 0; i < c8.length; i++) c8[i] = Math.round(contact[i] * 255);
+  const cb = await sharp(c8, { raw: { width: w, height: h, channels: 1 } }).blur(Math.max(0.6, (sh * 0.008) / S)).toColourspace('b-w').raw().toBuffer();
+  const alpha = Buffer.alloc(w * h);
+  for (let i = 0; i < alpha.length; i++) {
+    const c = (cb.length === alpha.length ? cb[i] : c8[i]) / 255;
+    const v = 1 - (1 - 0.95 * c) * (1 - amb[i]);
+    alpha[i] = Math.min(255, Math.round(255 * strength * v));
+  }
+  const black = Buffer.alloc(w * h * 3);
+  const small = await sharp(black, { raw: { width: w, height: h, channels: 3 } }).joinChannel(alpha, { raw: { width: w, height: h, channels: 1 } }).raw().toBuffer();
+  return sharp(small, { raw: { width: w, height: h, channels: 4 } }).resize(OW, OH, { fit: 'fill', kernel: 'cubic' }).blur(0.8).png({ compressionLevel: 1 }).toBuffer();
+}
+
+/**
+ * Floor reflection mirrored at the ground line of every column (right for 3/4 views too), fading with the distance
+ * from the floor. Returned as an RGBA layer of sw × (sh + rh) to place at (left, top).
+ */
+async function floorReflection(sharp: SharpFn, subRaw: Buffer, gl: { ground: Float32Array }, sw: number, sh: number, rh: number, strength: number): Promise<Buffer> {
+  const H2 = sh + rh;
+  const out = Buffer.alloc(sw * H2 * 4);
+  for (let x = 0; x < sw; x++) {
+    const g = gl.ground[x];
+    for (let d = 0; d < rh; d++) {
+      const sy = Math.round(g - d);
+      const ty = Math.round(g + d + 1);
+      if (sy < 0 || ty >= H2) break;
+      const si = (sy * sw + x) * 4;
+      const a = subRaw[si + 3];
+      if (!a) continue;
+      const f = strength * (1 - d / rh) ** 2;
+      const ti = (ty * sw + x) * 4;
+      out[ti] = subRaw[si];
+      out[ti + 1] = subRaw[si + 1];
+      out[ti + 2] = subRaw[si + 2];
+      out[ti + 3] = Math.round(a * f);
+    }
+  }
+  return sharp(out, { raw: { width: sw, height: H2, channels: 4 } }).blur(Math.max(1, sh * 0.008)).png({ compressionLevel: 1 }).toBuffer();
+}
+
+/**
+ * Edge colour clean-up: every pixel near the vehicle's edge (alpha < 255, or within 4.5 px of the edge) takes the
+ * average colour of the solid vehicle pixels 4.5 + px inside — so sky, asphalt or a neighbouring car never shows as a
+ * light / blue fringe along the hood, roof or bumper. Interior pixels are not changed.
+ */
+async function decontaminateEdges(sharp: SharpFn, rgb: Buffer, alpha: Buffer, dist: Float32Array, W: number, H: number): Promise<Buffer> {
   const n = W * H;
   const out = Buffer.from(rgb);
-  let edges = 0;
-  for (let i = 0; i < n; i++) if (alpha[i] > 0 && alpha[i] < 255) edges++;
-  if (!edges) return out;
   const solid = Buffer.alloc(n);
   const masked = Buffer.alloc(n * 3);
   for (let i = 0; i < n; i++) {
-    if (alpha[i] === 255) {
+    if (dist[i] >= 4.5) {
       solid[i] = 255;
       masked[i * 3] = rgb[i * 3];
       masked[i * 3 + 1] = rgb[i * 3 + 1];
       masked[i * 3 + 2] = rgb[i * 3 + 2];
     }
   }
-  const sigma = Math.max(2, Math.round(Math.max(W, H) / 400));
+  const sigma = 2.6;
   const bm = await sharp(masked, { raw: { width: W, height: H, channels: 3 } }).blur(sigma).raw().toBuffer();
   const bs = await sharp(solid, { raw: { width: W, height: H, channels: 1 } }).blur(sigma).toColourspace('b-w').raw().toBuffer();
   if (bm.length !== n * 3 || bs.length !== n) return out;
   for (let i = 0; i < n; i++) {
     const a = alpha[i];
-    if (a === 0 || a === 255 || bs[i] < 8) continue;
+    if (a === 0 || dist[i] >= 4.5 || bs[i] < 6) continue;
     const k = 255 / bs[i];
-    out[i * 3] = Math.min(255, Math.round(bm[i * 3] * k));
-    out[i * 3 + 1] = Math.min(255, Math.round(bm[i * 3 + 1] * k));
-    out[i * 3 + 2] = Math.min(255, Math.round(bm[i * 3 + 2] * k));
+    // fully transparent-ish edge pixels: all from inside; solid pixels near the edge: blended (keeps chrome / trim detail)
+    const mix = a < 255 ? 1 : Math.max(0, Math.min(1, (4.5 - dist[i]) / 3)) * 0.7;
+    for (let c = 0; c < 3; c++) {
+      const v = Math.min(255, bm[i * 3 + c] * k);
+      out[i * 3 + c] = Math.round(out[i * 3 + c] * (1 - mix) + v * mix);
+    }
   }
   return out;
 }

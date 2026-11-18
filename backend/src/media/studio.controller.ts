@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Header, NotFoundException, Param, Post, StreamableFile } from '@nestjs/common';
 import { MediaService } from './media.service.js';
 import { VehiclePhotoEnhancerService } from './photo-enhancer.service.js';
-import { CUSTOM, DEFAULT_PRESET, PRESET_MAP, TRANSPARENT } from './studio-backgrounds.js';
+import { CUSTOM, DEFAULT_PRESET, PRESET_MAP, TRANSPARENT, TRANSPARENT_CLEAN } from './studio-backgrounds.js';
 import { CurrentUser, Perms, Public, TenantId } from '../common/decorators.js';
 import type { AuthUser } from '../common/auth.types.js';
 
@@ -36,7 +36,7 @@ export class StudioController {
 
   private async choice(tenantId: string, b: StudioBody) {
     const background = String(b.background || DEFAULT_PRESET);
-    if (background !== TRANSPARENT && background !== CUSTOM && !PRESET_MAP.has(background)) throw new BadRequestException('Unknown background');
+    if (background !== TRANSPARENT && background !== TRANSPARENT_CLEAN && background !== CUSTOM && !PRESET_MAP.has(background)) throw new BadRequestException('Unknown background');
     const custom = background === CUSTOM ? await this.media.readSource(tenantId, String(b.customBackground || '')) : null;
     return { background, custom };
   }

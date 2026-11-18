@@ -157,7 +157,7 @@ export function PhotoStudio({
   };
 
   const bgName =
-    choice.id === 'transparent' ? 'Transparent cut-out' : choice.id === 'custom' ? 'Custom background' : info?.backgrounds.find((b) => b.id === choice.id)?.name || choice.id;
+    choice.id === 'transparent' ? 'Transparent cut-out (with shadow)' : choice.id === 'transparent-clean' ? 'Transparent cut-out' : choice.id === 'custom' ? 'Custom background' : info?.backgrounds.find((b) => b.id === choice.id)?.name || choice.id;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4" role="dialog" aria-modal="true" aria-label="Photo Studio">
@@ -182,7 +182,7 @@ export function PhotoStudio({
           <div className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[1fr_300px] lg:overflow-hidden">
             {/* viewer */}
             <div className="flex min-h-0 flex-col bg-slate-900 p-3 lg:overflow-y-auto">
-              <div className="relative overflow-auto rounded-xl" style={{ maxHeight: '62vh' }}>
+              <div className={cx('relative rounded-xl', zoom > 1 ? 'overflow-auto' : 'overflow-hidden')} style={{ maxHeight: '62vh' }}>
                 <div ref={viewer} className="relative select-none" style={{ width: `${zoom * 100}%` }}>
                   {preview?.ok ? (
                     <>
@@ -191,7 +191,7 @@ export function PhotoStudio({
                         alt="After"
                         draggable={false}
                         className="block w-full"
-                        style={choice.id === 'transparent' ? { backgroundImage: CHECKER, backgroundSize: '20px 20px', backgroundPosition: '0 0,0 10px,10px -10px,-10px 0' } : undefined}
+                        style={choice.id.startsWith('transparent') ? { backgroundImage: CHECKER, backgroundSize: '20px 20px', backgroundPosition: '0 0,0 10px,10px -10px,-10px 0' } : undefined}
                       />
                       <img src={preview.before} alt="Before" draggable={false} className="absolute inset-0 block h-full w-full" style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }} />
                       <div className="absolute inset-y-0 z-10 w-0.5 cursor-ew-resize bg-white shadow" style={{ left: `${pos}%` }} onPointerDown={drag}>
@@ -281,7 +281,7 @@ export function PhotoStudio({
                       <img src={API_URL + b.thumb} alt="" className="h-full w-full object-cover" />
                     </Tile>
                   ))}
-                  <Tile on={choice.id === 'transparent'} label="Transparent PNG" title="The vehicle on its own, no background" onClick={() => pick({ ...choice, id: 'transparent' })}>
+                  <Tile on={choice.id.startsWith('transparent')} label="Transparent PNG" title="The vehicle on its own, no background" onClick={() => pick({ ...choice, id: choice.id === 'transparent-clean' ? 'transparent-clean' : 'transparent' })}>
                     <div className="h-full w-full" style={{ backgroundImage: CHECKER, backgroundSize: '14px 14px', backgroundPosition: '0 0,0 7px,7px -7px,-7px 0' }}>
                       <Layers className="m-auto h-full w-6 text-slate-400" />
                     </div>
@@ -305,6 +305,17 @@ export function PhotoStudio({
                     )}
                   </Tile>
                 </div>
+                {choice.id.startsWith('transparent') && (
+                  <label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 accent-blue-600"
+                      checked={choice.id === 'transparent'}
+                      onChange={(e) => pick({ ...choice, id: e.target.checked ? 'transparent' : 'transparent-clean' })}
+                    />
+                    Soft ground shadow under the vehicle
+                  </label>
+                )}
                 {choice.customUrl && (
                   <button type="button" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-blue-700" onClick={() => customFile.current?.click()}>
                     <Upload className="h-3.5 w-3.5" /> Use a different custom photo

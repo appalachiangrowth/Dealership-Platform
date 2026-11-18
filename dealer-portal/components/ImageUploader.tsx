@@ -89,7 +89,7 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
   const [picked, setPicked] = useState<string[]>([]);
   const [studioOpen, setStudioOpen] = useState<{ photos: string[]; start: number } | null>(null);
   const bgName =
-    choice.id === 'transparent' ? 'Transparent cut-out' : choice.id === 'custom' ? 'your custom background' : studioInfo?.backgrounds.find((b) => b.id === choice.id)?.name || 'White Cyclorama Studio';
+    choice.id.startsWith('transparent') ? 'a transparent cut-out' : choice.id === 'custom' ? 'your custom background' : studioInfo?.backgrounds.find((b) => b.id === choice.id)?.name || 'White Cyclorama Studio';
   /** "Enhancing vehicle background…" progress while photos are processed one by one */
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const toast = useToast();
