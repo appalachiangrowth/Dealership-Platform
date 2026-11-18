@@ -914,13 +914,11 @@ export default function AiAddVehiclePage() {
   };
 
   const save = async (st: 'PUBLISHED' | 'DRAFT') => {
-    if (st === 'PUBLISHED' && missingReq.length) {
-      toast.error(`Fill in ${missingReq.map((k) => LABEL[k] || 'photos').join(', ')} first, or save it as a draft.`);
-      if (missingReq[0] !== 'photos') goField(missingReq[0]);
-      return;
-    }
-    if (st === 'DRAFT' && !res.v.make && !res.v.model) {
-      toast.error('Enter at least a make or model.');
+    // nothing is required to save or publish (no CarGurus checks): the details marked "Needs you" and photos can be
+    // added later. Only something to recognise the vehicle by is needed.
+    if (!res.v.make && !res.v.model && !res.v.vin) {
+      toast.error('Enter at least a make, model or VIN.');
+      goField('make');
       return;
     }
     if (dup && !window.confirm(`${dup.name} with this VIN is already in your inventory. Save this as a second vehicle anyway?`)) return;
@@ -1494,7 +1492,7 @@ export default function AiAddVehiclePage() {
                 <button type="button" className="btn" disabled={!!saving} onClick={() => void save('DRAFT')}>
                   {savedDraft ? 'Update draft' : 'Save as draft'}
                 </button>
-                <button type="button" className="btn p" disabled={!!saving || missingReq.length > 0} onClick={() => void save('PUBLISHED')}>
+                <button type="button" className="btn p" disabled={!!saving} onClick={() => void save('PUBLISHED')}>
                   {saving ? (
                     <>
                       <span className="spin w" /> {saving}
@@ -1508,7 +1506,7 @@ export default function AiAddVehiclePage() {
                 {savedDraft
                   ? 'Saved as a draft. Publish when you’re ready.'
                   : missingReq.length
-                    ? `${missingReq.length} required detail${missingReq.length > 1 ? 's' : ''} left`
+                    ? `${missingReq.length} detail${missingReq.length > 1 ? 's' : ''} still empty · you can publish now and add ${missingReq.length > 1 ? 'them' : 'it'} later`
                     : `✓ Ready to publish${toCheck.length ? ` · ${toCheck.length} worth a quick look` : ''}`}
               </span>
             </div>
@@ -1603,7 +1601,7 @@ export default function AiAddVehiclePage() {
                   <h2 style={{ margin: 0, fontSize: 16 }}>Ready to publish?</h2>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span className="hint" style={{ fontSize: 13 }}>
-                      Required details
+                      Recommended details
                     </span>
                     <b>
                       {reqDone} of {reqTotal}
@@ -1619,13 +1617,13 @@ export default function AiAddVehiclePage() {
                     <div className="note n-ok" style={{ margin: 4 }}>
                       <span>✓</span>
                       <span>
-                        <b>All required details are filled.</b> You can publish now.
+                        <b>All recommended details are filled.</b> You can publish now.
                       </span>
                     </div>
                   ) : (
                     <>
                       <div className="hint" style={{ color: '#B91C1C', padding: '4px 8px', fontWeight: 700, textTransform: 'uppercase', fontSize: 11, letterSpacing: '.08em' }}>
-                        Still needed ({missingReq.length})
+                        Still empty — optional ({missingReq.length})
                       </div>
                       {missingReq.map((k) => (
                         <button key={k} type="button" className="miss-item" onClick={() => k !== 'photos' && goField(k)}>

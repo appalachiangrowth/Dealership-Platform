@@ -285,7 +285,7 @@ function impProblems(
   // only links that are clearly not photos (.pdf, .html, .mp4 …) are a problem.
   const imgs: string[] = v.images || [];
   if (!raw('images')) cg('Image URLs', 'Missing Image URLs (photo links)');
-  else if (!imgs.length) core('Image URLs', 'No valid photo link (links must start with http:// or https://): saved as a draft without photos', true);
+  else if (!imgs.length) core('Image URLs', 'No valid photo link (links must start with http:// or https://): imported without photos', true);
   for (const u of imgs) {
     const ext = photoExt(u);
     const short = u.length > 60 ? u.slice(0, 57) + '…' : u;
@@ -422,7 +422,9 @@ export default function ImportPage() {
       if (v.stockNumber) byStock[String(v.stockNumber).toLowerCase()] = v;
     }
     const seen = { vin: {}, stock: {} };
-    const cgOn = !!channels?.cargurus;
+    // CarGurus never checks or blocks an import: when it is on in Business details every vehicle is sent to
+    // CarGurus as it is (missing details = empty columns). Only the website's own and the Marketplace checks run.
+    const cgOn = false;
     const mpOn = !!channels?.marketplace;
     // CarGurus columns the file lacks (only when CarGurus is on)
     const missReq = cgOn ? IMP_CG.filter((c) => c[2] === 'req' && !cols[c[0]]) : [];
@@ -467,13 +469,14 @@ export default function ImportPage() {
         const o: V = { _row: r.row, ...r.v };
         const rec = P?.records[r.row - 2];
         if (rec && extraCols.length) o.extra = Object.fromEntries(extraCols.map((h) => [h, rec[h] ?? '']));
-        if (!r.ex && !o.status) o.status = (o.images || []).length ? 'PUBLISHED' : 'DRAFT';
+        // a vehicle without photos is still published: photos can be added later
+        if (!r.ex && !o.status) o.status = 'PUBLISHED';
         return o;
       });
       const enhancePhotos = studioOn && studioStatus?.available !== false;
       const res = await api('/dealer/vehicles/import', { body: { rows: body, enhancePhotos } });
-      // "bad" = imported vehicles that CarGurus will not take yet (only counted when CarGurus is on)
-      const bad = channels?.cargurus ? rows.filter((r) => !r.ok).length : 0;
+      // CarGurus takes every imported vehicle (when it is on in Business details): nothing is held back
+      const bad = 0;
       setDone({ add: res.created, upd: res.updated, left: (R?.rows.length || 0) - rows.length, bad, ready: rows.length - bad, skipped: res.skipped || [] });
       setStep(3);
       toast.ok(`Imported: ${res.created} added, ${res.updated} updated`);
@@ -569,15 +572,19 @@ export default function ImportPage() {
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="font-heading text-base font-bold text-slate-900">What your file needs</h3>
             <p className="mt-1 text-xs font-semibold text-slate-500">
-              Checks for: Website{channels?.cargurus ? ' · CarGurus' : ''}
-              {channels?.marketplace ? ' · Facebook Marketplace' : ''}{' '}
+              Checks for: Website
+              {channels?.marketplace ? ' · Facebook Marketplace' : ''}
+              {channels?.cargurus ? ' · CarGurus is on: every imported vehicle is sent to CarGurus, missing details are sent empty' : ''}{' '}
               <Link href="/dealer/business" className="font-normal text-blue-600 hover:underline">
                 (change where your vehicles are sent in Business details)
               </Link>
             </p>
             {channels?.cargurus ? (
               <>
-                <p className="mt-1 text-sm text-slate-500">One row per vehicle, column names in the first row. These are the columns CarGurus needs (blue = required):</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  One row per vehicle, column names in the first row. These are the CarGurus columns (blue = what CarGurus shows best). None of them is required to import:
+                  whatever your file leaves out is sent to CarGurus empty and can be filled in later.
+                </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {IMP_CG.map((c) => (
                     <span key={c[0]} className={cx('rounded-full px-3 py-1 text-xs font-semibold', c[2] === 'req' ? 'bg-blue-50 text-blue-800 ring-1 ring-blue-200' : 'bg-slate-100 text-slate-600')}>
@@ -600,31 +607,11 @@ export default function ImportPage() {
               </p>
             )}
             <ul className="mt-4 list-disc space-y-1.5 pl-5 text-sm text-slate-600">
-              {channels?.cargurus && (
-                <li>
-                  All columns are <b>required by CarGurus</b> except Installed Options, Engine, Fuel Type, Horsepower, Body Style, Drivetrain and Doors (sent when filled in): every vehicle needs a <b>Trim</b>, <b>Exterior Color</b>, <b>Transmission Type</b> and <b>Dealer comments</b> too.
-                </li>
-              )}
               <li>
-                {channels?.cargurus ? (
-                  <>
-                    <b>VIN</b>: 17 letters/digits (no I, O, Q) · <b>Year</b>: 4 digits · <b>Price</b>: above 0 · <b>Mileage</b>: whole number
-                  </>
-                ) : (
-                  <>
-                    When given: <b>Year</b>: 4 digits · <b>Price</b>: a number above 0 · <b>Mileage</b>: a whole number
-                  </>
-                )}
+                When given: <b>Year</b>: 4 digits · <b>Price</b>: a number above 0 · <b>Mileage</b>: a whole number
               </li>
               <li>
-                <b>Image URLs</b>: full links (https://…), separated by | or commas
-                {channels?.cargurus ? (
-                  <>
-                    , ending in <b>.jpg, .jpeg, .png or .gif</b> (no .webp)
-                  </>
-                ) : (
-                  '. Vehicles without photos are saved as drafts.'
-                )}
+                <b>Image URLs</b>: full links (https://…), separated by | or commas. Vehicles without photos are imported too: add photos later.
               </li>
               <li>
                 Vehicles you already have (same VIN or stock number) are <b>updated</b>, not added twice.
@@ -698,7 +685,14 @@ export default function ImportPage() {
                   sub={R.mpMissCols.length ? `Your file has no ${R.mpMissCols.map((c) => c[1]).join(', ')} column${R.mpMissCols.length === 1 ? '' : 's'}.` : `Has all ${MP_REQ_N} Facebook Marketplace fields. The FB button lists them on Marketplace.`}
                 />
               )}
-              {!R.cgOn && !R.mpOn && <Card3 tone="ok" n={total - coreBad} label="ready for your website" sub="Website only: CarGurus and Marketplace checks are switched off in Business details." />}
+              {!R.cgOn && !R.mpOn && (
+                <Card3
+                  tone="ok"
+                  n={total - coreBad}
+                  label="ready to import"
+                  sub={channels?.cargurus ? 'They go on your website and, as CarGurus is on in Business details, into your CarGurus feed as they are.' : 'They go on your website. Marketplace checks are switched off in Business details.'}
+                />
+              )}
               <Card3
                 tone={R.bad ? 'bad' : undefined}
                 n={R.bad}

@@ -127,7 +127,8 @@ export default function CargurusAudit() {
   const [approve, setApprove] = useState(false);
   const [reject, setReject] = useState(false);
   const [note, setNote] = useState('');
-  const [includeInvalid, setIncludeInvalid] = useState(false);
+  // every vehicle for sale is in the CarGurus file (missing details = empty columns): nothing is left out
+  const includeInvalid = true;
   const [busy, setBusy] = useState(false);
 
   // SFTP Connection Modal & Form States
@@ -154,7 +155,7 @@ export default function CargurusAudit() {
   const [runningDryRun, setRunningDryRun] = useState(false);
   const [dryRunReport, setDryRunReport] = useState<DryRunReport | null>(null);
   /** the "include vehicles with problems" choice the dry run was made with (the approval must use the same file) */
-  const [dryRunIncludeInvalid, setDryRunIncludeInvalid] = useState(false);
+  const [dryRunIncludeInvalid, setDryRunIncludeInvalid] = useState(true);
 
   // Auto-populate SFTP form once data is loaded
   useEffect(() => {
@@ -972,7 +973,7 @@ export default function CargurusAudit() {
               <p className="mt-1 text-xs opacity-90">
                 {dryRunReport.mode === 'live-feed'
                   ? 'Checked the live feed exactly as Re-send / the daily upload sends it.'
-                  : `Checked the exact file "Approve & Sync" would upload${dryRunIncludeInvalid ? ' (vehicles with problems INCLUDED)' : ' (vehicles with problems left out)'}. Nothing was uploaded.`}
+                  : 'Checked the exact file "Approve & Sync" would upload (every vehicle for sale; missing details are empty columns). Nothing was uploaded.'}
               </p>
               {dryRunReport.blockers.length > 0 && (
                 <ul className="mt-2 list-disc space-y-0.5 pl-5 font-semibold">
@@ -1009,11 +1010,11 @@ export default function CargurusAudit() {
                     : 'border-slate-200 bg-slate-50 text-slate-700'
                 )}
               >
-                <span className="text-[10px] font-bold uppercase tracking-wider">Blocked / Flagged</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider">Details to complete</span>
                 <b className="mt-1 block text-2xl font-extrabold">
                   {dryRunReport.summary.blockedCount}
                 </b>
-                <span className="text-[11px] opacity-80">{dryRunReport.summary.excludedFromFile} left out of the file</span>
+                <span className="text-[11px] opacity-80">still sent · empty columns where details are missing</span>
               </div>
 
               <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3">
@@ -1093,10 +1094,10 @@ export default function CargurusAudit() {
             {/* Detailed Flag List */}
             <div>
               <b className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-700">
-                Vehicles with problems ({dryRunReport.flaggedList.length}){' '}
+                Vehicles with missing details ({dryRunReport.flaggedList.length}){' '}
                 {dryRunReport.flaggedList.length > 0 && (
                   <span className="font-normal normal-case text-slate-500">
-                    — {dryRunIncludeInvalid ? 'INCLUDED in the file on purpose' : 'left out of the file; fix them in Inventory'}
+                    — in the file with empty columns where details are missing; complete them in Inventory
                   </span>
                 )}
               </b>
@@ -1170,7 +1171,7 @@ export default function CargurusAudit() {
         }
       >
         <p className="mb-3">
-          {s.valid} of {s.total} vehicles are ready. {s.invalid > 0 && 'Vehicles with problems are left out.'}
+          All {s.total} vehicles are sent. {s.invalid > 0 && `${s.invalid} have details missing: those columns are sent empty.`}
         </p>
 
         <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
@@ -1186,7 +1187,6 @@ export default function CargurusAudit() {
           </div>
         </div>
 
-        {s.invalid > 0 && <Toggle checked={includeInvalid} onChange={setIncludeInvalid} label="Include vehicles with problems anyway" />}
         {includeInvalid !== dryRunIncludeInvalid && (
           <div className="mt-2 flex items-center gap-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
             The dry run was made {dryRunIncludeInvalid ? 'with' : 'without'} the vehicles with problems: run it again for this file.

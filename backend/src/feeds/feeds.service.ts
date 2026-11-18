@@ -272,14 +272,18 @@ export class FeedsService {
   /** the vehicles for sale that go to CarGurus (vehicles switched off for CarGurus stay on the website only) */
   async cargurusFromInventory(tenantId: string) {
     const { t, s, site } = await this.context(tenantId);
-    const vehicles = await this.prisma.vehicle.findMany({ where: { tenantId, status: 'PUBLISHED', syndicateCargurus: true }, orderBy: { createdAt: 'desc' } });
+    // every vehicle for sale goes to CarGurus — added by hand, CSV or AI, with or without photos / details. Whether
+    // CarGurus is used at all is the dealership's switch in Business details (CargurusService.cargurusOn), not a
+    // per-vehicle choice; drafts and sold vehicles are not for sale (and have no page on the website to link to).
+    const vehicles = await this.prisma.vehicle.findMany({ where: { tenantId, status: 'PUBLISHED' }, orderBy: { createdAt: 'desc' } });
     // the 26 CarGurus columns only: the vehicles' other details / additional columns are not attached
     const records = cg.ingestRows(null, this.inventoryRows(vehicles, site));
     const meta = this.dealerMeta(t, s, site);
     const skipped = records
       .map((r, i) => ({ id: vehicles[i].id, name: [r.year || '', r.make, r.model].join(' ').trim(), issues: Object.values(r._issues).flat() }))
       .filter((x) => x.issues.length);
-    return { csv: cg.csv(records, meta, true), records, meta, skipped, vehicles };
+    // nobody is left out of the file: missing details are empty columns (`skipped` = vehicles with details to complete)
+    return { csv: cg.csv(records, meta), records, meta, skipped, vehicles };
   }
 
   async status(tenantId: string) {

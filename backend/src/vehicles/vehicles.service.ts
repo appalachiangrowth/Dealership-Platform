@@ -132,8 +132,8 @@ export class VehiclesService {
     let cgExcluded = 0;
     for (const iss of ready.values()) iss.length ? cgExcluded++ : cgReady++;
     const byStatus = Object.fromEntries(counts.map((c) => [c.status, c._count]));
-    // vehicles switched off for CarGurus are not in its feed: no CarGurus status for them
-    const items = rows.map((v) => ({ ...this.serialize(v), cargurus: cargurusOn && v.status === 'PUBLISHED' && v.syndicateCargurus !== false ? { issues: ready.get(v.id) ?? [] } : null }));
+    // CarGurus on in Business details = every vehicle for sale is in the CarGurus feed (issues = details sent empty)
+    const items = rows.map((v) => ({ ...this.serialize(v), cargurus: cargurusOn && v.status === 'PUBLISHED' ? { issues: ready.get(v.id) ?? [] } : null }));
     // channels = Business details › "Where your vehicles are sent" (the import only runs the checks of the channels that are on)
     return { items, total, page, pageSize, cargurusOn, channels: await channelsP, counts: { PUBLISHED: 0, DRAFT: 0, SOLD: 0, ...byStatus, cgReady, cgExcluded } };
   }
@@ -172,7 +172,7 @@ export class VehiclesService {
     }
   }
 
-  /** Same rules as the old portal: publishing needs Year, Make, Model, Price, Mileage and a photo; a draft needs a make or model. */
+  /** Only a make, model or VIN is needed to save (no CarGurus or photo requirements). */
   private check(merged: Record<string, unknown>) {
     const problem = publishProblems(merged);
     if (problem) throw new BadRequestException(problem);
@@ -228,8 +228,8 @@ export class VehiclesService {
     let count = 0;
     switch (body.action) {
       case 'publish':
-        // like the old portal: a vehicle without photos cannot be published
-        count = (await this.prisma.vehicle.updateMany({ where: { ...where, NOT: { images: { isEmpty: true } } }, data: { status: 'PUBLISHED', soldAt: null } })).count;
+        // vehicles without photos can be published too (photos can be added later)
+        count = (await this.prisma.vehicle.updateMany({ where, data: { status: 'PUBLISHED', soldAt: null } })).count;
         break;
       case 'draft':
         count = (await this.prisma.vehicle.updateMany({ where, data: { status: 'DRAFT', soldAt: null } })).count;
@@ -261,7 +261,7 @@ export class VehiclesService {
    * in the portal preview (for the channels switched on) and later in each channel's own feed / posting step.
    * Existing vehicles are matched by VIN, then stock number, and updated with the non-empty values of the row;
    * their other fields (and photos when the row has none) are kept. New vehicles: the row's status when the file
-   * has one, otherwise published when they have photos and saved as drafts when they have none.
+   * has one, otherwise published (with or without photos).
    */
   async import(tenantId: string, body: { rows?: Record<string, unknown>[]; mode?: 'publish' | 'draft'; enhancePhotos?: boolean }, user: AuthUser) {
     const rows = Array.isArray(body.rows) ? body.rows.slice(0, 2000) : [];
@@ -292,14 +292,14 @@ export class VehiclesService {
         const id: string | undefined = (vin ? byVin.get(vin) : undefined) ?? (stock ? byStock.get(stock) : undefined);
         if (id) {
           const cur = (await this.prisma.vehicle.findUnique({ where: { id } })) as unknown as { images: string[]; extra?: unknown } | null;
-          if (data.status === 'PUBLISHED' && !imgs.length && !cur?.images.length) data.status = 'DRAFT';
           if (extra) data.extra = { ...(cur?.extra && typeof cur.extra === 'object' ? (cur.extra as Record<string, string>) : {}), ...extra };
           await this.prisma.vehicle.update({ where: { id }, data: data as Prisma.VehicleUncheckedUpdateInput });
           if (imgs.length) photoItems.push({ vehicleId: id, urls: imgs });
           res.updated++;
         } else {
-          let status = (data.status as VehicleStatus | undefined) ?? (imgs.length ? 'PUBLISHED' : 'DRAFT');
-          if (body.mode === 'draft' || (status === 'PUBLISHED' && !imgs.length)) status = 'DRAFT';
+          // published unless the file says otherwise (or the import is "as drafts"): missing photos do not matter
+          let status = (data.status as VehicleStatus | undefined) ?? 'PUBLISHED';
+          if (body.mode === 'draft') status = 'DRAFT';
           const slug = await this.uniqueSlug(tenantId, vehicleName(data as never));
           const v = await this.prisma.vehicle.create({
             data: {

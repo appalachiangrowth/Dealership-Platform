@@ -262,21 +262,24 @@ export function validateFeedPayload(text: string) {
   const fee: string[] = [];
   const emptyReq: string[] = [];
   const maxYear = new Date().getFullYear() + 2;
-  const required = ['VIN', 'Make', 'Model', 'Year', 'Trim', 'Price', 'Mileage', 'Image URLs', 'Exterior Color', 'Dealer comments on vehicle', 'Stock Number', 'Transmission Type', 'Dealer ID', 'Dealer Name', 'Dealer Street Address', 'Dealer City', 'Dealer State', 'Dealer ZIP', 'Dealer CRM Email'];
+  // vehicle details may be empty (sent as they are); the dealer columns come from the dealership profile
+  const required = ['VIN', 'Make', 'Model', 'Year', 'Trim', 'Price', 'Mileage', 'Image URLs', 'Exterior Color', 'Dealer comments on vehicle', 'Stock Number', 'Transmission Type'];
+  const dealerRequired = ['Dealer ID', 'Dealer Name', 'Dealer Street Address', 'Dealer City', 'Dealer State', 'Dealer ZIP', 'Dealer CRM Email'];
+  const emptyDealer: string[] = [];
   data.forEach((r, i) => {
     const line = i + 2;
     const vin = at(r, 'VIN').toUpperCase();
-    if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) badVin.push(`row ${line}: "${vin}"`);
+    if (vin && !/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) badVin.push(`row ${line}: "${vin}"`);
     if (vin) {
       if (vins.has(vin)) dupVin.push(`${vin} (rows ${vins.get(vin)} and ${line})`);
       else vins.set(vin, line);
     }
     const price = at(r, 'Price');
-    if (!/^\d+(\.\d{1,2})?$/.test(price) || +price <= 0) badPrice.push(`row ${line}: "${price}"`);
+    if (price && (!/^\d+(\.\d{1,2})?$/.test(price) || +price <= 0)) badPrice.push(`row ${line}: "${price}"`);
     const miles = at(r, 'Mileage');
-    if (!/^\d+$/.test(miles)) badMiles.push(`row ${line}: "${miles}"`);
+    if (miles && !/^\d+$/.test(miles)) badMiles.push(`row ${line}: "${miles}"`);
     const y = at(r, 'Year');
-    if (!/^\d{4}$/.test(y) || +y < 1980 || +y > maxYear) badYear.push(`row ${line}: "${y}"`);
+    if (y && (!/^\d{4}$/.test(y) || +y < 1980 || +y > maxYear)) badYear.push(`row ${line}: "${y}"`);
     const imgs = at(r, 'Image URLs').split(',').map((x) => x.trim()).filter(Boolean);
     if (!imgs.length) noImg.push(`row ${line}`);
     for (const u of imgs) {
@@ -290,17 +293,21 @@ export function validateFeedPayload(text: string) {
     const comments = at(r, 'Dealer comments on vehicle');
     if (stripFeeText(comments) !== comments.trim()) fee.push(`row ${line} (${vin || 'no VIN'})`);
     for (const name of required) if (col(name) > -1 && !at(r, name).trim()) emptyReq.push(`row ${line}: ${name}`);
+    for (const name of dealerRequired) if (col(name) > -1 && !at(r, name).trim()) emptyDealer.push(`row ${line}: ${name}`);
   });
-  add('vin', 'Every VIN is 17 valid characters', badVin);
-  add('vinUnique', 'No VIN appears twice', dupVin);
-  add('price', 'Price is a plain number above 0 (processing fee already included)', badPrice);
-  add('mileage', 'Mileage is a whole number', badMiles);
-  add('year', `Year is between 1980 and ${maxYear}`, badYear);
-  add('required', 'No mandatory column is empty', emptyReq);
-  add('images', 'Every vehicle has at least one photo', noImg);
-  add('imagesPublic', 'Photo links are absolute, public internet addresses', [...new Set(badImg)]);
+  // vehicle details: reported, never blocking — every vehicle is sent as it is (missing details are empty columns)
+  add('vin', 'Every VIN given is 17 valid characters', badVin, false);
+  add('vinUnique', 'No VIN appears twice', dupVin, false);
+  add('price', 'Prices given are plain numbers above 0 (processing fee already included)', badPrice, false);
+  add('mileage', 'Mileages given are whole numbers', badMiles, false);
+  add('year', `Years given are between 1980 and ${maxYear}`, badYear, false);
+  add('required', 'Vehicle details CarGurus shows best are filled in', emptyReq, false);
+  add('images', 'Every vehicle has at least one photo', noImg, false);
+  add('imagesPublic', 'Photo links are absolute, public internet addresses', [...new Set(badImg)], false);
   add('imagesHttps', 'Photo links use https', [...new Set(httpImg)], false);
-  add('comments', 'Dealer comments contain no processing-fee wording', fee);
+  add('comments', 'Dealer comments contain no processing-fee wording', fee, false);
+  // the dealer columns (dealership profile) stay required
+  add('dealer', 'Dealer columns are filled in (dealership profile)', emptyDealer);
   return { header, dataRows: data.length, checks, errors, warnings };
 }
 
@@ -546,7 +553,10 @@ export function profile(m: DealerMeta) {
 }
 
 export function exportValues(r: CgRecord, m: DealerMeta): string[] {
-  let price = Number(r.price);
+  // never throws on a vehicle with missing details or photos (older stored batches may lack fields too): every
+  // missing value is "" and the row always has exactly the 26 columns
+  const s = (x: unknown) => (x === null || x === undefined ? '' : String(x));
+  let price = Number(r.price) || 0;
   const ex = r._extra || {};
   const feeKeys = ['processingfee', 'processing_fee', 'profee', 'docfee', 'documentationfee', 'dealerfee', 'adminfee'];
   for (const [k, v] of Object.entries(ex)) {
@@ -558,30 +568,34 @@ export function exportValues(r: CgRecord, m: DealerMeta): string[] {
       }
     }
   }
-  return [
-    r.vin,
-    r.make,
-    r.model,
-    r.year ? String(r.year) : '',
-    r.trim,
+  // mileage: "" when the vehicle has none (0 only when 0 was given)
+  const milesGiven = r._raw ? s(r._raw.mileage).trim() !== '' : Number.isFinite(Number(r.mileage)) && r.mileage !== null && r.mileage !== undefined;
+  const miles = Number(r.mileage);
+  const out = [
+    s(r.vin),
+    s(r.make),
+    s(r.model),
+    r.year ? s(r.year) : '',
+    s(r.trim),
     price > 0 ? (Number.isInteger(price) ? String(price) : price.toFixed(2)) : '',
-    String(Math.trunc(r.mileage)),
-    r.images.map((u) => u.replace(/,/g, '%2C')).join(','),
-    r.ext,
-    stripFeeText(r.comments),
-    r.stock,
-    r.trans,
-    r.options,
-    m.id,
-    m.name,
-    m.street,
-    m.city,
-    m.state,
-    m.zip,
-    m.crmEmail,
+    milesGiven && Number.isFinite(miles) ? String(Math.trunc(miles)) : '',
+    (Array.isArray(r.images) ? r.images : []).filter(Boolean).map((u) => s(u).replace(/,/g, '%2C')).join(','),
+    s(r.ext),
+    stripFeeText(s(r.comments)),
+    s(r.stock),
+    s(r.trans),
+    s(r.options),
+    s(m?.id),
+    s(m?.name),
+    s(m?.street),
+    s(m?.city),
+    s(m?.state),
+    s(m?.zip),
+    s(m?.crmEmail),
     // 21-26: always present, "" when unknown
     ...DETAIL_KEYS.map((k) => String(r[k] ?? '').replace(/\s+/g, ' ').trim()),
   ];
+  return COLUMNS.map((_, i) => out[i] ?? '');
 }
 
 function csvCell(v: string) {
@@ -592,10 +606,12 @@ function csvCell(v: string) {
  * Every CarGurus CSV (SFTP feed, Platform Admin master CSV, website CarGurus file): exactly the 26 COLUMNS in
  * CarGurus order, and nothing else — the dealer's additional columns are never written.
  */
-export function csv(records: CgRecord[], m: DealerMeta, onlyValid = false): string {
+export function csv(records: CgRecord[], m: DealerMeta, _onlyValid = false): string {
+  // every vehicle is written, also with missing photos / details (empty columns): `_onlyValid` is no longer used
+  void _onlyValid;
   const lines = [headerRow().map(csvCell).join(',')];
-  for (const r of records) {
-    if (onlyValid && !recordValid(r)) continue;
+  for (const r of records || []) {
+    if (!r) continue;
     lines.push(exportValues(r, m).map(csvCell).join(','));
   }
   return lines.join('\n') + '\n';

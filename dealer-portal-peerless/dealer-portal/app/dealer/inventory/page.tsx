@@ -29,7 +29,7 @@ function CgPill({ v, onFix }: { v: any; onFix: (field: string) => void }) {
   const iss: Issue[] = v.cargurus.issues;
   if (!iss.length)
     return (
-      <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200" title="Meets every CarGurus requirement">
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200" title="On CarGurus with every detail filled in">
         <i className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> CarGurus ready
       </span>
     );
@@ -40,10 +40,10 @@ function CgPill({ v, onFix }: { v: any; onFix: (field: string) => void }) {
         e.stopPropagation();
         onFix(iss[0].field);
       }}
-      title={iss.map((x) => `• ${x.msg}`).join('\n') + '\n\nClick to fix'}
-      className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700 ring-1 ring-red-200 hover:bg-red-100"
+      title={'Sent to CarGurus — these details are sent empty:\n' + iss.map((x) => `• ${x.msg}`).join('\n') + '\n\nClick to complete them'}
+      className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800 ring-1 ring-amber-200 hover:bg-amber-100"
     >
-      <i className="h-1.5 w-1.5 rounded-full bg-red-500" /> CarGurus: {iss.length} issue{iss.length === 1 ? '' : 's'}
+      <i className="h-1.5 w-1.5 rounded-full bg-amber-500" /> On CarGurus · {iss.length} detail{iss.length === 1 ? '' : 's'} missing
     </button>
   );
 }
@@ -173,7 +173,7 @@ export default function InventoryPage() {
             {[
               ['', 'All inventory', null],
               ['ready', 'CarGurus ready', counts.cgReady || 0],
-              ['bad', 'CarGurus excluded', counts.cgExcluded || 0],
+              ['bad', 'CarGurus: details missing', counts.cgExcluded || 0],
             ].map(([k, label, n]) => (
               <button
                 key={k as string}

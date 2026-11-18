@@ -68,7 +68,7 @@ export default function CarGurusFeedPage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Tile tone="ok" k="Active on CarGurus feed" n={M.liveCount} sub="vehicles in the feed CarGurus receives" />
         <Tile k="Ready" n={ready.length} sub={M.pending ? `queued for verification since ${dateTime(M.pending.at)}` : 'meet every CarGurus requirement'} />
-        <Tile tone={attention.length ? 'bad' : undefined} k="Excluded · action required" n={attention.length} sub={attention.length ? 'missing CarGurus mandatory fields' : 'nothing to fix'} />
+        <Tile tone={attention.length ? 'bad' : undefined} k="Sent · details missing" n={attention.length} sub={attention.length ? 'in your CarGurus feed with empty columns — complete them for better listings' : 'nothing to complete'} />
         <Tile small k="Last feed sent" n={syncTxt} sub={ap ? `${ap.vehicles} vehicle${ap.vehicles === 1 ? '' : 's'} approved` : 'the first feed goes out after verification'} />
       </div>
 
@@ -85,7 +85,7 @@ export default function CarGurusFeedPage() {
         {(
           [
             ['ready', 'Ready on feed', ready.length, 'bg-emerald-500'],
-            ['attention', 'Needs attention to syndicate', attention.length, 'bg-red-500'],
+            ['attention', 'Details missing (still sent)', attention.length, 'bg-amber-500'],
           ] as const
         ).map(([k, l, n, dot]) => (
           <button
@@ -145,7 +145,7 @@ export default function CarGurusFeedPage() {
                     <td colSpan={7} className="px-6 py-12 text-center">
                       <Car className="mx-auto mb-2 h-8 w-8 text-slate-300" />
                       <b className="block text-slate-800">No vehicle is ready for CarGurus yet</b>
-                      <span className="text-sm text-slate-500">Fix the vehicles under “Needs attention”, or add vehicles in Inventory.</span>
+                      <span className="text-sm text-slate-500">Every vehicle for sale is sent; see “Details missing” for what to complete, or add vehicles in Inventory.</span>
                     </td>
                   </tr>
                 )}

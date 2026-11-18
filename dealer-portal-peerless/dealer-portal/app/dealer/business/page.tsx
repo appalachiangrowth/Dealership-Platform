@@ -846,7 +846,7 @@ export default function BusinessPage() {
             <div className="flex flex-col gap-2.5 px-5 pb-5 pt-4">
               {(
                 [
-                  ['cargurus', 'CarGurus', 'Vehicles are added to your CarGurus feed when published.'],
+                  ['cargurus', 'CarGurus', 'All your vehicles for sale (added by hand, CSV or AI — with or without photos) go into your CarGurus feed automatically. Off = none of them.'],
                   ['marketplace', 'Facebook Marketplace', 'List your vehicles on Facebook Marketplace using FB Poster.'],
                 ] as const
               ).map(([id, label, desc]) => {

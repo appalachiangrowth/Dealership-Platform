@@ -275,7 +275,7 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
     let csvGenerationError: string | null = null;
     try {
       // the very same call as approve() / liveFeed(): this is the file CarGurus would receive
-      payload = isLive ? (await this.liveFeed(tenantId)) || '' : cg.csv(records, meta, !includeInvalid);
+      payload = isLive ? (await this.liveFeed(tenantId)) || '' : cg.csv(records, meta);
     } catch (e: any) {
       csvGenerationError = e?.message || 'CSV generation failed';
     }
@@ -296,7 +296,10 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
     const check = csvGenerationError ? null : cg.validateFeedPayload(payload);
     const { target, configured, missing } = await this.transport(tenantId);
     const sizeBytes = Buffer.byteLength(payload, 'utf8');
+    const on = await this.cargurusOn(tenantId);
+    void includeInvalid;
     const blockers = [
+      !on ? 'CarGurus is switched off for this dealership (Business details): its inventory is not sent to CarGurus.' : '',
       csvGenerationError ? `The file could not be generated: ${csvGenerationError}` : '',
       !profile.complete ? 'The dealership profile is incomplete (Dealer ID, name, address, ZIP or CRM email).' : '',
       !configured ? `CarGurus SFTP is not set up for this dealership (missing ${missing.join(' and ')}).` : '',
@@ -315,7 +318,8 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
         validCount,
         blockedCount,
         /** vehicles with problems are left out of the file unless "include vehicles with problems" is chosen */
-        excludedFromFile: isLive ? 0 : includeInvalid ? 0 : blockedCount,
+        // every vehicle is in the file (missing details = empty columns); `blockedCount` only counts vehicles to complete
+        excludedFromFile: 0,
         allPassed: blockedCount === 0,
         dealershipProfileComplete: profile.complete,
         profileIssues: profile.missing.map((m) => m.issue),
@@ -488,7 +492,7 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
   async pruneLive(tenantId: string) {
     const live = await this.liveSub(tenantId);
     if (!live?.feedCsv) return 0;
-    const forSale = await this.prisma.vehicle.findMany({ where: { tenantId, status: 'PUBLISHED', syndicateCargurus: true }, select: { vin: true, stockNumber: true } });
+    const forSale = await this.prisma.vehicle.findMany({ where: { tenantId, status: 'PUBLISHED' }, select: { vin: true, stockNumber: true } });
     const keys = new Set<string>();
     for (const v of forSale) for (const k of [keyOf(v.vin, ''), keyOf('', v.stockNumber)]) if (k) keys.add(k);
     const [h, rows] = cg.parse(live.feedCsv);
@@ -561,10 +565,33 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
 
   // ───────── Platform Admin ─────────
 
+  /** dealerships whose Business details have CarGurus on (and the platform feature) */
+  async enabledTenantIds(): Promise<string[]> {
+    const tenants = await this.prisma.tenant.findMany({ select: { id: true } });
+    const out: string[] = [];
+    for (const t of tenants) if (await this.cargurusOn(t.id).catch(() => false)) out.push(t.id);
+    return out;
+  }
+
+  private lastStage = 0;
+
+  /**
+   * Cars Audit (Platform Admin › CarGurus): only dealerships with CarGurus ON in Business details. Their whole
+   * inventory for sale is staged first (a dealership that has just switched CarGurus on appears straight away;
+   * unchanged inventory is not staged twice), at most once a minute.
+   */
   async listAll(status?: string) {
     const st = (status || '').toUpperCase();
+    const on = await this.enabledTenantIds();
+    if (Date.now() - this.lastStage > 60_000) {
+      this.lastStage = Date.now();
+      for (const id of on) await this.autosubmit(id, 'system').catch((e: Error) => this.log.warn(`stage ${id}: ${e.message}`));
+    }
     const subs = await this.prisma.cargurusSubmission.findMany({
-      where: ['PENDING', 'APPROVED', 'REJECTED', 'REPLACED'].includes(st) ? { status: st as never } : { status: { not: 'REPLACED' } },
+      where: {
+        tenantId: { in: on },
+        ...(['PENDING', 'APPROVED', 'REJECTED', 'REPLACED'].includes(st) ? { status: st as never } : { status: { not: 'REPLACED' as never } }),
+      },
       orderBy: { createdAt: 'desc' },
       take: 300,
       include: { tenant: { select: { name: true, dealerCode: true } } },
@@ -572,7 +599,14 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
     return subs.map((s) => ({ ...this.summaryOf(s), tenantName: s.tenant.name, dealerCode: s.tenant.dealerCode }));
   }
 
+  private async requireOn(tenantId: string) {
+    if (!(await this.cargurusOn(tenantId))) {
+      throw new BadRequestException({ message: 'CarGurus is switched off for this dealership in Business details, so its inventory is not sent to CarGurus.', code: 'cargurus_off' });
+    }
+  }
+
   async audit_(tenantId: string, id: string) {
+    await this.requireOn(tenantId);
     const sub = await this.prisma.cargurusSubmission.findFirst({ where: { id, tenantId }, include: { tenant: { select: { name: true, dealerCode: true } } } });
     if (!sub) throw new NotFoundException('Submission not found');
     const meta = await this.meta(tenantId);
@@ -625,12 +659,14 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
     const sub = await this.prisma.cargurusSubmission.findFirst({ where: { id, tenantId } });
     if (!sub) throw new NotFoundException('Submission not found');
     if (sub.status !== 'PENDING') throw new BadRequestException('Only pending uploads can be approved');
+    await this.requireOn(tenantId);
     const meta = await this.meta(tenantId);
     const pr = cg.profile(meta);
     if (!pr.complete) throw new BadRequestException({ message: 'The dealership profile is incomplete', missing: pr.missing });
     const records = await this.withDetails(tenantId, sub.records as unknown as cg.CgRecord[]);
-    const feedCsv = cg.csv(records, meta, !b.includeInvalid);
-    const sent = records.filter((r) => b.includeInvalid || cg.recordValid(r)).length;
+    // every vehicle for sale is sent; missing details are empty columns
+    const feedCsv = cg.csv(records, meta);
+    const sent = records.length;
     await this.prisma.cargurusSubmission.update({
       where: { id },
       data: { status: 'APPROVED', reviewedBy: user.login, reviewNote: cleanMl(b.note, 1000), reviewedAt: new Date(), feedCsv },
@@ -655,6 +691,8 @@ export class CargurusService implements OnModuleInit, OnModuleDestroy {
 
   /** The approved feed that is sent / served to CarGurus. */
   async liveFeed(tenantId: string) {
+    // CarGurus switched off in Business details: nothing is served or uploaded
+    if (!(await this.cargurusOn(tenantId))) return null;
     const sub = await this.prisma.cargurusSubmission.findFirst({ where: { tenantId, status: 'APPROVED' }, orderBy: { reviewedAt: 'desc' } });
     // feeds approved before the fee wording was removed: clean the comments on the way out (prices unchanged)
     return cg.scrubFeedCsv(await this.upgradeFeed(tenantId, sub?.feedCsv ?? null));

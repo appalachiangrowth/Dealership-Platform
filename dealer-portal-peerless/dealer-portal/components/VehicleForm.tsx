@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, Check, ChevronDown, CheckCircle2, Copy, Globe, Info, Rss, Sparkles, Trash2 } from 'lucide-react';
 import { api, mediaUrl, siteUrl } from '@/lib/api';
-import { cgIssues, CG_ITEMS } from '@/lib/cargurus';
 import { MP_FIELDS, mpMissing } from '@/lib/marketplace';
 import { autoDescription } from '@/lib/vehicle-description';
 import { FacebookIcon } from '@/lib/facebook';
@@ -269,16 +268,6 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
 
-  const current = useMemo(
-    () => ({ ...v, id: v.id || '__new__', status: 'PUBLISHED', features: lines(featText), vin: String(v.vin || '').toUpperCase() }),
-    [v, featText],
-  );
-  const issues = useMemo(() => cgIssues(current, all), [current, all]);
-  const bad = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const i of issues) if (!m[i.f]) m[i.f] = i.m;
-    return m;
-  }, [issues]);
 
   const dup = useMemo(() => {
     const others = all.filter((x) => x.id !== v.id);
@@ -319,8 +308,8 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
       features: lines(featText),
       safetyFeatures: lines(safeText),
       vin: String(v.vin || '').toUpperCase().trim(),
-      // where it goes besides the website (both off = website only)
-      syndicateCargurus: platforms.includes('cargurus'),
+      // CarGurus is decided for the whole inventory in Business details (no per-vehicle switch)
+      syndicateCargurus: true,
       syndicateFacebook: platforms.includes('marketplace'),
     };
     for (const k of SERVER_ONLY) delete b[k];
@@ -329,33 +318,19 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   }
 
   async function save(status: string, msg: string) {
-    if (status === 'PUBLISHED') {
-      if (!canPublish) {
-        const issuesList: string[] = [];
-        if (!webOk) {
-          issuesList.push(`Website: ${webMiss.map(([, l]) => l).join(', ')}`);
-        }
-        if (cgSelected && !ready) {
-          issuesList.push(`CarGurus: ${badCount} required field(s) missing or invalid`);
-        }
-        if (mpSelected && !mpOk) {
-          issuesList.push(`Marketplace: ${mpMiss.size} required field(s) missing`);
-        }
-        toast.error(`Please complete the required details: ${issuesList.join('; ')}`);
-        if (!webOk) {
-          goField(webMiss[0][0]);
-        } else if (cgSelected && !ready && issues[0]) {
-          goField(issues[0].f);
-        } else if (mpSelected && !mpOk) {
-          const firstMiss = Array.from(mpMiss)[0];
-          const f = MP_FIELDS.find(([, l]) => l === firstMiss)?.[0];
-          if (f) goField(f);
-        }
-        return;
-      }
-    } else if (!String(v.make || '').trim() && !String(v.model || '').trim()) {
-      toast.error('Enter at least a make or model.');
+    // only something to recognise the vehicle by; photos and every other detail can be added later
+    // (CarGurus never blocks a save: with CarGurus on in Business details every vehicle is sent as it is)
+    if (!String(v.make || '').trim() && !String(v.model || '').trim() && !String(v.vin || '').trim()) {
+      toast.error('Enter at least a make, model or VIN.');
       goField('make');
+      return;
+    }
+    if (status === 'PUBLISHED' && !canPublish) {
+      // Facebook Marketplace checks (unchanged)
+      toast.error(`Please complete the required details: Marketplace: ${mpMiss.size} required field(s) missing`);
+      const firstMiss = Array.from(mpMiss)[0];
+      const f = MP_FIELDS.find(([, l]) => l === firstMiss)?.[0];
+      if (f) goField(f);
       return;
     }
     if (dup && !window.confirm(`This vehicle is already in your inventory: ${nameOf(dup.v)} has the same ${dup.by}. Save it as a second vehicle anyway? (Better: open the existing one and update it.)`)) return;
@@ -402,37 +377,17 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   const availableModels = useMemo(() => {
     return getModelsForMake(v.make || '');
   }, [v.make]);
-  const ready = issues.length === 0;
   // Facebook Marketplace: the 9 fields a listing needs (lib/marketplace)
   const mpMiss = useMemo(() => new Set(mpMissing({ ...v, images: v.images })), [v]);
   const mpOk = mpMiss.size === 0;
-  const badCount = CG_ITEMS.filter(([k]) => bad[k]).length;
 
-  const cgSelected = platforms.includes('cargurus');
+  // CarGurus: on / off for the whole inventory in Business details — never a requirement for saving
+  const cgSelected = cgOn;
   const mpSelected = platforms.includes('marketplace');
 
-  // The website itself needs these to publish (same rule as the server): year, make, model, price, mileage, a photo
-  const webMiss = WEB_REQ.filter(([k]) => (k === 'images' ? !(v.images || []).length : String(v[k] ?? '').trim() === ''));
-  const webOk = webMiss.length === 0;
-
-  // Fields required depending on active platforms (the website's own details always)
+  // Only Facebook Marketplace has required fields (its checks are unchanged). The website and CarGurus take
+  // a vehicle with missing details or photos; CarGurus gets empty columns for what is missing.
   const isReq = (k: string) => {
-    if (WEB_REQ.some(([w]) => w === k)) return true;
-    if (cgSelected && mpSelected) {
-      return (
-        k === 'vin' || k === 'make' || k === 'model' || k === 'year' || k === 'trim' ||
-        k === 'price' || k === 'mileage' || k === 'images' || k === 'exteriorColor' ||
-        k === 'description' || k === 'stockNumber' || k === 'transmission' ||
-        k === 'bodyStyle' || k === 'interiorColor'
-      );
-    }
-    if (cgSelected) {
-      return (
-        k === 'vin' || k === 'make' || k === 'model' || k === 'year' || k === 'trim' ||
-        k === 'price' || k === 'mileage' || k === 'images' || k === 'exteriorColor' ||
-        k === 'description' || k === 'stockNumber' || k === 'transmission'
-      );
-    }
     if (mpSelected) {
       return (
         k === 'year' || k === 'make' || k === 'model' || k === 'price' ||
@@ -446,25 +401,20 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   // Validation checks for publishing/adding
   const missingReqFields = useMemo(() => {
     const miss: string[] = [];
-    if (cgSelected && !ready) {
-      miss.push('CarGurus requirements');
-    }
     if (mpSelected && !mpOk) {
       miss.push('Marketplace requirements');
     }
     return miss;
-  }, [cgSelected, mpSelected, ready, mpOk]);
+  }, [mpSelected, mpOk]);
 
-  // website only (both off), website + CarGurus, website + Facebook, or all three
-  const canPublish = missingReqFields.length === 0 && webOk;
+  // only the Facebook Marketplace checks can hold back publishing
+  const canPublish = missingReqFields.length === 0;
 
 
   /* ───────────── what is still needed (one list for CarGurus + Marketplace) ───────────── */
   const mpMissKeys = useMemo(() => new Set(MP_FIELDS.filter(([, l]) => mpMiss.has(l)).map(([k]) => k)), [mpMiss]);
   const problem = (k: string): string => {
     if (!isReq(k)) return '';
-    if (webMiss.some(([w]) => w === k)) return 'Needed to publish on your website.';
-    if (cgSelected && bad[k]) return bad[k];
     if (mpSelected && mpMissKeys.has(k)) {
       return k === 'mileage' && String(v.mileage ?? '').trim() !== '' ? 'Facebook Marketplace needs a mileage of more than 0.' : 'Needed for Facebook Marketplace.';
     }
@@ -832,11 +782,6 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
             </div>
           </Sec>
 
-          {!cgOn && issues.some((i) => i.f === 'vin') && (
-            <p className="flex items-center gap-2 text-xs text-[#526077]">
-              <AlertTriangle className="h-3.5 w-3.5" /> Vehicles need a 17-character VIN and a photo to appear in your inventory feeds.
-            </p>
-          )}
         </div>
 
         {/* ===== publishing panel ===== */}
@@ -893,16 +838,18 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
                   <span className="text-xs text-[#526077]">Live as soon as you publish</span>
                 </span>
               </div>
-              <label className="flex cursor-pointer items-start gap-2.5">
+              <div className="flex items-start gap-2.5">
                 <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg bg-[#EAF1FF] text-[#1D4ED8]">
                   <Rss className="h-4 w-4" />
                 </span>
                 <span className="flex flex-1 flex-col">
                   <span className="text-[13px] font-semibold text-[#0F172A]">CarGurus</span>
-                  <span className="text-xs text-[#526077]">{cgSelected ? 'Included in your next CarGurus feed' : 'Off — not sent to CarGurus'}</span>
+                  <span className="text-xs text-[#526077]">
+                    {cgSelected ? 'On for all your inventory (Business details) — included in your CarGurus feed automatically' : 'Off in Business details — not sent to CarGurus'}
+                  </span>
                 </span>
-                <input type="checkbox" className="mt-1.5 h-4 w-4 accent-[#2563EB]" checked={cgSelected} onChange={() => togglePlatform('cargurus')} aria-label="Send this vehicle to CarGurus" />
-              </label>
+                {cgSelected && <Check className="mt-1.5 h-4 w-4 text-[#16A34A]" aria-label="Sent to CarGurus" />}
+              </div>
               <label className="flex cursor-pointer items-start gap-2.5">
                 <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg bg-[#EAF1FF] text-[#1877F2]">
                   <FacebookIcon className="h-4 w-4" />

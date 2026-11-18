@@ -85,8 +85,8 @@ export function cleanVehicleInput(b: Record<string, unknown>): Prisma.VehicleUnc
   if ('description' in b) d.description = cleanMl(b.description, 8000);
   if ('year' in b) {
     const y = int(b.year);
-    if (y !== null && (y < 1900 || y > new Date().getFullYear() + 2)) throw new BadRequestException('Year looks wrong');
-    d.year = y;
+    // a year that cannot be right is left empty instead of refusing the vehicle
+    d.year = y !== null && (y < 1900 || y > new Date().getFullYear() + 2) ? null : y;
   }
   if ('price' in b) d.price = num(b.price);
   if ('msrp' in b) d.msrp = num(b.msrp);
@@ -134,19 +134,13 @@ export function missingRequired(v: Record<string, unknown>, rules: Record<string
 }
 
 /**
- * The old portal's save rules (admin.js vehicleEditor):
- *  - publishing needs Year, Make, Model, Price and Mileage filled in, and at least one photo;
- *  - a draft / sold vehicle needs at least a make or a model.
- * The CarGurus fields are NOT required to save: a vehicle can be on the website and join CarGurus once complete.
+ * Saving rules (manual add / edit, CSV import, AI import): a vehicle only needs something to recognise it by —
+ * a make, a model or a VIN. Photos, price, mileage, VIN format, trim, body style … are NOT required (not for the
+ * website and not for CarGurus): with CarGurus on in Business details every vehicle goes into the CarGurus feed as it
+ * is, missing details as empty columns. Facebook Marketplace checks live in the portal / posting step and are unchanged.
  */
 export function publishProblems(v: Record<string, unknown>): string {
   const empty = (x: unknown) => x === null || x === undefined || String(x).trim() === '';
-  if (v.status === 'PUBLISHED') {
-    const miss = [['year', 'Year'], ['make', 'Make'], ['model', 'Model'], ['price', 'Price'], ['mileage', 'Mileage']].filter(([k]) => empty(v[k])).map(([, l]) => l);
-    if (miss.length) return `Fill in ${miss.join(', ')} to publish this vehicle, or save it as a draft.`;
-    if (!Array.isArray(v.images) || !v.images.length) return 'Add at least one photo to publish. You can save it as a draft without photos.';
-    return '';
-  }
-  if (empty(v.make) && empty(v.model)) return 'Enter at least a make or model.';
+  if (empty(v.make) && empty(v.model) && empty(v.vin)) return 'Enter at least a make, model or VIN.';
   return '';
 }
