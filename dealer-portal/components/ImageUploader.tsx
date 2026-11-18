@@ -1,9 +1,10 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, ImagePlus, Link2, Sparkles, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ImagePlus, Link2, Sparkles, Trash2, Upload, Wand2 } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
-import { useStudioStatus, useStudioSwitch } from '@/lib/photo-studio';
+import { type StudioChoice, studioUploadQuery, useStudioChoice, useStudioInfo, useStudioStatus, useStudioSwitch } from '@/lib/photo-studio';
+import { PhotoStudio, type StudioResult } from './PhotoStudio';
 import { useToast } from './toast';
 import { Button, Input, Spinner, Toggle, cx } from './ui';
 
@@ -41,8 +42,8 @@ async function webReady(f: File): Promise<File> {
 export const PHOTO_ACCEPT = 'image/*,.jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.gif,.bmp';
 
 /** A pasted web photo link → downloaded by the server and saved as one of the dealer's own .jpeg photos. */
-export async function photoFromLink(link: string, enhance: boolean): Promise<{ url: string; enhanced: boolean; note: string }> {
-  const r = await api<{ url: string; enhanced?: boolean; enhanceNote?: string }>('/dealer/media/from-url', { body: { url: link, enhance } });
+export async function photoFromLink(link: string, enhance: boolean, background?: string): Promise<{ url: string; enhanced: boolean; note: string }> {
+  const r = await api<{ url: string; enhanced?: boolean; enhanceNote?: string }>('/dealer/media/from-url', { body: { url: link, enhance, background } });
   return { url: r.url, enhanced: !!r.enhanced, note: r.enhanceNote || '' };
 }
 
@@ -55,13 +56,16 @@ export async function uploadFiles(files: FileList | File[], folder?: string): Pr
 }
 
 /**
- * One vehicle photo with Auto White Studio Background: the server puts the vehicle on a white studio background,
- * or keeps the photo as it is (enhanced = false + note why). One photo per request, so no request waits too long.
+ * One vehicle photo put on a Photo Studio background (default: white cyclorama studio), or kept as it is
+ * (enhanced = false + note why). One photo per request, so no request waits too long.
  */
-export async function uploadStudioPhoto(file: File): Promise<{ url: string; enhanced: boolean; note: string }> {
+export async function uploadStudioPhoto(file: File, choice?: StudioChoice): Promise<{ url: string; enhanced: boolean; note: string }> {
   const form = new FormData();
   form.append('files', await webReady(file));
-  const r = await api<{ files: { url: string; enhanced?: boolean; enhanceNote?: string }[]; errors: { file: string; error: string }[] }>('/dealer/media?enhance=1', { form });
+  const r = await api<{ files: { url: string; enhanced?: boolean; enhanceNote?: string }[]; errors: { file: string; error: string }[] }>(
+    `/dealer/media?${choice ? studioUploadQuery(choice) : 'enhance=1'}`,
+    { form },
+  );
   if (r.errors.length) throw new Error(r.errors.map((e) => `${e.file}: ${e.error}`).join('\n'));
   const f = r.files[0];
   return { url: f.url, enhanced: !!f.enhanced, note: f.enhanceNote || '' };
@@ -79,6 +83,13 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
   const [drag, setDrag] = useState(false);
   const [studioOn, setStudioOn] = useStudioSwitch();
   const studioStatus = useStudioStatus();
+  const studioInfo = useStudioInfo();
+  const [choice] = useStudioChoice();
+  /** photos ticked for the Photo Studio (urls) */
+  const [picked, setPicked] = useState<string[]>([]);
+  const [studioOpen, setStudioOpen] = useState<{ photos: string[]; start: number } | null>(null);
+  const bgName =
+    choice.id === 'transparent' ? 'Transparent cut-out' : choice.id === 'custom' ? 'your custom background' : studioInfo?.backgrounds.find((b) => b.id === choice.id)?.name || 'White Cyclorama Studio';
   /** "Enhancing vehicle background…" progress while photos are processed one by one */
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const toast = useToast();
@@ -104,7 +115,7 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
       setProgress({ done: 0, total: list.length });
       for (let i = 0; i < list.length; i++) {
         try {
-          const r = await uploadStudioPhoto(list[i]);
+          const r = await uploadStudioPhoto(list[i], choice);
           next = [...next, r.url].slice(0, max);
           onChange(next);
           if (r.enhanced) enhanced++;
@@ -114,7 +125,7 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
         }
         setProgress({ done: i + 1, total: list.length });
       }
-      if (enhanced) toast.ok(`${enhanced} photo${enhanced === 1 ? '' : 's'} put on a white studio background`);
+      if (enhanced) toast.ok(`${enhanced} photo${enhanced === 1 ? '' : 's'} put on ${bgName}`);
       if (kept.length) toast.ok(`${kept.length} photo${kept.length === 1 ? '' : 's'} kept as uploaded (${kept.slice(0, 3).join(' · ')}${kept.length > 3 ? ' …' : ''})`);
       if (failed.length) toast.error(failed.join('\n'));
     } catch (e) {
@@ -124,6 +135,20 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
       setProgress(null);
     }
   }
+
+  /** Photo Studio results: replace each original in place, or add the new photo right after it */
+  const studioDone = (results: StudioResult[], mode: 'replace' | 'new') => {
+    let next = [...value];
+    for (const r of results) {
+      const i = next.indexOf(r.source);
+      if (mode === 'replace') next = i >= 0 ? next.map((u, k) => (k === i ? r.url : u)) : [...next, r.url];
+      else next = i >= 0 ? [...next.slice(0, i + 1), r.url, ...next.slice(i + 1)] : [...next, r.url];
+    }
+    onChange(next.slice(0, max));
+    setPicked([]);
+  };
+  const togglePick = (u: string) => setPicked((p) => (p.includes(u) ? p.filter((x) => x !== u) : [...p, u]));
+  const studioReady = studio && studioStatus?.available !== false;
 
   const move = (i: number, d: number) => {
     const j = i + d;
@@ -148,16 +173,50 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
         }}
         className={cx('rounded-xl border-2 border-dashed p-4 transition', drag ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-slate-50')}
       >
+        {studioReady && value.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setStudioOpen({ photos: picked.length ? value.filter((u) => picked.includes(u)) : [value[0]], start: 0 })}
+            >
+              <Wand2 className="h-4 w-4" /> {picked.length > 1 ? `Enhance ${picked.length} selected photos` : picked.length === 1 ? 'Enhance selected photo' : 'Open Photo Studio'}
+            </Button>
+            <button type="button" className="text-xs font-semibold text-slate-600 hover:text-blue-700" onClick={() => setPicked(picked.length === value.length ? [] : [...value])}>
+              {picked.length === value.length ? 'Clear selection' : 'Select all'}
+            </button>
+            <span className="text-xs text-slate-500">Tick photos to enhance several at once.</span>
+          </div>
+        )}
         {value.length > 0 && (
           <div className="mb-4 grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
             {value.map((u, i) => (
               <div key={u + i} className="group relative aspect-[4/3] overflow-hidden rounded-lg bg-white ring-1 ring-slate-200">
                 <img src={mediaUrl(u)} alt="" className="h-full w-full object-cover" />
                 {i === 0 && <span className="absolute left-1 top-1 rounded bg-blue-700 px-1.5 py-0.5 text-[9px] font-bold text-white">COVER</span>}
+                {studioReady && (
+                  <button
+                    type="button"
+                    onClick={() => togglePick(u)}
+                    title={picked.includes(u) ? 'Unselect' : 'Select for Photo Studio'}
+                    aria-pressed={picked.includes(u)}
+                    className={cx(
+                      'absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded border-2 transition',
+                      picked.includes(u) ? 'border-blue-600 bg-blue-600 text-white' : 'border-white bg-black/30 text-transparent opacity-0 group-hover:opacity-100',
+                    )}
+                  >
+                    <Check className="h-3 w-3" />
+                  </button>
+                )}
                 <div className="absolute inset-x-0 bottom-0 flex justify-between bg-black/50 p-1 opacity-0 transition group-hover:opacity-100">
                   <button type="button" onClick={() => move(i, -1)} className="rounded p-1 text-white hover:bg-white/20" title="Move left">
                     <ArrowLeft className="h-3.5 w-3.5" />
                   </button>
+                  {studioReady && (
+                    <button type="button" onClick={() => setStudioOpen({ photos: [u], start: 0 })} className="rounded p-1 text-white hover:bg-blue-500" title="Photo Studio: change background">
+                      <Wand2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <button type="button" onClick={() => onChange(value.filter((_, k) => k !== i))} className="rounded p-1 text-white hover:bg-red-500" title="Remove">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -174,14 +233,20 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
             <Toggle
               checked={studioOn}
               onChange={setStudioOn}
-              label="Auto White Studio Background"
+              label="Studio background on upload"
               desc={
                 studioStatus && !studioStatus.available
                   ? `Not set up on the server yet — photos are saved as uploaded (${studioStatus.reason}).`
-                  : 'Puts the vehicle on a clean white studio background. Interior and close-up photos are kept as they are.'
+                  : `New photos go on ${bgName}. Interior and close-up photos are kept as they are.`
               }
             />
-            <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+            {studioReady ? (
+              <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline" onClick={() => setStudioOpen({ photos: value.length ? [value[0]] : [], start: 0 })} disabled={!value.length} title={value.length ? 'Choose the background in Photo Studio' : 'Add a photo first'}>
+                <Sparkles className="h-4 w-4" /> Change background
+              </button>
+            ) : (
+              <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+            )}
           </div>
         )}
         {progress && (
@@ -228,10 +293,10 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
               setLinkBusy(true);
               if (enhance) setProgress({ done: 0, total: 1 });
               try {
-                const r = await photoFromLink(link, enhance);
+                const r = await photoFromLink(link, enhance, choice.id === 'custom' ? undefined : choice.id);
                 onChange([...value, r.url].slice(0, max));
                 setUrl('');
-                if (r.enhanced) toast.ok('Photo put on a white studio background');
+                if (r.enhanced) toast.ok(`Photo put on ${bgName}`);
                 else if (enhance && r.note) toast.ok(`Photo saved as JPEG (kept as it is: ${r.note})`);
               } catch (e) {
                 toast.error(`${(e as Error).message}. Download the photo and upload it instead.`);
@@ -245,6 +310,9 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
           </Button>
         </div>
       </div>
+      {studioOpen && studioOpen.photos.length > 0 && (
+        <PhotoStudio photos={studioOpen.photos} start={studioOpen.start} onClose={() => setStudioOpen(null)} onDone={studioDone} />
+      )}
     </div>
   );
 }

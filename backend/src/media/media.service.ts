@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { mkdir, unlink, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { join, normalize, sep } from 'path';
+import { readFile } from 'fs/promises';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { randomHex } from '../common/util.js';
@@ -88,7 +89,7 @@ export class MediaService {
     file: { buffer: Buffer; originalname: string; size: number },
     user: AuthUser,
     folder = '',
-    opts: { enhance?: boolean; priority?: 'high' | 'low'; skipSizeCheck?: boolean } = {},
+    opts: { enhance?: boolean; priority?: 'high' | 'low'; skipSizeCheck?: boolean; background?: string; custom?: Buffer | null } = {},
   ) {
     if (!file?.buffer?.length) throw new BadRequestException('No file received');
     if (!opts.skipSizeCheck) {
@@ -125,20 +126,26 @@ export class MediaService {
     }
     if (opts.enhance && !site) {
       // the white studio background works on the JPEG (so HEIC / AVIF / transparent PNG work too)
-      const r = await this.enhancer.enhance(buffer, { priority: opts.priority ?? 'high' });
+      const r = await this.enhancer.enhance(buffer, { priority: opts.priority ?? 'high', background: opts.background, custom: opts.custom });
       if (r.enhanced) {
         buffer = r.buffer;
         kind = { ext: r.ext, mime: r.mime, width: r.width, height: r.height };
         enhanced = true;
       } else enhanceNote = r.reason;
     }
+    const m = await this.store(tenantId, buffer, kind, file.originalname, user, folder === 'site');
+    return opts.enhance ? { ...m, enhanced, ...(enhanceNote ? { enhanceNote } : {}) } : m;
+  }
+
+  /** writes a finished file to the dealer's photos (uploads/<dealer>/[site/]<year>/<month>/) and records it */
+  async store(tenantId: string, buffer: Buffer, kind: { ext: string; mime: string; width?: number; height?: number }, originalName: string, user: AuthUser, site = false) {
     const d = new Date();
-    const sub = [tenantId, folder === 'site' ? 'site' : '', String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0')].filter(Boolean).join('/');
+    const sub = [tenantId, site ? 'site' : '', String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0')].filter(Boolean).join('/');
     const name = `${randomHex(8)}.${kind.ext}`;
     await mkdir(join(UPLOAD_ROOT, sub), { recursive: true });
     await writeFile(join(UPLOAD_ROOT, sub, name), buffer);
     const rel = `${sub}/${name}`;
-    const m = await this.prisma.mediaFile.create({
+    return this.prisma.mediaFile.create({
       data: {
         tenantId,
         url: `/uploads/${rel}`,
@@ -147,18 +154,45 @@ export class MediaService {
         size: buffer.length,
         width: kind.width ?? null,
         height: kind.height ?? null,
-        originalName: (file.originalname || '').slice(0, 200),
+        originalName: (originalName || '').slice(0, 200),
         uploadedBy: user.login,
       },
     });
-    return opts.enhance ? { ...m, enhanced, ...(enhanceNote ? { enhanceNote } : {}) } : m;
+  }
+
+  /**
+   * The bytes of a photo the dealer points at: one of their own uploads ("/uploads/<dealer>/…" or a full link to it,
+   * read from disk) or a public web link (downloaded, ≤ 15 MB). Other dealers' files are never read.
+   */
+  async readSource(tenantId: string, src: string): Promise<Buffer> {
+    const s = String(src || '').trim();
+    const mark = `/uploads/${tenantId}/`;
+    const at = s.indexOf(mark);
+    if (at >= 0) {
+      const rel = decodeURIComponent(s.slice(at + '/uploads/'.length).split(/[?#]/)[0]);
+      const full = normalize(join(UPLOAD_ROOT, rel));
+      if (!full.startsWith(normalize(join(UPLOAD_ROOT, tenantId)) + sep)) throw new BadRequestException('That photo is not one of yours');
+      try {
+        return await readFile(full);
+      } catch {
+        throw new NotFoundException('The photo file was not found');
+      }
+    }
+    if (/^https?:\/\//i.test(s)) {
+      try {
+        return await downloadPublicImage(s);
+      } catch (e) {
+        throw new BadRequestException(`The photo could not be downloaded: ${(e as Error).message}`);
+      }
+    }
+    throw new BadRequestException('Choose a photo first');
   }
 
   /**
    * A photo from a web link (pasted link, import): downloaded (public internet only, ≤ 15 MB) and saved like an
    * upload — so it becomes one of the dealer's own .jpeg files.
    */
-  async saveFromUrl(tenantId: string, url: string, user: AuthUser, opts: { enhance?: boolean; priority?: 'high' | 'low' } = {}) {
+  async saveFromUrl(tenantId: string, url: string, user: AuthUser, opts: { enhance?: boolean; priority?: 'high' | 'low'; background?: string } = {}) {
     let buf: Buffer;
     try {
       buf = await downloadPublicImage(String(url || '').trim());

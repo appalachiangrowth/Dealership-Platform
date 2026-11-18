@@ -26,7 +26,8 @@ export class MediaController {
    * POST /dealer/media (multipart, field "files", up to 30 photos). ?folder=site for logo/website images,
    * ?folder=favicon for the website's browser-tab icon (.ico / .svg allowed too, ≤ 1 MB).
    * Vehicle photos (no folder) are always stored as .jpeg, whatever format was uploaded.
-   * ?enhance=1 for vehicle photos: Auto White Studio Background (each file says enhanced true / false).
+   * ?enhance=1 for vehicle photos: Photo Studio background (each file says enhanced true / false);
+   * &background=<scene id | transparent | custom> (default: white cyclorama studio), &customBackground=<own photo url>.
    */
   @Post()
   @UseInterceptors(FilesInterceptor('files', 30, { storage: memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } }))
@@ -36,8 +37,12 @@ export class MediaController {
     @CurrentUser() u: AuthUser,
     @Query('folder') folder?: string,
     @Query('enhance') enhance?: string,
+    @Query('background') background?: string,
+    @Query('customBackground') customBackground?: string,
   ) {
-    const opts = { enhance: /^(1|true|yes|on)$/i.test(enhance || '') && folder !== 'site' && folder !== 'favicon' };
+    const on = /^(1|true|yes|on)$/i.test(enhance || '') && folder !== 'site' && folder !== 'favicon';
+    const custom = on && background === 'custom' && customBackground ? await this.media.readSource(t, customBackground).catch(() => null) : null;
+    const opts = { enhance: on, background: background && !(background === 'custom' && !custom) ? background : undefined, custom };
     const out = [];
     const errors = [];
     for (const f of files || []) {
@@ -52,8 +57,8 @@ export class MediaController {
 
   /** POST /dealer/media/from-url { url, enhance? } — a pasted photo link becomes one of the dealer's own .jpeg photos */
   @Post('from-url')
-  fromUrl(@TenantId() t: string, @Body() body: { url?: string; enhance?: boolean }, @CurrentUser() u: AuthUser) {
-    return this.media.saveFromUrl(t, String(body?.url || ''), u, { enhance: body?.enhance === true });
+  fromUrl(@TenantId() t: string, @Body() body: { url?: string; enhance?: boolean; background?: string }, @CurrentUser() u: AuthUser) {
+    return this.media.saveFromUrl(t, String(body?.url || ''), u, { enhance: body?.enhance === true, background: body?.background && body.background !== 'custom' ? String(body.background) : undefined });
   }
 
   @Get()
