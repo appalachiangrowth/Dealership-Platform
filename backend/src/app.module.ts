@@ -24,6 +24,7 @@ import { CargurusModule } from './cargurus/cargurus.module.js';
 import { PublicModule } from './public/public.module.js';
 import { PlatformModule } from './platform/platform.module.js';
 import { AiModule } from './ai/ai.module.js';
+import { DealsModule } from './deals/deals.module.js';
 import { SeoModule } from './seo/seo.module.js';
 import { DesignRequestsModule } from './design-requests/design-requests.module.js';
 import { AuthGuard } from './common/auth.guard.js';
@@ -57,6 +58,7 @@ import { AuthGuard } from './common/auth.guard.js';
     AiModule,
     SeoModule,
     DesignRequestsModule,
+    DealsModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: AuthGuard }],

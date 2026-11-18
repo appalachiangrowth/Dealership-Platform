@@ -39,6 +39,11 @@ export const SETTINGS_FIELDS: Record<string, FieldDef> = {
   messenger: { kind: 'url', max: 300, group: 'business' },
   siteUrl: { kind: 'url', max: 200, group: 'business' },
   themeColor: { kind: 'color', group: 'business' },
+  // Deals / Bill of Sale
+  dealerLicenseNumber: { kind: 'text', max: 60, group: 'business' },
+  dealDocFee: { kind: 'text', max: 12, group: 'business' },
+  dealTaxRate: { kind: 'text', max: 8, group: 'business' },
+  dealTitleFee: { kind: 'text', max: 12, group: 'business' },
 
   leadTo: { kind: 'email', max: 160, group: 'settings' },
   smtpHost: { kind: 'text', max: 120, group: 'settings' },

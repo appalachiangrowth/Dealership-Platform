@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { FileSignature } from 'lucide-react';
 import { useApi } from '@/lib/useApi';
 import { ErrorBox, Loading } from '@/components/ui';
 import { EMPTY_VEHICLE, VehicleForm } from '@/components/VehicleForm';
@@ -26,5 +28,17 @@ export default function EditVehicle() {
     }
   }
   const v = { ...EMPTY_VEHICLE, ...Object.fromEntries(Object.entries(data).map(([k, x]) => [k, x === null ? '' : x])), processingFee: extraFee };
-  return <VehicleForm key={data.id} initial={v as never} focusField={focus} />;
+  return (
+    <>
+      <div className="mb-3 flex justify-end">
+        <Link
+          href={`/dealer/deals/new?vehicleId=${data.id}`}
+          className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+        >
+          <FileSignature className="h-4 w-4" /> Sell car / Bill of Sale
+        </Link>
+      </div>
+      <VehicleForm key={data.id} initial={v as never} focusField={focus} />
+    </>
+  );
 }

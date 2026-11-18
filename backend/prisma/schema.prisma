@@ -259,6 +259,8 @@ model Tenant {
   seoPages           SeoPage[]
   seoVehicles        SeoVehicle[]
   seoRedirects       SeoRedirect[]
+  deals              Deal[]
+  stateFormTemplates StateFormTemplate[]
   seoSettings        SeoSettings?
   designRequests     DesignRequest[]
 
@@ -353,6 +355,12 @@ model TenantSettings {
   /// FB Poster › Marketplace settings (templates, daily limit, auto publish, AI writer); aiKey is write-only
   fbSettings Json @default("{}")
 
+  // Deals / Bill of Sale (Business details): printed on the deal forms and used as defaults for a new deal
+  dealerLicenseNumber String @default("")
+  dealDocFee          String @default("")
+  dealTaxRate         String @default("4.15")
+  dealTitleFee        String @default("")
+
   updatedAt DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -440,6 +448,7 @@ model Vehicle {
   leads  Lead[]
   fbListing FbListing?
   seo    SeoVehicle?
+  deals  Deal[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, status])
@@ -1011,4 +1020,148 @@ model DesignRequest {
   @@index([tenantId, createdAt])
   @@index([requestCategory, createdAt])
   @@index([status, createdAt])
+}
+
+// ───────── Deals / Bill of Sale (dealer portal › Deals) ─────────
+
+enum DealStatus {
+  DRAFT
+  COMPLETED
+}
+
+enum DealPaymentMethod {
+  CASH
+  FINANCE
+  OUTSIDE_LIEN
+}
+
+enum OdometerStatus {
+  ACTUAL
+  EXCEEDS_LIMITS
+  NOT_ACTUAL
+}
+
+enum WarrantyType {
+  AS_IS
+  WARRANTY
+}
+
+/// One vehicle sale: buyer, money, disclosures. The 4 forms (bill of sale, odometer statement, FTC Buyers Guide,
+/// Virginia VSA 17A) are generated from it on demand (backend src/deals/pdf).
+model Deal {
+  id         String     @id @default(uuid())
+  /// the dealership (tenant)
+  tenantId   String
+  vehicleId  String?
+  /// 1, 2, 3 … per dealership; dealNumber = "D-000123"
+  dealSeq    Int
+  dealNumber String
+  status     DealStatus @default(DRAFT)
+  saleDate   DateTime   @default(now())
+
+  // buyer
+  buyerFullName      String @default("")
+  buyerFirstName     String @default("")
+  buyerMiddleName    String @default("")
+  buyerLastName      String @default("")
+  buyerEmail         String @default("")
+  buyerPhone         String @default("")
+  buyerAddress       String @default("")
+  buyerCity          String @default("")
+  buyerState         String @default("VA")
+  buyerZip           String @default("")
+  /// Virginia county / city of residence (VSA 17A)
+  buyerCounty        String @default("")
+  /// YYYY-MM-DD
+  buyerDob           String @default("")
+  buyerLicenseNumber String @default("")
+  buyerLicenseState  String @default("VA")
+  /// YYYY-MM-DD
+  buyerLicenseExpiry String @default("")
+
+  // co-buyer (optional)
+  coBuyerFullName      String @default("")
+  coBuyerAddress       String @default("")
+  coBuyerPhone         String @default("")
+  coBuyerLicenseNumber String @default("")
+
+  // money
+  salePrice        Decimal           @default(0) @db.Decimal(12, 2)
+  tradeInAllowance Decimal           @default(0) @db.Decimal(12, 2)
+  tradeInPayoff    Decimal           @default(0) @db.Decimal(12, 2)
+  /// { year, make, model, vin, mileage }
+  tradeInVehicle   Json              @default("{}")
+  docFee           Decimal           @default(0) @db.Decimal(12, 2)
+  titleRegFee      Decimal           @default(0) @db.Decimal(12, 2)
+  otherFees        Decimal           @default(0) @db.Decimal(12, 2)
+  otherFeesLabel   String            @default("")
+  /// percent, e.g. 4.15
+  salesTaxRate     Decimal           @default(4.15) @db.Decimal(6, 3)
+  salesTaxAmount   Decimal           @default(0) @db.Decimal(12, 2)
+  /// true = salesTaxAmount was typed by the dealer (not worked out from the rate)
+  salesTaxManual   Boolean           @default(false)
+  downPayment      Decimal           @default(0) @db.Decimal(12, 2)
+  totalPrice       Decimal           @default(0) @db.Decimal(12, 2)
+  balanceDue       Decimal           @default(0) @db.Decimal(12, 2)
+  paymentMethod    DealPaymentMethod @default(CASH)
+  lienholderName    String           @default("")
+  lienholderAddress String           @default("")
+  /// YYYY-MM-DD
+  lienDate          String           @default("")
+
+  // disclosures
+  odometerReading        Int?
+  odometerStatus         OdometerStatus @default(ACTUAL)
+  warrantyType           WarrantyType   @default(AS_IS)
+  /// FULL | LIMITED (dealer warranty only)
+  warrantyKind           String         @default("LIMITED")
+  warrantyDuration       String         @default("")
+  warrantySystemsCovered String         @default("")
+  warrantyLaborPct       String         @default("")
+  warrantyPartsPct       String         @default("")
+  serviceContract        Boolean        @default(false)
+  stateCode              String         @default("VA")
+
+  // Virginia VSA 17A
+  /// TITLE_AND_REGISTRATION | TITLE_ONLY | TRANSFER_PLATE
+  titlePurpose String @default("TITLE_AND_REGISTRATION")
+  plateNumber  String @default("")
+  gvwr         String @default("")
+
+  /// the vehicle as it was sold (year, make, model, trim, VIN, colour …): the forms stay right if the vehicle changes
+  vehicleSnapshot Json   @default("{}")
+  notes           String @default("")
+  createdBy       String @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, dealSeq])
+  @@index([tenantId, createdAt])
+  @@index([vehicleId])
+}
+
+/// A state's official fillable PDF (Virginia DMV VSA 17A) filled from the deal instead of the built-in layout.
+/// tenantId null = the platform's copy for every dealership (Platform Admin); a dealership's own copy wins.
+model StateFormTemplate {
+  id            String   @id @default(uuid())
+  tenantId      String?
+  stateCode     String   @default("VA")
+  formName      String   @default("Virginia DMV VSA 17A - Application for Certificate of Title and Registration")
+  /// "/uploads/…" path of the PDF
+  pdfUrl        String
+  /// every AcroForm field of the PDF: [{ name, type }]
+  pdfFields     Json     @default("[]")
+  /// PDF field name → deal key (see backend src/deals/deal-keys.ts)
+  fieldMappings Json     @default("{}")
+  isActive      Boolean  @default(true)
+  uploadedBy    String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, stateCode])
 }

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  House, Store, Palette, FileText, Car, Newspaper, Mail, Users, ExternalLink, LogOut, Menu, Plus, KeyRound, Rss, ShieldAlert, X, Send, Check, Bell,
+  House, Store, Palette, FileText, Car, Newspaper, Mail, Users, ExternalLink, LogOut, Menu, Plus, KeyRound, Rss, ShieldAlert, X, Send, Check, Bell, FileSignature,
 } from 'lucide-react';
 import { api, auth, mediaUrl, siteUrl, PLATFORM_ADMIN_URL } from '@/lib/api';
 import { useSession } from '@/lib/session';
@@ -135,6 +135,7 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
       title: 'Inventory & marketing',
       items: [
         { href: '/dealer/inventory', label: 'Inventory', icon: Car, perm: ['inventory'], badge: setup?.forSale },
+        { href: '/dealer/deals', label: 'Deals / Bill of Sale', icon: FileSignature, perm: ['inventory'] },
         { href: '/dealer/cargurus', label: 'CarGurus feed', icon: Rss, perm: ['inventory'], feature: 'cargurus' },
         { href: '/dealer/facebook', label: 'FB Poster', icon: Send, perm: ['inventory'], feature: 'facebook' },
         { href: '/dealer/blog', label: 'Blog & news', icon: Newspaper, perm: ['blog'], feature: 'blog' },

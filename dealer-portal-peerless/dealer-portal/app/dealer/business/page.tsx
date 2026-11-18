@@ -20,11 +20,13 @@ import {
   Send,
   Store,
   Upload,
+  FileSignature,
 } from 'lucide-react';
 import { useSettings } from '@/lib/useSettings';
 import { api, mediaUrl } from '@/lib/api';
 import { useTenant } from '@/components/DealerShell';
 import { ErrorBox, Loading, cx } from '@/components/ui';
+import { StateFormTemplates } from '@/components/deals/StateFormTemplates';
 import { uploadFiles } from '@/components/ImageUploader';
 import { MapPicker } from '@/components/MapPicker';
 import { useToast } from '@/components/toast';
@@ -35,6 +37,7 @@ const KEYS = [
   'hours', 'hoursShort',
   'facebook', 'instagram', 'google', 'googleReviews', 'youtube', 'tiktok', 'messenger',
   'feedOperation',
+  'dealerLicenseNumber', 'dealDocFee', 'dealTaxRate', 'dealTitleFee',
 ];
 
 /* ---------- shared look (same tokens as the other redesigned pages) ---------- */
@@ -867,6 +870,46 @@ export default function BusinessPage() {
                   </label>
                 );
               })}
+            </div>
+          </section>
+
+          {/* Deals / Bill of Sale */}
+          <section aria-labelledby="dl-h" className={CARD}>
+            <CardHead
+              icon={<FileSignature className="h-[18px] w-[18px]" />}
+              title="Deals / Bill of Sale"
+              sub="Printed on your deal forms and used for every new deal."
+              tip="Your dealer license number appears on the bill of sale, odometer statement and VSA 17A. The fees and tax rate fill in a new deal; you can change them per deal."
+            />
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-x-4 gap-y-[18px] p-5">
+              {(
+                [
+                  ['dealerLicenseNumber', 'Dealer license no.', 'e.g. 12345', false],
+                  ['dealDocFee', 'Doc / processing fee ($)', '0.00', true],
+                  ['dealTitleFee', 'Title & registration ($)', '0.00', true],
+                  ['dealTaxRate', 'Sales tax rate (%)', '4.15', true],
+                ] as const
+              ).map(([k, label, ph, numeric]) => (
+                <div key={k} className="flex flex-col gap-1.5">
+                  <FieldLabel htmlFor={`b-${k}`} label={label} optional />
+                  <div className={FLD}>
+                    <input
+                      id={`b-${k}`}
+                      className={INP}
+                      inputMode={numeric ? 'decimal' : undefined}
+                      value={val(k)}
+                      onChange={(e) => put(k, numeric ? e.target.value.replace(/[^0-9.]/g, '') : e.target.value)}
+                      placeholder={ph}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-[#E5E9F0] px-5 pb-5 pt-4">
+              <span className={LBL}>Official VA VSA 17A form (optional)</span>
+              <div className="mt-2">
+                <StateFormTemplates base="/dealer/deals/form-templates" scope="dealer" />
+              </div>
             </div>
           </section>
         </div>

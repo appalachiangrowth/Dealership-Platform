@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { brandRun, onBrandingChange } from '@/lib/branding';
 import { useRouter } from 'next/navigation';
-import { Car, ImageIcon, Plus, Search, Star, Trash2, Upload } from 'lucide-react';
+import { Car, FileSignature, ImageIcon, Plus, Search, Star, Trash2, Upload } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { useToast } from '@/components/toast';
@@ -319,6 +319,15 @@ export default function InventoryPage() {
                             Publish
                           </Button>
                         )}{' '}
+                        {v.status !== 'SOLD' && (
+                          <Link
+                            href={`/dealer/deals/new?vehicleId=${v.id}`}
+                            title="Sell car / Bill of Sale"
+                            className="mr-1 inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                          >
+                            <FileSignature className="h-3.5 w-3.5" /> Sell
+                          </Link>
+                        )}
                         <Link href={`/dealer/inventory/${v.id}`} className="inline-flex rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                           Edit
                         </Link>
