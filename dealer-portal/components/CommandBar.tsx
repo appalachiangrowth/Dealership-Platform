@@ -60,7 +60,7 @@ const EXAMPLES = [
 
 const PAGE_URL: Record<string, string> = {
   inventory: '/dealer/inventory',
-  add_vehicle: '/dealer/inventory/new?manual=1',
+  add_vehicle: '/dealer/inventory/ai',
   ai_add: '/dealer/inventory/ai',
   facebook: '/dealer/facebook',
   marketplace: '/dealer/facebook/marketplace',
@@ -434,7 +434,7 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
                 {plan.cars.length > 24 && <span className="text-xs text-[#64748B]">+{plan.cars.length - 24} more</span>}
               </div>
             )}
-            {plan.intent === 'unclear' && <span className="text-[13px] text-[#64748B]">Try being more specific, e.g. add the year, colour or stock number.</span>}
+            {plan.intent === 'unclear' && <span className="text-[13px] text-[#64748B]">Try being more specific, e.g. add the year, color or stock number.</span>}
             {plan.intent !== 'action' && plan.intent !== 'navigate' && (
               <div>
                 <button type="button" onClick={() => searchInventory(plan.search || planText)} className="text-[13px] font-semibold text-[#1D4ED8] hover:underline">

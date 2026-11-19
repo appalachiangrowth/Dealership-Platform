@@ -28,7 +28,7 @@ import { useApi } from '@/lib/useApi';
 import { useToast } from '@/components/toast';
 import { Badge, Button, Field, Input, Select, Spinner, Textarea, cx } from '@/components/ui';
 
-/* ─────────── Dealer Portal › Design & colours › "Add Pages" and "Add Custom Design / Theme" ─────────── */
+/* ─────────── Dealer Portal › Design & colors › "Add Pages" and "Add Custom Design / Theme" ─────────── */
 
 type Category = 'ADD_PAGE' | 'CUSTOM_THEME';
 type Status = 'NEW' | 'IN_REVIEW' | 'IN_PROGRESS' | 'COMPLETED' | 'DECLINED';
@@ -78,7 +78,7 @@ const PAGE_IDEAS = ['Service Department', 'Warranty & Protection', 'Customer Rev
 export const AREAS: { id: string; label: string; desc: string; Icon: React.ElementType }[] = [
   { id: 'FULL_THEME', label: 'Full custom theme', desc: 'A bespoke website design made for your brand', Icon: Sparkles },
   { id: 'NEW_SECTION', label: 'Add new section to an existing page', desc: 'A new block on Home, Inventory, About…', Icon: LayoutTemplate },
-  { id: 'COLORS_TYPOGRAPHY', label: 'Colour scheme & typography', desc: 'Brand colours, light / dark look, fonts', Icon: Palette },
+  { id: 'COLORS_TYPOGRAPHY', label: 'Color scheme & typography', desc: 'Brand colors, light / dark look, fonts', Icon: Palette },
   { id: 'HEADER_FOOTER', label: 'Header / navigation / footer redesign', desc: 'Logo area, menu, footer layout', Icon: PanelTop },
   { id: 'WIDGET_BANNER', label: 'Custom interactive widget / banner', desc: 'Promo banner, trust badges, video showcase…', Icon: Brush },
 ];
@@ -100,16 +100,16 @@ const slugify = (s: string) =>
 /* ───────────────── sub-menu ───────────────── */
 
 const TABS = [
-  { href: '/dealer/design', label: 'Theme & colours', Icon: Palette },
+  { href: '/dealer/design', label: 'Theme & colors', Icon: Palette },
   { href: '/dealer/design/pages', label: 'Add Pages', Icon: FilePlus2 },
   { href: '/dealer/design/custom', label: 'Add Custom Design / Theme', Icon: Sparkles },
 ];
 
-/** Design & colours › Theme & colours | Add Pages | Add Custom Design / Theme */
+/** Design & colors › Theme & colors | Add Pages | Add Custom Design / Theme */
 export function DesignSubNav({ className }: { className?: string }) {
   const pathname = usePathname() || '';
   return (
-    <nav aria-label="Design & colours" className={cx('flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-100/70 p-1', className)}>
+    <nav aria-label="Design & colors" className={cx('flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-100/70 p-1', className)}>
       {TABS.map((t) => {
         const on = t.href === '/dealer/design' ? pathname === '/dealer/design' : pathname.startsWith(t.href);
         return (
@@ -161,12 +161,12 @@ export function DesignRequests({ mode }: { mode: 'pages' | 'custom' }) {
       <div>
         <DesignSubNav />
         <div className="mt-5">
-          <div className={cx('text-xs font-bold uppercase tracking-wider', mode === 'pages' ? 'text-blue-700' : 'text-emerald-700')}>Design & colours</div>
+          <div className={cx('text-xs font-bold uppercase tracking-wider', mode === 'pages' ? 'text-blue-700' : 'text-emerald-700')}>Design & colors</div>
           <h1 className="mt-1 font-heading text-2xl font-extrabold text-slate-900">{mode === 'pages' ? 'Add a new page' : 'Add a custom design / theme'}</h1>
           <p className="mt-1 max-w-2xl text-sm text-slate-500">
             {mode === 'pages'
               ? 'Ask for a brand-new page on your website — a service department, warranty info, reviews, your team or a landing page. We build it and let you know when it is live.'
-              : 'Ask for a bespoke theme for your brand, a new section on an existing page, new colours and fonts, or a redesigned header, menu or footer.'}
+              : 'Ask for a bespoke theme for your brand, a new section on an existing page, new colors and fonts, or a redesigned header, menu or footer.'}
           </p>
         </div>
       </div>
@@ -547,8 +547,8 @@ function CustomForm({ data, onSent }: { data: Data | null; onSent: () => Promise
       {has('COLORS_TYPOGRAPHY') && (
         <div className="space-y-4 rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <ColorInput label="Primary colour" value={f.primary} onChange={(v) => setF({ ...f, primary: v })} />
-            <ColorInput label="Accent colour" value={f.accent} onChange={(v) => setF({ ...f, accent: v })} />
+            <ColorInput label="Primary color" value={f.primary} onChange={(v) => setF({ ...f, primary: v })} />
+            <ColorInput label="Accent color" value={f.accent} onChange={(v) => setF({ ...f, accent: v })} />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -586,7 +586,7 @@ function CustomForm({ data, onSent }: { data: Data | null; onSent: () => Promise
           </>
         }
       >
-        <Input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} maxLength={120} placeholder="e.g. Premium dark theme with our red brand colour" />
+        <Input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} maxLength={120} placeholder="e.g. Premium dark theme with our red brand color" />
       </Field>
 
       <Field
@@ -595,7 +595,7 @@ function CustomForm({ data, onSent }: { data: Data | null; onSent: () => Promise
             Target pages & detailed design brief <span className="text-red-600">*</span>
           </>
         }
-        hint="Which pages, layout, colours, animations, how a section should behave — the more the better."
+        hint="Which pages, layout, colors, animations, how a section should behave — the more the better."
       >
         <Textarea rows={6} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} maxLength={5000} placeholder="e.g. Home page: full-width video of our lot at the top, then featured trucks in a slider. Trust badges (BBB, CarFax) under the hero. Footer with our three locations…" />
       </Field>

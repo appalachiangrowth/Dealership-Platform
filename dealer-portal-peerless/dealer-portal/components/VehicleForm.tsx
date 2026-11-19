@@ -10,6 +10,7 @@ import { autoDescription } from '@/lib/vehicle-description';
 import { FacebookIcon } from '@/lib/facebook';
 import { FbPostModal } from './fb/FbPostModal';
 import { brandRun } from '@/lib/branding';
+import { BODY_STYLES, checkVin, normBodyStyle, normVin, VinDup } from '@/lib/vin-check';
 import { useToast } from './toast';
 import { useTenant } from './DealerShell';
 import { ImageUploader } from './ImageUploader';
@@ -43,7 +44,7 @@ export const EMPTY_VEHICLE: Vehicle = {
 };
 
 const TYPES = ['Car', 'Truck', 'SUV'];
-const BODY = ['SUV', 'Sedan', 'Pickup Truck', 'Hatchback', 'Coupe', 'Convertible', 'Wagon', 'Minivan', 'Van / Passenger Van', 'Cargo Van'];
+const BODY = BODY_STYLES;
 const DRIVE = ['Front-Wheel Drive', 'Rear-Wheel Drive', 'Four-Wheel Drive', 'All-Wheel Drive'];
 const FUEL = ['Gasoline', 'Diesel', 'Biodiesel', 'Hybrid', 'Electric'];
 const STATUS_TXT: Record<string, string> = { PUBLISHED: 'for sale', DRAFT: 'draft', SOLD: 'sold' };
@@ -76,12 +77,12 @@ const TIPS: Record<string, string> = {
   msrp: 'The manufacturer’s suggested retail price when the vehicle was new. Optional; shown to buyers as a comparison.',
   mileage: 'The current odometer reading, in miles. Facebook Marketplace needs more than 0.',
   vin: 'The 17-character Vehicle Identification Number. You will find it on the dashboard at the bottom of the windshield, or on the driver’s door frame. It never contains the letters I, O or Q.',
-  stockNumber: 'Your own reference number for this vehicle, so your team can find it quickly. Letters, numbers and - _ . / # only.',
+  stockNumber: 'Your own stock number for this vehicle, typed by you (it is never created automatically), so your team can find it quickly. Letters, numbers and - _ . / # only.',
   condition: 'Whether the vehicle is new or used. This controls which search filter it appears under.',
   certified: 'Choose Yes only if the vehicle has passed a manufacturer’s certified pre-owned inspection programme.',
   dealLabel: 'A short highlight shown on the listing, such as “One owner” or “$1,500 below market”. Keep it under 30 characters.',
-  exteriorColor: 'The main paint colour, for example Black, White or Silver. Use the everyday name buyers would search for.',
-  interiorColor: 'The main colour of the seats and cabin, for example Black, Grey or Beige.',
+  exteriorColor: 'The main paint color, for example Black, White or Silver. Use the everyday name buyers would search for.',
+  interiorColor: 'The main color of the seats and cabin, for example Black, Grey or Beige.',
   transmission: 'How the vehicle changes gear. Automatic and CVT need no clutch pedal; Manual has a clutch pedal and gear stick.',
   drivetrain: 'Which wheels the engine powers. All-wheel and four-wheel drive give better grip in snow and off-road.',
   fuelType: 'What the vehicle runs on.',
@@ -126,8 +127,8 @@ const REQ: [string, string, string][] = [
   ['mileage', 'Mileage', 'Price & ID'],
   ['vin', 'VIN', 'Price & ID'],
   ['stockNumber', 'Stock number', 'Price & ID'],
-  ['exteriorColor', 'Exterior colour', 'Specs'],
-  ['interiorColor', 'Interior colour', 'Specs'],
+  ['exteriorColor', 'Exterior color', 'Specs'],
+  ['interiorColor', 'Interior color', 'Specs'],
   ['transmission', 'Transmission', 'Specs'],
   ['description', 'Description', 'Description'],
 ];
@@ -196,7 +197,7 @@ function Sec({
 
 export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusField?: string }) {
   const isNew = !initial.id;
-  const [v, setV] = useState<Vehicle>(initial);
+  const [v, setV] = useState<Vehicle>(() => ({ ...initial, bodyStyle: normBodyStyle(initial.bodyStyle) }));
   const [featText, setFeatText] = useState((initial.features || []).join('\n'));
   const [safeText, setSafeText] = useState((initial.safetyFeatures || []).join('\n'));
   // the description writes itself from the details while the dealer has not typed in it (empty description)
@@ -269,20 +270,32 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   }, [dirty]);
 
 
+  // duplicate VIN (in the inventory or already sold): checked by the API while typing; saving is blocked
+  const [vinDup, setVinDup] = useState<VinDup | null>(null);
+  useEffect(() => {
+    const vin = normVin(v.vin);
+    // a saved vehicle keeping its own VIN is not checked again (the API does the same)
+    if (vin.length !== 17 || (!isNew && vin === normVin(initial.vin))) {
+      setVinDup(null);
+      return;
+    }
+    let live = true;
+    const t = setTimeout(() => void checkVin(vin, v.id).then((r) => live && setVinDup(r)), 350);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [v.vin, v.id, isNew, initial.vin]);
+
   const dup = useMemo(() => {
     const others = all.filter((x) => x.id !== v.id);
-    const vin = String(v.vin || '').toUpperCase().trim();
     const stock = String(v.stockNumber || '').trim().toLowerCase();
-    if (vin.length >= 11) {
-      const a = others.find((x) => String(x.vin || '').toUpperCase() === vin);
-      if (a) return { v: a, by: `VIN ${vin}`, field: 'vin' };
-    }
     if (stock) {
       const a = others.find((x) => String(x.stockNumber || '').trim().toLowerCase() === stock);
       if (a) return { v: a, by: `stock number ${v.stockNumber}`, field: 'stockNumber' };
     }
     return null;
-  }, [all, v.id, v.vin, v.stockNumber]);
+  }, [all, v.id, v.stockNumber]);
 
   /** Scroll to a field and highlight it (CarGurus checklist, "Fix" links). */
   const goField = useCallback((name: string) => {
@@ -323,6 +336,11 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
     if (!String(v.make || '').trim() && !String(v.model || '').trim() && !String(v.vin || '').trim()) {
       toast.error('Enter at least a make, model or VIN.');
       goField('make');
+      return;
+    }
+    if (vinDup) {
+      toast.error(vinDup.message);
+      goField('vin');
       return;
     }
     if (status === 'PUBLISHED' && !canPublish) {
@@ -443,7 +461,14 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
 
   /* ───────────── field building blocks ───────────── */
   const dupNote = (k: string) =>
-    k === dup?.field && (
+    k === 'vin' && vinDup ? (
+      <span className="text-xs font-semibold text-[#B91C1C]" role="alert">
+        {vinDup.message} <b>{vinDup.vehicle.name}</b> ·{' '}
+        <Link className="underline" href={`/dealer/inventory/${vinDup.vehicle.id}`}>
+          Open it
+        </Link>
+      </span>
+    ) : k === dup?.field && (
       <span className="text-xs font-semibold text-[#B45309]">
         Already in your inventory: <b>{nameOf(dup.v)}</b> ·{' '}
         <Link className="underline" href={`/dealer/inventory/${dup.v.id}`}>
@@ -589,6 +614,21 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
         </div>
       </header>
 
+      {/* same VIN in the inventory or already sold: cannot be saved */}
+      {vinDup && (
+        <div className="mb-5 flex max-w-[1240px] flex-wrap items-center gap-4 rounded-[14px] border border-red-300 bg-red-50 p-4" role="alert">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-500 font-bold text-white">!</span>
+          <div className="min-w-0 flex-1 text-sm text-red-900">
+            <b className="block">{vinDup.message}</b>
+            VIN {normVin(v.vin)} belongs to <b>{vinDup.vehicle.name || 'another vehicle'}</b>
+            {vinDup.status === 'sold' ? ' (sold)' : ''}. Change the VIN to save this vehicle.
+          </div>
+          <Button type="button" size="sm" variant="ghost" onClick={() => goField('vin')}>
+            Fix the VIN
+          </Button>
+        </div>
+      )}
+
       {/* already in the inventory */}
       {dup && (
         <div className="mb-5 flex max-w-[1240px] flex-wrap items-center gap-4 rounded-[14px] border border-amber-300 bg-amber-50 p-4">
@@ -669,10 +709,10 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
             </div>
           </Sec>
 
-          <Sec id="sec-specs" num={4} title="Specifications" desc="Engine, colours, drivetrain and history." chip={chipFor('Specs')} collapsible forceOpen={!!hot}>
+          <Sec id="sec-specs" num={4} title="Specifications" desc="Engine, colors, drivetrain and history." chip={chipFor('Specs')} collapsible forceOpen={!!hot}>
             <div className={GRID}>
-              {field('exteriorColor', 'Exterior colour', dl('exteriorColor', 'ext-colors-list', EXTERIOR_COLORS, { placeholder: 'e.g. Silver' }))}
-              {field('interiorColor', 'Interior colour', dl('interiorColor', 'int-colors-list', INTERIOR_COLORS, { placeholder: 'e.g. Black' }))}
+              {field('exteriorColor', 'Exterior color', dl('exteriorColor', 'ext-colors-list', EXTERIOR_COLORS, { placeholder: 'e.g. Silver' }))}
+              {field('interiorColor', 'Interior color', dl('interiorColor', 'int-colors-list', INTERIOR_COLORS, { placeholder: 'e.g. Black' }))}
               {field('transmission', 'Transmission', dl('transmission', 'transmissions-list', TRANSMISSIONS, { placeholder: 'e.g. Automatic' }))}
               {field('drivetrain', 'Drivetrain', sel('drivetrain', DRIVES.length ? DRIVES : DRIVE, 'Select drivetrain'))}
               {field('fuelType', 'Fuel type', sel('fuelType', FUEL_TYPES.length ? FUEL_TYPES : FUEL, 'Select fuel type'))}

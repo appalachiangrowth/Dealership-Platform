@@ -9,7 +9,7 @@ import { cx } from './ui';
  * The page inside answers with messages (see frontend/lib/live.ts):
  *   ready {keys}  → which editable texts are on the page        pick {key} → a text was clicked
  *   focus-result {key, found}
- * and we send it: values (texts while typing) · focus (outline a text) · colors (brand colours).
+ * and we send it: values (texts while typing) · focus (outline a text) · colors (brand colors).
  */
 export interface LivePreviewHandle {
   send: (msg: Record<string, unknown>) => void;

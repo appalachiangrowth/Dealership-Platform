@@ -18,7 +18,7 @@ function mapBody(b: string) {
   const x = b.toLowerCase();
   if (!x) return '';
   const table: [string, string][] = [
-    ['pickup', 'Pickup Truck'], ['sport utility', 'SUV'], ['suv', 'SUV'], ['crossover', 'SUV'], ['minivan', 'Minivan'], ['convertible', 'Convertible'],
+    ['pickup', 'Truck'], ['sport utility', 'SUV'], ['suv', 'SUV'], ['crossover', 'SUV'], ['minivan', 'Minivan'], ['convertible', 'Convertible'],
     ['cabriolet', 'Convertible'], ['coupe', 'Coupe'], ['wagon', 'Wagon'], ['hatchback', 'Hatchback'], ['liftback', 'Hatchback'], ['sedan', 'Sedan'],
     ['saloon', 'Sedan'], ['cargo van', 'Cargo Van'], ['van', 'Van / Passenger Van'],
   ];

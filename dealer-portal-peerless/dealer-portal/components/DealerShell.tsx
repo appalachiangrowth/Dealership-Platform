@@ -119,7 +119,7 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
         { href: '/dealer/business', label: 'Business details', icon: Store, perm: ['business'], done: done('business', 'logo', 'hours') },
         {
           href: '/dealer/design',
-          label: 'Design & colours',
+          label: 'Design & colors',
           icon: Palette,
           perm: ['design'],
           done: done('design'),
@@ -210,7 +210,7 @@ export function DealerShell({ children }: { children: React.ReactNode }) {
                   {i.done && <Check className="h-4 w-4 text-[#22C55E]" strokeWidth={2.4} aria-label="Complete" />}
                   {!!i.badge && <span className="rounded-full bg-[#1E293B] px-2 py-px text-xs font-semibold text-[#CBD5E1]">{i.badge}</span>}
                 </Link>
-                {/* sub-menu (Design & colours › Add Pages / Add Custom Design / Theme) */}
+                {/* sub-menu (Design & colors › Add Pages / Add Custom Design / Theme) */}
                 {i.sub?.map((s) => {
                   const on = pathname.startsWith(s.href);
                   return (

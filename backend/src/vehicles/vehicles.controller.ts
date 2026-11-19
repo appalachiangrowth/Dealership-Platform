@@ -40,6 +40,12 @@ export class VehiclesController {
     return this.vehicles.photoJob(t);
   }
 
+  /** duplicate VIN check for the Add / Edit vehicle forms: ?vin=<vin>&id=<vehicle being edited> → none | active | sold */
+  @Get('vin-check')
+  vinCheck(@TenantId() t: string, @Query('vin') vin = '', @Query('id') id = '') {
+    return this.vehicles.vinCheck(t, vin, id || undefined);
+  }
+
   @Get(':id')
   get(@TenantId() t: string, @Param('id') id: string) {
     return this.vehicles.get(t, id);

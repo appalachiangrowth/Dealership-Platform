@@ -47,7 +47,7 @@ export default function DesignPage() {
   const currentId: string = data?.current?.themeId || data?.catalog?.find((t: any) => t.active)?.id || '';
   const showingCurrent = !previewId || previewId === currentId;
 
-  // colour pickers → the preview changes at once (saved only with "Save colours")
+  // color pickers → the preview changes at once (saved only with "Save colors")
   useEffect(() => {
     if (!data || !showingCurrent) return;
     const t = setTimeout(() => preview.current?.send({ pa: 'colors', colors: withDefaults(colors, data.colors.slots) }), 60);
@@ -80,7 +80,7 @@ export default function DesignPage() {
     setBusy('colors');
     try {
       setData(await api('/dealer/design/colors', { method: 'PUT', body: { colors } }));
-      toast.ok('Colours saved');
+      toast.ok('Colors saved');
       preview.current?.reload();
     } catch (e) {
       toast.error((e as Error).message);
@@ -93,22 +93,22 @@ export default function DesignPage() {
 
   return (
     <div className="grid gap-6 lg:h-[calc(100vh-3rem)] lg:grid-cols-[minmax(360px,520px)_1fr]">
-      {/* ---------------- designs + colours ---------------- */}
+      {/* ---------------- designs + colors ---------------- */}
       <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-5 pb-4 pt-5">
           <div className="text-xs font-bold uppercase tracking-wider text-blue-700">Set up your website · Step 2 of 3</div>
-          <h1 className="mt-1 font-heading text-xl font-extrabold text-slate-900">Design & colours</h1>
+          <h1 className="mt-1 font-heading text-xl font-extrabold text-slate-900">Design & colors</h1>
           <p className="mt-1 text-sm text-slate-500">Pick how your website looks. Your text, vehicles and business details follow you to any design.</p>
-          {/* Theme & colours | Add Pages | Add Custom Design / Theme */}
+          {/* Theme & colors | Add Pages | Add Custom Design / Theme */}
           <DesignSubNav className="mt-3" />
         </div>
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-slate-50/60 px-4 py-4">
-          {/* brand colours */}
+          {/* brand colors */}
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <div className="font-semibold text-slate-900">Brand colours</div>
+                <div className="font-semibold text-slate-900">Brand colors</div>
                 <div className="text-xs text-slate-500">For {data.current.name} — changes show in the preview right away.</div>
               </div>
               <div className="flex gap-2">
@@ -118,7 +118,7 @@ export default function DesignPage() {
                   </Button>
                 )}
                 <Button size="sm" onClick={saveColors} loading={busy === 'colors'} disabled={!colorsChanged}>
-                  Save colours
+                  Save colors
                 </Button>
               </div>
             </div>
@@ -136,7 +136,7 @@ export default function DesignPage() {
                       />
                       <Input value={v} placeholder={s.default} onChange={(e) => setColors({ ...colors, [s.key]: e.target.value })} className="font-mono uppercase" />
                       {v && v.toUpperCase() !== s.default.toUpperCase() && (
-                        <button type="button" title="Back to the design's own colour" className="shrink-0 text-slate-400 hover:text-slate-700" onClick={() => setColors({ ...colors, [s.key]: s.default })}>
+                        <button type="button" title="Back to the design's own color" className="shrink-0 text-slate-400 hover:text-slate-700" onClick={() => setColors({ ...colors, [s.key]: s.default })}>
                           <RotateCcw className="h-4 w-4" />
                         </button>
                       )}
@@ -359,7 +359,7 @@ export default function DesignPage() {
   );
 }
 
-/** Colours to show: what is typed; empty / unfinished values ('') fall back to the design's own colours. */
+/** Colors to show: what is typed; empty / unfinished values ('') fall back to the design's own colors. */
 function withDefaults(colors: Record<string, string>, slots: Slot[]) {
   const out: Record<string, string> = {};
   for (const s of slots) {

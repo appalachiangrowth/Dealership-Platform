@@ -1,12 +1,13 @@
 'use client';
 
 /**
- * Add a vehicle with AI (AI Quick Add v4.2, built into the portal).
- *  Page 1 — Quick add: VIN (looks itself up) + photos, or one walkaround video, + price / owners / accidents / notes.
- *           AI starts reading the photos as soon as the VIN is found, while the dealer fills in the rest.
- *  Page 2 — Check and publish: the full listing, already filled in. Every value is tagged VIN / AI / You / Auto /
- *           Needs you; the side panel lists what is still required and what AI wasn't sure about.
- * Publishing uploads the photos, saves the vehicle like the normal Add vehicle form, and offers Facebook.
+ * Add a vehicle (the only way to add one): two entry modes —
+ *  · Photos & VIN      — type / scan the VIN (looks itself up) and upload photos; AI reads the photos.
+ *  · Walkaround Video  — one video; AI takes the photos, VIN, mileage and spoken notes from it.
+ * "Only you can answer these" (price and history, never filled in by AI) stays at the top. As soon as the VIN is
+ * decoded or AI has read the photos / video, the decoded fields are listed and the full vehicle form opens below,
+ * already filled in: every value is tagged VIN / AI / You / Needs you and can be changed. Values the dealer changed
+ * are kept when AI finishes later. Publishing uploads the photos, saves the vehicle and offers Facebook.
  */
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -17,6 +18,7 @@ import { PHOTO_ACCEPT, uploadFiles } from '@/components/ImageUploader';
 import { FbPostModal } from '@/components/fb/FbPostModal';
 import { AQ_CSS } from '@/components/ai/aqStyles';
 import { api, mediaUrl } from '@/lib/api';
+import { BODY_STYLES, checkVin, normBodyStyle, normVin, VinDup } from '@/lib/vin-check';
 import { brandRun } from '@/lib/branding';
 import {
   aiApi, AiStatus, ANGLE_LABEL, ANGLE_ORDER, arrangePhotos, bigFrame, extractAudio, extractFrames, mergeVideo, nextPhotoId, Photo, shrink, Vid, vinOk,
@@ -25,7 +27,7 @@ import {
 /* ======================= fields of the results page ======================= */
 const OPT: Record<string, string[]> = {
   vtype: ['Car', 'Truck', 'SUV', 'Van', 'Motorcycle'],
-  body: ['SUV', 'Sedan', 'Pickup Truck', 'Hatchback', 'Coupe', 'Convertible', 'Wagon', 'Minivan', 'Van / Passenger Van', 'Cargo Van'],
+  body: BODY_STYLES,
   condition: ['Used', 'New'],
   cpo: ['No', 'Yes'],
   ext: ['Black', 'White', 'Silver', 'Gray', 'Blue', 'Red', 'Green', 'Brown', 'Beige', 'Gold', 'Orange', 'Yellow', 'Purple'],
@@ -52,14 +54,14 @@ const SECTIONS: [string, string, FieldDef[]][] = [
     ['msrp', 'MSRP', 0, 'The original manufacturer price when new. Optional.', '$'],
     ['mileage', 'Mileage', 1, 'The odometer reading in miles. AI reads it from the dashboard photo; please double-check it.', '', 'mi'],
     ['vin', 'VIN', 1, 'The 17-character Vehicle Identification Number.', '', '', 'wide'],
-    ['stock', 'Stock number', 1, 'Your own reference number, created automatically. Change it if you use your own system.'],
+    ['stock', 'Stock number', 1, 'Your own stock number for this vehicle. Type it in; it is never created automatically.'],
     ['condition', 'Condition', 0, 'New or used.'],
     ['cpo', 'Certified pre-owned', 0, 'Yes only if it passed a manufacturer certification programme.'],
     ['badge', 'Deal badge', 0, 'A short highlight on the listing, e.g. "One owner". Under 30 characters.', '', '', 'wide'],
   ]],
-  ['Specifications', 'Engine, colours, drivetrain and history.', [
-    ['ext', 'Exterior colour', 1, 'The main paint colour, read by AI from the photos.'],
-    ['int', 'Interior colour', 1, 'The main cabin colour, read by AI from the photos.'],
+  ['Specifications', 'Engine, colors, drivetrain and history.', [
+    ['ext', 'Exterior color', 1, 'The main paint color, read by AI from the photos.'],
+    ['int', 'Interior color', 1, 'The main cabin color, read by AI from the photos.'],
     ['trans', 'Transmission', 1, 'How the vehicle changes gear.'],
     ['drive', 'Drivetrain', 0, 'Which wheels are powered.'],
     ['fuel', 'Fuel type', 0, 'What the vehicle runs on.'],
@@ -70,8 +72,8 @@ const SECTIONS: [string, string, FieldDef[]][] = [
     ['tank', 'Tank size', 0, 'Fuel tank size in US gallons. Optional.', '', 'gal'],
     ['doors', 'Doors', 0, 'Number of passenger doors.'],
     ['seats', 'Seats', 0, 'How many people it carries.'],
-    ['owners', 'Previous owners', 1, 'From your answer on the first page.'],
-    ['accidents', 'Accidents reported', 0, 'From your answer on the first page. Optional.'],
+    ['owners', 'Previous owners', 1, 'From your answer in “Only you can answer these”.'],
+    ['accidents', 'Accidents reported', 0, 'From your answer in “Only you can answer these”. Optional.'],
   ]],
   ['Description & features', 'What makes this vehicle worth a visit.', [
     ['description', 'Description', 1, 'Written by AI from the VIN record and what it saw in the photos. Edit it freely.', '', '', 'full', 'area'],
@@ -110,6 +112,10 @@ type You = { price: string; condition: string; cpo: string; owners: string; acci
 type Res = { v: Record<string, string>; src: Record<string, string>; ev: Record<string, string>; ok: Record<string, boolean> };
 type Note = { kind: 'ok' | 'bad' | 'warn' | 'info'; icon: string; html: React.ReactNode };
 type AiState = 'idle' | 'waiting' | 'running' | 'done' | 'error';
+/** form fields that are the answers of "Only you can answer these" (kept in step both ways) */
+const YOU_KEYS: Record<string, keyof You> = { price: 'price', condition: 'condition', cpo: 'cpo', owners: 'owners', accidents: 'accidents' };
+/** where a value came from, for the "decoded" summary */
+const FILLED_BY: Record<string, string> = { vin: 'VIN', ai: 'AI', unsure: 'AI' };
 
 const lines = (s: string) => String(s || '').split('\n').map((x) => x.trim()).filter(Boolean);
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -232,7 +238,6 @@ export default function AiAddVehiclePage() {
   const dealer = tenant?.name || 'our dealership';
 
   const [status, setStatus] = useState<AiStatus | null>(null);
-  const [step, setStep] = useState<'quick' | 'results'>('quick');
   const [mode, _setMode] = useState<'photos' | 'video'>('photos');
   const modeRef = useRef(mode);
 
@@ -280,11 +285,12 @@ export default function AiAddVehiclePage() {
   const [saving, setSaving] = useState('');
   const [fbVehicle, setFbVehicle] = useState<any>(null);
   const [savedDraft, setSavedDraft] = useState<string | null>(null);
-  const [dup, setDup] = useState<{ id: string; name: string } | null>(null);
-  const stockNo = useMemo(() => {
-    const pre = (tenant?.name || 'STK').split(/\s+/).map((w) => w[0]).join('').replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'STK';
-    return `${pre}-${1000 + Math.floor(Math.random() * 9000)}`;
-  }, [tenant?.name]);
+  // same VIN already in the inventory or sold: shown at once and saving is blocked (the API refuses it too)
+  const [dup, setDup] = useState<VinDup | null>(null);
+  // the full form: open as soon as the VIN is decoded or AI has read the video (or on request without a lookup)
+  const [formOpen, setFormOpen] = useState(false);
+  // fields the dealer changed in the form: kept when the VIN / AI values arrive later
+  const touched = useRef<Set<string>>(new Set());
 
   const setPhotos = useCallback((p: Photo[]) => {
     photosRef.current = p;
@@ -328,7 +334,6 @@ export default function AiAddVehiclePage() {
       if (decodedRef.current) {
         setDecoded(null);
         setVinNotes([]);
-        setDup(null);
       }
       return;
     }
@@ -340,7 +345,6 @@ export default function AiAddVehiclePage() {
   const lookupVin = async (v: string) => {
     setVinBusy(true);
     setVinNotes([]);
-    setDup(null);
     try {
       const d = await aiApi<Decoded>('decode-vin', { vin: v });
       if (vinRef.current !== v) return;
@@ -369,13 +373,6 @@ export default function AiAddVehiclePage() {
       setVinNotes(notes);
       setVinHint({ text: '', color: '#526077' });
       setDecoded(d);
-      // already in the inventory?
-      api(`/dealer/vehicles?q=${encodeURIComponent(v)}&pageSize=5`)
-        .then((r) => {
-          const hit = (r.items || []).find((x: any) => String(x.vin || '').toUpperCase() === v);
-          if (hit && vinRef.current === v) setDup({ id: hit.id, name: [hit.year, hit.make, hit.model, hit.trim].filter(Boolean).join(' ') });
-        })
-        .catch(() => {});
       if (modeRef.current === 'video') await videoAfterVin(d);
     } catch (e) {
       if (vinRef.current === v) setVinNotes([{ kind: 'bad', icon: '⚠', html: (e as Error).message }]);
@@ -459,7 +456,7 @@ export default function AiAddVehiclePage() {
   }, [setPhotos]);
 
   useEffect(() => {
-    if (mode === 'video' || step !== 'quick') return;
+    if (mode === 'video') return;
     if (!decoded || !photos.length) {
       aiVer.current++;
       setAiState('idle');
@@ -489,7 +486,17 @@ export default function AiAddVehiclePage() {
     setVNotes([]);
     setVDone(false);
     lastRun.current = '';
+    touched.current.clear();
+    setFormOpen(!!decodedRef.current);
   };
+  // the "Add a vehicle" chooser opens this page with ?mode=photos or ?mode=video
+  useEffect(() => {
+    const m = new URLSearchParams(window.location.search).get('mode');
+    if (m === 'video' || m === 'photos') {
+      modeRef.current = m;
+      _setMode(m);
+    }
+  }, []);
 
   /* ---------------- walkaround video ---------------- */
   const vstep = (key: string, st: string, text?: string) => setVsteps((s) => ({ ...s, [key]: { st, text: text ?? s[key]?.text } }));
@@ -713,7 +720,7 @@ export default function AiAddVehiclePage() {
     setAiState('running');
     const facts = {
       dealership: dealer, Year: f.year, Make: f.make, Model: f.model, Trim: f.trim, 'Body style': f.body, Engine: f.engine, Drivetrain: f.drive, 'Fuel type': f.fuel,
-      'Exterior colour': a.exterior_color?.value, 'Interior colour': a.interior_color?.value, 'Interior material': a.interior_material?.value,
+      'Exterior color': a.exterior_color?.value, 'Interior color': a.interior_color?.value, 'Interior material': a.interior_material?.value,
       Transmission: f.trans || a.transmission?.value || '',
       Features: (a.features || []).filter((x: any) => x.confidence !== 'low').map((x: any) => x.name),
     };
@@ -726,21 +733,10 @@ export default function AiAddVehiclePage() {
     setAiState('done');
   };
 
-  /* ---------------- step 3 + "See results" ---------------- */
-  const quickMissing = () => {
-    const m: string[] = [];
-    if (!decoded) m.push('VIN');
-    if (!photos.length) m.push('photos');
-    if (!(Number(String(you.price || '').replace(/,/g, '')) > 0)) m.push('price');
-    if (!you.owners.trim()) m.push('previous owners');
-    return m;
-  };
-  const missingQuick = quickMissing();
-  const [finishing, setFinishing] = useState(false);
-
+  /* ---------------- the full form (opens by itself) ---------------- */
   const buildResults = () => {
-    const d = decodedRef.current!;
-    const f = d.fields;
+    const d = decodedRef.current;
+    const f: Record<string, string> = d?.fields || {};
     const a = aiRef.current;
     const y = youRef.current;
     const R: Res = { v: {}, src: {}, ev: {}, ok: {} };
@@ -758,18 +754,22 @@ export default function AiAddVehiclePage() {
       }
     };
     (['year', 'make', 'model', 'trim', 'vtype', 'body', 'engine', 'hp', 'fuel', 'drive', 'trans', 'doors', 'seats'] as const).forEach((k) => set(k, f[k], 'vin'));
+    if (R.v.body) R.v.body = normBodyStyle(R.v.body);
     ['trim', 'trans', 'body'].forEach((k) => {
-      if (!R.v[k]) R.ev[k] = 'Not in the VIN record. Please choose it.';
+      if (!R.v[k]) R.ev[k] = d ? 'Not in the VIN record. Please choose it.' : 'Please choose it.';
     });
     set('vin', vinRef.current, 'you');
-    set('stock', stockNo, 'auto');
+    // the dealer's own stock number: typed in, never generated
+    R.v.stock = '';
+    R.src.stock = 'miss';
+    R.ev.stock = 'Enter your own stock number.';
     set('price', String(y.price || '').replace(/[^0-9.]/g, ''), 'you');
     set('condition', y.condition, 'you');
     set('cpo', y.cpo, 'you');
     set('owners', y.owners, 'you');
     set('accidents', y.accidents, 'you');
     ['fee', 'msrp', 'badge', 'mpg', 'tank'].forEach((k) => set(k, '', ''));
-    const vinSafety = d.safety || [];
+    const vinSafety = d?.safety || [];
     if (a) {
       aiSet('ext', a.exterior_color);
       aiSet('int', a.interior_color);
@@ -813,29 +813,50 @@ export default function AiAddVehiclePage() {
     const name = [R.v.year, R.v.make, R.v.model, R.v.trim].filter(Boolean).join(' ');
     set('seoTitle', `${name} for sale | ${dealer}`, 'auto');
     set('slug', slugify(name), 'auto');
-    setRes(R);
+    // what the dealer already changed in the form stays as they typed it
+    setRes((P) => {
+      for (const k of touched.current) {
+        if (!(k in P.v)) continue;
+        R.v[k] = P.v[k];
+        R.src[k] = P.src[k];
+        if (P.ev[k] !== undefined) R.ev[k] = P.ev[k];
+        else delete R.ev[k];
+        if (P.ok[k]) R.ok[k] = true;
+      }
+      return R;
+    });
   };
 
-  const seeResults = async () => {
-    if (aiStateRef.current === 'running' || aiStateRef.current === 'waiting') {
-      setFinishing(true);
-      await new Promise<void>((r) => {
-        const t = setInterval(() => {
-          if (!['running', 'waiting'].includes(aiStateRef.current)) {
-            clearInterval(t);
-            r();
-          }
-        }, 150);
-      });
-      setFinishing(false);
+  // open the full form as soon as the VIN is decoded or AI has read the video
+  useEffect(() => {
+    if (decoded || (mode === 'video' && vDone)) setFormOpen(true);
+  }, [decoded, vDone, mode]);
+  // and keep it filled in: new VIN / AI results and the "Only you" answers flow in (changed fields are kept)
+  useEffect(() => {
+    if (formOpen) buildResults();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formOpen, decoded, ai, aiState, you]);
+
+  // duplicate VIN (exact, trimmed, upper-case) — the VIN typed at the top, or the one in the form once it is open
+  const formVin = normVin(formOpen && touched.current.has('vin') ? res.v.vin : vin);
+  useEffect(() => {
+    if (formVin.length !== 17) {
+      setDup(null);
+      return;
     }
-    buildResults();
-    setStep('results');
-    window.scrollTo(0, 0);
-  };
+    let live = true;
+    const t = setTimeout(() => void checkVin(formVin, savedDraft || undefined).then((r) => live && setDup(r)), 250);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [formVin, savedDraft]);
 
   /* ---------------- results page ---------------- */
-  const setField = (k: string, val: string) =>
+  const setField = (k: string, val: string) => {
+    // price and history are the "Only you can answer these" answers: one value, shown in both places
+    if (YOU_KEYS[k]) setYou((y) => ({ ...y, [YOU_KEYS[k]]: val }));
+    else touched.current.add(k);
     setRes((R) => {
       const src = { ...R.src };
       const ev = { ...R.ev };
@@ -847,6 +868,7 @@ export default function AiAddVehiclePage() {
       if (src[k] === 'unsure') ok[k] = true; // touching it counts as checked
       return { v: { ...R.v, [k]: val }, src, ev, ok };
     });
+  };
 
   const missingReq = (() => {
     const m = REQUIRED.filter((k) => !String(res.v[k] || '').trim());
@@ -921,7 +943,15 @@ export default function AiAddVehiclePage() {
       goField('make');
       return;
     }
-    if (dup && !window.confirm(`${dup.name} with this VIN is already in your inventory. Save this as a second vehicle anyway?`)) return;
+    // duplicate VIN: never saved twice (in the inventory or already sold)
+    const finalVin = normVin(res.v.vin);
+    const again = dup || (finalVin.length === 17 ? await checkVin(finalVin, savedDraft || undefined) : null);
+    if (again && again.vehicle.id !== savedDraft) {
+      setDup(again);
+      toast.error(again.message);
+      goField('vin');
+      return;
+    }
     try {
       let images: string[] = [];
       if (savedDraft) {
@@ -947,6 +977,46 @@ export default function AiAddVehiclePage() {
       setSaving('');
     }
   };
+
+  /* ---------------- decoded summary, save buttons, duplicate VIN ---------------- */
+  /** fields filled in by the VIN record or AI (not by the dealer), in form order */
+  const decodedKeys = SECTIONS.flatMap((sec) => sec[2].map((f) => f[0])).filter((k) => FILLED_BY[res.src[k]] && String(res.v[k] || '').trim());
+  const emptyKeys = SECTIONS.flatMap((sec) => sec[2].map((f) => f[0])).filter((k) => !String(res.v[k] || '').trim());
+  const aiBusy = aiState === 'running' || aiState === 'waiting';
+
+  const saveButtons = (
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <button type="button" className="btn" disabled={!!saving || !!dup} onClick={() => void save('DRAFT')}>
+        {savedDraft ? 'Update draft' : 'Save as draft'}
+      </button>
+      <button type="button" className="btn p" disabled={!!saving || !!dup} title={dup ? dup.message : undefined} onClick={() => void save('PUBLISHED')}>
+        {saving ? (
+          <>
+            <span className="spin w" /> {saving}
+          </>
+        ) : (
+          '✓ Publish vehicle'
+        )}
+      </button>
+    </div>
+  );
+
+  const dupNote = dup ? (
+    <NoteBox
+      n={{
+        kind: 'bad',
+        icon: '⛔',
+        html: (
+          <>
+            <b>{dup.message}</b> {dup.vehicle.name ? `(${dup.vehicle.name}) ` : ''}
+            <Link href={`/dealer/inventory/${dup.vehicle.id}`} className="link">
+              Open it
+            </Link>
+          </>
+        ),
+      }}
+    />
+  ) : null;
 
   /* ================================ render ================================ */
   const aiBar = (() => {
@@ -986,13 +1056,6 @@ export default function AiAddVehiclePage() {
       );
     }
     return null;
-  })();
-
-  const go = (() => {
-    if (missingQuick.length) return { title: 'Still needed', text: `${missingQuick.join(', ').replace(/^./, (c) => c.toUpperCase())}.`, btn: 'See results →', disabled: true };
-    if (aiState === 'running' || aiState === 'waiting') return { title: 'Almost there', text: 'AI is finishing the photos. You can click now; results open as soon as it’s done.', btn: 'See results →', disabled: false };
-    if (aiState === 'error') return { title: 'AI couldn’t read the photos', text: 'You can still continue and fill colours and mileage yourself.', btn: 'Continue without AI →', disabled: false };
-    return { title: 'All set', text: 'Everything is ready to review.', btn: 'See results →', disabled: false };
   })();
 
   const numMark = (n: number | string, ok: boolean) => <span className={`num${ok ? ' ok' : ''}`}>{ok ? '✓' : n}</span>;
@@ -1045,6 +1108,11 @@ export default function AiAddVehiclePage() {
             {res.ev[k]}
           </span>
         )}
+        {k === 'vin' && dup && (
+          <span className="ev" style={{ color: '#B91C1C', fontWeight: 600 }} role="alert">
+            {dup.message}
+          </span>
+        )}
         {k === 'description' && (
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <button type="button" className="btn sm" disabled={rewriting || !status?.hasKey} onClick={() => void rewriteDesc()}>
@@ -1071,16 +1139,14 @@ export default function AiAddVehiclePage() {
     <div className="aq">
       <style dangerouslySetInnerHTML={{ __html: AQ_CSS }} />
 
-      {/* ===================== PAGE 1: QUICK ADD ===================== */}
-      {step === 'quick' && (
-        <section>
+      <section>
           <div className="top">
             <div style={{ flex: '1 1 360px' }}>
               <Link href="/dealer/inventory" className="link" style={{ fontSize: 13 }}>
                 ← Inventory
               </Link>
-              <h1 style={{ marginTop: 4 }}>Add a vehicle with AI</h1>
-              <p>Enter the VIN, add photos and answer a few questions. AI fills in the rest for you to check.</p>
+              <h1 style={{ marginTop: 4 }}>Add a vehicle</h1>
+              <p>Choose how: Photos &amp; VIN, or one Walkaround Video. AI fills in the details and the full form opens below for you to check.</p>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
               {status && (
@@ -1088,13 +1154,11 @@ export default function AiAddVehiclePage() {
                   {status.hasKey ? `✨ AI ready · ${status.model.split(' · ')[0]}` : 'AI is off'}
                 </span>
               )}
-              <Link href="/dealer/inventory/new?manual=1" className="link" style={{ fontSize: 13 }}>
-                Add manually instead →
-              </Link>
+              {formOpen && saveButtons}
             </div>
           </div>
           <div className="wrap">
-            <div className="col" style={{ maxWidth: 880 }}>
+            <div className="col">
               {status && !status.hasKey && (
                 <NoteBox
                   n={{
@@ -1103,7 +1167,11 @@ export default function AiAddVehiclePage() {
                     html: (
                       <>
                         <b>AI isn’t switched on for this portal yet.</b> The VIN lookup still works, but photos and videos can’t be read. Ask your platform admin to add the AI key (GEMINI_API_KEY) to the
-                        server, or <Link href="/dealer/inventory/new?manual=1" className="link">add the vehicle manually</Link>.
+                        server, or{' '}
+                        <button type="button" className="link" onClick={() => setFormOpen(true)}>
+                          fill in the form yourself
+                        </button>
+                        .
                       </>
                     ),
                   }}
@@ -1115,9 +1183,9 @@ export default function AiAddVehiclePage() {
                 <button type="button" className={`modeb${mode === 'photos' ? ' on' : ''}`} onClick={() => setMode('photos')}>
                   <span className="ic">📷</span>
                   <span>
-                    <b style={{ fontSize: 15 }}>Photos</b>
+                    <b style={{ fontSize: 15 }}>Photos &amp; VIN</b>
                     <br />
-                    <span className="hint">Type the VIN and upload photos.</span>
+                    <span className="hint">Step 1: type the VIN. Step 2: upload your photos. AI reads them.</span>
                   </span>
                 </button>
                 <button
@@ -1129,9 +1197,9 @@ export default function AiAddVehiclePage() {
                 >
                   <span className="ic">🎥</span>
                   <span>
-                    <b style={{ fontSize: 15 }}>Walkaround video</b> <span className="chip s-ai">Fastest</span>
+                    <b style={{ fontSize: 15 }}>Walkaround Video</b> <span className="chip s-ai">Fastest</span>
                     <br />
-                    <span className="hint">Film the car once. We find the VIN, photos, mileage and your notes.</span>
+                    <span className="hint">Step 1: upload one video. AI finds the VIN, photos, mileage and your notes.</span>
                   </span>
                 </button>
               </div>
@@ -1253,10 +1321,14 @@ export default function AiAddVehiclePage() {
               {/* VIN */}
               <div className="card">
                 <div className="hd">
-                  {numMark(1, !!decoded)}
+                  {numMark(mode === 'video' ? 2 : 1, !!decoded)}
                   <div style={{ flex: 1 }}>
-                    <h2>VIN</h2>
-                    <p>We look it up in the official US vehicle database. Most details fill in from this.</p>
+                    <h2>{mode === 'video' ? 'VIN (found in your video)' : 'VIN'}</h2>
+                    <p>
+                      {mode === 'video'
+                        ? 'Filled in from the sticker in your video. Check it, or type it if it couldn’t be read.'
+                        : 'We look it up in the official US vehicle database. Most details fill in from this.'}
+                    </p>
                   </div>
                 </div>
                 <div className="bd">
@@ -1288,22 +1360,7 @@ export default function AiAddVehiclePage() {
                   {vinNotes.map((n, i) => (
                     <NoteBox key={i} n={n} />
                   ))}
-                  {dup && (
-                    <NoteBox
-                      n={{
-                        kind: 'warn',
-                        icon: '⚠',
-                        html: (
-                          <>
-                            <b>Already in your inventory:</b> {dup.name} has this VIN.{' '}
-                            <Link href={`/dealer/inventory/${dup.id}`} className="link">
-                              Open it
-                            </Link>
-                          </>
-                        ),
-                      }}
-                    />
-                  )}
+                  {dup && dupNote}
                 </div>
               </div>
 
@@ -1311,10 +1368,10 @@ export default function AiAddVehiclePage() {
               {(mode === 'photos' || photos.length > 0) && (
                 <div className={`card${mode === 'video' ? ' vmode' : ''}`}>
                   <div className="hd">
-                    {numMark(2, photos.length > 0)}
+                    {numMark(mode === 'video' ? 3 : 2, photos.length > 0)}
                     <div style={{ flex: 1 }}>
                       <h2>{mode === 'video' ? 'Photos from your video' : 'Photos'}</h2>
-                      <p>AI reads colours, interior, features and the mileage from these.</p>
+                      <p>AI reads colors, interior, features and the mileage from these.</p>
                     </div>
                   </div>
                   <div className="bd">
@@ -1370,7 +1427,7 @@ export default function AiAddVehiclePage() {
               {/* ONLY YOU */}
               <div className="card">
                 <div className="hd">
-                  {numMark(mode === 'video' ? 2 : 3, Number(String(you.price).replace(/,/g, '')) > 0 && !!you.owners.trim())}
+                  {numMark(mode === 'video' ? (photos.length ? 4 : 3) : 3, Number(String(you.price).replace(/,/g, '')) > 0 && !!you.owners.trim())}
                   <div style={{ flex: 1 }}>
                     <h2>Only you can answer these</h2>
                     <p>Price and history are never filled in by AI.</p>
@@ -1454,107 +1511,72 @@ export default function AiAddVehiclePage() {
                 </div>
               </div>
 
-              <div className="card" style={{ padding: '16px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
-                <div style={{ flex: '1 1 260px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <b>{go.title}</b>
-                  <span className="hint">{go.text}</span>
+              {!formOpen && (
+                <div className="card" style={{ padding: '16px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
+                  <div style={{ flex: '1 1 260px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <b>{mode === 'video' ? 'Upload the walkaround video to start' : 'Enter the VIN to start'}</b>
+                    <span className="hint">
+                      The full vehicle form opens here by itself as soon as {mode === 'video' ? 'AI has read the video' : 'the VIN is decoded'}, already filled in. Nothing to click.
+                    </span>
+                  </div>
+                  <button type="button" className="link" style={{ fontSize: 13 }} onClick={() => setFormOpen(true)}>
+                    Fill in the form without a VIN lookup →
+                  </button>
                 </div>
-                <button type="button" className="btn p big" disabled={go.disabled || finishing} onClick={() => void seeResults()}>
-                  {finishing ? (
-                    <>
-                      <span className="spin w" /> Finishing…
-                    </>
-                  ) : (
-                    go.btn
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
+              )}
 
-      {/* ===================== PAGE 2: CHECK AND PUBLISH ===================== */}
-      {step === 'results' && (
-        <section>
-          <div className="top">
-            <div style={{ flex: '1 1 360px' }}>
-              <button type="button" className="link" style={{ fontSize: 13 }} onClick={() => setStep('quick')}>
-                ← Back to quick add
-              </button>
-              <h1 style={{ marginTop: 4 }}>Check and publish</h1>
-              <p>
-                Everything is filled in for you. Fill anything marked <span className="chip s-miss">Needs you</span>, then publish. Change any value you like.
-              </p>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button type="button" className="btn" disabled={!!saving} onClick={() => void save('DRAFT')}>
-                  {savedDraft ? 'Update draft' : 'Save as draft'}
-                </button>
-                <button type="button" className="btn p" disabled={!!saving} onClick={() => void save('PUBLISHED')}>
-                  {saving ? (
-                    <>
-                      <span className="spin w" /> {saving}
-                    </>
-                  ) : (
-                    '✓ Publish vehicle'
+              {/* ===================== DECODED FIELDS + THE FULL FORM ===================== */}
+              {formOpen && (
+                <>
+                  <div className="card" id="aq-decoded">
+                    <div className="hd">
+                      <span className={`num${decodedKeys.length ? ' ok' : ''}`}>{decodedKeys.length ? '✓' : '•'}</span>
+                      <div style={{ flex: 1 }}>
+                        <h2>
+                          {decodedKeys.length} field{decodedKeys.length === 1 ? '' : 's'} decoded
+                          {aiBusy ? ' · AI is still reading…' : ''}
+                        </h2>
+                        <p>
+                          {decodedKeys.length
+                            ? 'Filled in for you from the official VIN record and by AI. Check them in the form below and change any value.'
+                            : 'Nothing filled in yet. Fill in the form below.'}{' '}
+                          {emptyKeys.length ? `${emptyKeys.length} field${emptyKeys.length === 1 ? '' : 's'} still empty.` : 'Every field has a value.'}
+                        </p>
+                      </div>
+                      {aiBusy && <span className="spin" />}
+                    </div>
+                    {decodedKeys.length > 0 && (
+                      <div className="bd">
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {decodedKeys.map((k) => (
+                            <button
+                              key={k}
+                              type="button"
+                              onClick={() => goField(k)}
+                              title={`${LABEL[k]}: ${res.v[k]}`}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: 320, border: '1px solid #E5E9F0', borderRadius: 999, background: '#F8FAFC', padding: '4px 10px', fontSize: 12.5, cursor: 'pointer' }}
+                            >
+                              <span className={`chip ${SRC_CHIP[res.src[k]]?.[0] || 's-vin'}`}>{FILLED_BY[res.src[k]] || 'VIN'}</span>
+                              <b style={{ color: '#0F172A' }}>{LABEL[k]}</b>
+                              <span style={{ color: '#526077', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(res.v[k]).split('\n')[0]}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+              {!ai && !aiBusy && (aiState === 'error' || photos.length > 0) && (
+                    <NoteBox n={{ kind: 'warn', icon: '⚠', html: <><b>AI didn’t read the photos</b>{aiErr ? ` (${aiErr})` : ''}. Colors, interior and mileage need to be filled in by you.</> }} />
                   )}
-                </button>
-              </div>
-              <span className="hint" style={{ fontWeight: 600, color: missingReq.length ? '#526077' : '#15803D' }}>
-                {savedDraft
-                  ? 'Saved as a draft. Publish when you’re ready.'
-                  : missingReq.length
-                    ? `${missingReq.length} detail${missingReq.length > 1 ? 's' : ''} still empty · you can publish now and add ${missingReq.length > 1 ? 'them' : 'it'} later`
-                    : `✓ Ready to publish${toCheck.length ? ` · ${toCheck.length} worth a quick look` : ''}`}
-              </span>
-            </div>
-          </div>
-          <div className="wrap">
-            <div className="col">
-              {!ai && <NoteBox n={{ kind: 'warn', icon: '⚠', html: <><b>AI didn’t read the photos</b>{aiErr ? ` (${aiErr})` : ''}. Colours, interior and mileage need to be filled in by you.</> }} />}
+                  {!ai && !aiBusy && aiState !== 'error' && !photos.length && mode === 'photos' && (
+                    <NoteBox n={{ kind: 'info', icon: '📷', html: <>Add photos above and AI fills in colors, interior, features and mileage in the form below.</> }} />
+                  )}
               {ai?.vehicle_matches_vin?.status === 'mismatch' && (
                 <NoteBox n={{ kind: 'bad', icon: '⚠', html: <><b>The photos may show a different vehicle than the VIN.</b> {ai.vehicle_matches_vin.note}</> }} />
               )}
               {ai?.vin_in_photo?.value && String(ai.vin_in_photo.value).replace(/\s/g, '').toUpperCase() !== vin && (
                 <NoteBox n={{ kind: 'bad', icon: '⚠', html: <b>A VIN in the photos ({ai.vin_in_photo.value}) doesn’t match the one entered.</b> }} />
               )}
-              {dup && (
-                <NoteBox
-                  n={{
-                    kind: 'warn',
-                    icon: '⚠',
-                    html: (
-                      <>
-                        <b>Already in your inventory:</b> {dup.name} has this VIN.{' '}
-                        <Link href={`/dealer/inventory/${dup.id}`} className="link">
-                          Open it
-                        </Link>
-                      </>
-                    ),
-                  }}
-                />
-              )}
-              <div className="card">
-                <div className="hd">
-                  {numMark(1, photos.length > 0)}
-                  <div style={{ flex: 1 }}>
-                    <h2>Photos</h2>
-                    <p>{photos.length} photos</p>
-                  </div>
-                </div>
-                <div className="bd">
-                  {savedDraft ? (
-                    <span className="hint">The photos were uploaded with the draft. Change them later in the vehicle’s page.</span>
-                  ) : (
-                    <>
-                      <Thumbs photos={photos} onChange={changePhotos} />
-                      <span className="hint">Drag a photo, or use ◀ ▶ to move it. ★ makes it the cover.</span>
-                    </>
-                  )}
-                </div>
-              </div>
               {SECTIONS.map((sec, si) => {
                 const keys = sec[2].map((f) => f[0]);
                 const mi = sec[2].filter((f) => f[2] && missingReq.includes(f[0])).length;
@@ -1562,7 +1584,7 @@ export default function AiAddVehiclePage() {
                 return (
                   <div className="card" key={si}>
                     <div className="hd">
-                      {numMark(si + 2, !mi)}
+                      {numMark(String.fromCharCode(65 + si), !mi)}
                       <div style={{ flex: 1 }}>
                         <h2>{sec[0]}</h2>
                         <p>{sec[1]}</p>
@@ -1594,7 +1616,17 @@ export default function AiAddVehiclePage() {
                   </div>
                 );
               })}
+                  <div className="card" style={{ padding: '16px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
+                    <div style={{ flex: '1 1 260px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <b>{dup ? dup.message : savedDraft ? 'Saved as a draft' : missingReq.length ? `${missingReq.length} detail${missingReq.length > 1 ? 's' : ''} still empty` : 'Ready to publish'}</b>
+                      <span className="hint">{dup ? 'Change the VIN to save this vehicle.' : 'You can publish now and add any empty details later.'}</span>
+                    </div>
+                    {saveButtons}
+                  </div>
+                </>
+              )}
             </div>
+            {formOpen && (
             <aside className="panel">
               <div className="card">
                 <div className="bd" style={{ gap: 10 }}>
@@ -1662,9 +1694,9 @@ export default function AiAddVehiclePage() {
                 </div>
               </div>
             </aside>
+            )}
           </div>
         </section>
-      )}
 
       <FbPostModal
         vehicle={fbVehicle}

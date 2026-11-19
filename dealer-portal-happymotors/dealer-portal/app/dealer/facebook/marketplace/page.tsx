@@ -417,7 +417,7 @@ function EditCopy({ v, onClose, onSaved }: { v: V; onClose: () => void; onSaved:
           <Button size="sm" variant="secondary" loading={busy === 'ai'} onClick={() => write(true)}>
             <Sparkles className="h-3.5 w-3.5" /> Write with AI
           </Button>
-          <span className="self-center text-xs text-slate-500">Vehicle details (price, mileage, colours, photos) come from Inventory.</span>
+          <span className="self-center text-xs text-slate-500">Vehicle details (price, mileage, colors, photos) come from Inventory.</span>
         </div>
         <Field label="Title (first line of the description)">
           <Input value={c.title} onChange={(e) => setC({ ...c, title: e.target.value })} maxLength={100} />

@@ -1,9 +1,12 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { TenantsService } from '../tenants/tenants.service.js';
 import { clean, slugify } from '../common/util.js';
-import { CARGURUS_RULES, cleanVehicleInput, DEFAULT_RULES, publishProblems, RULE_FIELDS, vehicleName } from './vehicle.fields.js';
+import { CARGURUS_RULES, cleanVehicleInput, DEFAULT_RULES, normVin, publishProblems, RULE_FIELDS, vehicleName } from './vehicle.fields.js';
+
+export const VIN_IN_INVENTORY = 'A vehicle with this VIN is already in your inventory.';
+export const VIN_SOLD = 'This vehicle (VIN) has already been sold.';
 import { CargurusService } from '../cargurus/cargurus.service.js';
 import { PhotoJobsService } from './photo-jobs.service.js';
 import type { PhotoJob } from './photo-jobs.service.js';
@@ -178,10 +181,36 @@ export class VehiclesService {
     if (problem) throw new BadRequestException(problem);
   }
 
+  /**
+   * Same VIN already on this dealership's books (trimmed, case-insensitive): 'active' = in the inventory (for sale or
+   * draft), 'sold' = sold before. exceptId = the vehicle being edited.
+   */
+  async vinCheck(tenantId: string, raw: unknown, exceptId?: string) {
+    const vin = normVin(raw);
+    if (!vin) return { vin, status: 'none' as const, vehicle: null };
+    const hits = await this.prisma.vehicle.findMany({
+      where: { tenantId, vin: { equals: vin, mode: 'insensitive' }, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+      select: { id: true, year: true, make: true, model: true, trim: true, status: true, stockNumber: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+    const active = hits.find((h) => h.status !== 'SOLD');
+    const hit = active || hits[0];
+    if (!hit) return { vin, status: 'none' as const, vehicle: null };
+    return { vin, status: active ? ('active' as const) : ('sold' as const), vehicle: { ...hit, name: vehicleName(hit) } };
+  }
+
+  /** refuses a VIN that is already in the inventory or was sold (409 with the reason) */
+  private async assertVinFree(tenantId: string, vin: unknown, exceptId?: string) {
+    const r = await this.vinCheck(tenantId, vin, exceptId);
+    if (r.status === 'active') throw new ConflictException({ message: VIN_IN_INVENTORY, code: 'vin_in_inventory', vehicle: r.vehicle });
+    if (r.status === 'sold') throw new ConflictException({ message: VIN_SOLD, code: 'vin_sold', vehicle: r.vehicle });
+  }
+
   async create(tenantId: string, body: Record<string, unknown>, user: AuthUser) {
     const data = cleanVehicleInput(body) as Record<string, unknown>;
     if (!data.status) data.status = 'PUBLISHED';
     this.check(data);
+    if (data.vin) await this.assertVinFree(tenantId, data.vin);
     const slug = await this.uniqueSlug(tenantId, String(data.slug || vehicleName(data as never) || 'vehicle'));
     const v = await this.prisma.vehicle.create({ data: { ...(data as Prisma.VehicleUncheckedCreateInput), tenantId, slug } });
     await this.audit.record('vehicle.create', { tenantId, actor: user.login, detail: { id: v.id, name: vehicleName(v) } });
@@ -205,6 +234,8 @@ export class VehiclesService {
     const data = cleanVehicleInput(body) as Record<string, unknown>;
     if (data.status === cur.status) delete data.soldAt;
     this.check({ ...cur, ...data });
+    // a changed VIN must not belong to another vehicle (in the inventory or sold)
+    if (data.vin && normVin(data.vin) !== normVin(cur.vin)) await this.assertVinFree(tenantId, data.vin, id);
     if (data.slug) data.slug = await this.uniqueSlug(tenantId, String(data.slug), id);
     const v = await this.prisma.vehicle.update({ where: { id }, data });
     await this.audit.record('vehicle.update', { tenantId, actor: user.login, detail: { id, name: vehicleName(v), fields: Object.keys(data) } });

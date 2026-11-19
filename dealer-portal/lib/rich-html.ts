@@ -4,7 +4,7 @@
  * showing an article), so only safe formatting ever reaches a visitor's browser.
  *
  * Kept:    h1–h4, p, br, hr, span, strong/b, em/i, u, s/strike/del, sub, sup, ul, ol, li, blockquote, a, img, div, figure,
- *          figcaption — with a short list of attributes and inline styles (colour, highlight, font, size, alignment,
+ *          figcaption — with a short list of attributes and inline styles (color, highlight, font, size, alignment,
  *          line height, indent, image width / alignment).
  * Removed: scripts, styles, iframes, forms, event handlers (onclick …), javascript: links, CSS url(…) / expression(…),
  *          and every other tag (its text stays).

@@ -44,8 +44,8 @@ const IMP_FIELDS: [string, string, string[]][] = [
   ['mileage', 'Mileage', ['mileage', 'miles', 'odometer', 'km', 'kilometers']],
   ['vin', 'VIN', ['vin', 'vinnumber']],
   ['stockNumber', 'Stock number', ['stock', 'stocknumber', 'stockno', 'stocknum', 'stockid', 'stock#']],
-  ['exteriorColor', 'Exterior colour', ['exteriorcolor', 'extcolor', 'exteriorcolour', 'color', 'colour', 'exterior', 'ext']],
-  ['interiorColor', 'Interior colour', ['interiorcolor', 'intcolor', 'interiorcolour', 'interior', 'int']],
+  ['exteriorColor', 'Exterior color', ['exteriorcolor', 'extcolor', 'exteriorcolour', 'color', 'colour', 'exterior', 'ext']],
+  ['interiorColor', 'Interior color', ['interiorcolor', 'intcolor', 'interiorcolour', 'interior', 'int']],
   ['bodyStyle', 'Body style', ['bodystyle', 'body', 'bodytype']],
   ['vehicleType', 'Type', ['vehicletype', 'type', 'category']],
   ['engine', 'Engine', ['engine', 'enginedescription', 'enginedesc']],
@@ -597,7 +597,7 @@ export default function ImportPage() {
             ) : (
               <p className="mt-1 text-sm text-slate-500">
                 One row per vehicle, column names in the first row. Only <b>Make</b> and <b>Model</b> are required; Year, Price, Mileage, VIN, Stock number,
-                colours, description and photo links are imported when your file has them.
+                colors, description and photo links are imported when your file has them.
               </p>
             )}
             {channels?.marketplace && (

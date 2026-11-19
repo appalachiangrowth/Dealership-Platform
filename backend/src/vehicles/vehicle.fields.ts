@@ -41,8 +41,8 @@ export const RULE_FIELDS: Record<string, string> = {
   mileage: 'Mileage',
   vin: 'VIN',
   stockNumber: 'Stock number',
-  exteriorColor: 'Exterior colour',
-  interiorColor: 'Interior colour',
+  exteriorColor: 'Exterior color',
+  interiorColor: 'Interior color',
   transmission: 'Transmission',
   engine: 'Engine',
   drivetrain: 'Drivetrain',
@@ -77,11 +77,25 @@ function bool(v: unknown): boolean {
   return !!v;
 }
 
+/** VINs are compared trimmed and upper-case (spaces and dashes removed). */
+export function normVin(v: unknown): string {
+  return String(v ?? '').trim().toUpperCase().replace(/[\s-]/g, '');
+}
+
+/** "Pickup Truck" / "Pickup" / "Pick-up" (older vehicles, imports, VIN records) are saved as "Truck". */
+export function normBodyStyle(v: unknown): string {
+  const s = String(v ?? '').trim();
+  return /^pick[\s-]?up(\s+truck)?$/i.test(s) ? 'Truck' : s;
+}
+
 /** Validates vehicle input from the admin. Only keys present in `b` are returned (PATCH friendly). */
 export function cleanVehicleInput(b: Record<string, unknown>): Prisma.VehicleUncheckedUpdateInput {
   const d: Record<string, unknown> = {};
   for (const [k, max] of Object.entries(VEHICLE_TEXT)) if (k in b) d[k] = clean(b[k], max);
-  if ('vin' in d) d.vin = String(d.vin).toUpperCase().replace(/[\s-]/g, '');
+  if ('vin' in d) d.vin = normVin(d.vin);
+  if ('bodyStyle' in d) d.bodyStyle = normBodyStyle(d.bodyStyle);
+  // the dealer's own stock number, as typed (never generated)
+  if ('stockNumber' in b || 'stockNo' in b || 'stock_no' in b) d.stockNumber = clean(b.stockNumber ?? b.stockNo ?? b.stock_no, VEHICLE_TEXT.stockNumber);
   if ('description' in b) d.description = cleanMl(b.description, 8000);
   if ('year' in b) {
     const y = int(b.year);

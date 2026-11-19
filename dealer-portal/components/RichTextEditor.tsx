@@ -171,7 +171,7 @@ function TbSelect({ title, value, onChange, children, className }: { title: stri
   );
 }
 
-/** a toolbar button with a panel under it (colours, link, picture) */
+/** a toolbar button with a panel under it (colors, link, picture) */
 function Pop({ open, onClose, children, align = 'left' }: { open: boolean; onClose: () => void; children: React.ReactNode; align?: 'left' | 'right' }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -219,9 +219,9 @@ function ColorPanel({ label, onPick, onClear }: { label: string; onPick: (c: str
         ))}
       </div>
       <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
-        <input type="color" value={custom} onChange={(e) => setCustom(e.target.value)} className="h-8 w-10 cursor-pointer rounded border border-slate-300 bg-white p-0.5" aria-label="Custom colour" />
+        <input type="color" value={custom} onChange={(e) => setCustom(e.target.value)} className="h-8 w-10 cursor-pointer rounded border border-slate-300 bg-white p-0.5" aria-label="Custom color" />
         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => onPick(custom)} className="h-8 flex-1 rounded-md border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-          Use custom colour
+          Use custom color
         </button>
       </div>
     </div>
@@ -425,7 +425,7 @@ export function RichTextEditor({ value, onChange, placeholder = 'Start writing y
     if (s && s.rangeCount && inEditor(s.anchorNode)) saved.current = s.getRangeAt(0).cloneRange();
   };
 
-  /** bold / italic / underline / strike-through as <strong> <em> <u> <s>; colours, fonts and alignment as styles */
+  /** bold / italic / underline / strike-through as <strong> <em> <u> <s>; colors, fonts and alignment as styles */
   const INLINE_TAGS = new Set(['bold', 'italic', 'underline', 'strikeThrough']);
   const exec = (cmd: string, val?: string) => {
     restore();
@@ -703,7 +703,7 @@ export function RichTextEditor({ value, onChange, placeholder = 'Start writing y
   const colorBtn = (kind: 'color' | 'highlight') => (
     <div className="relative">
       <Tb
-        title={kind === 'color' ? 'Text colour' : 'Highlight colour'}
+        title={kind === 'color' ? 'Text color' : 'Highlight color'}
         onClick={() => {
           setPop(pop === kind ? '' : kind);
         }}
@@ -713,7 +713,7 @@ export function RichTextEditor({ value, onChange, placeholder = 'Start writing y
       </Tb>
       <Pop open={pop === kind} onClose={() => setPop('')}>
         <ColorPanel
-          label={kind === 'color' ? 'Text colour' : 'Highlight'}
+          label={kind === 'color' ? 'Text color' : 'Highlight'}
           onPick={(c) => {
             exec(kind === 'color' ? 'foreColor' : 'hiliteColor', c);
             setPop('');

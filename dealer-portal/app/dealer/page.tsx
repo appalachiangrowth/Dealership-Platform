@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { ArrowRight, Car, Check, ChevronDown, CircleDollarSign, ExternalLink, CircleHelp, ImageIcon, Info, Mail, Newspaper, Phone, Plus, Send } from 'lucide-react';
+import { ArrowRight, Car, Check, ChevronDown, ExternalLink, CircleHelp, ImageIcon, Info, Mail, Newspaper, Phone, Plus, Send } from 'lucide-react';
 import { useApi } from '@/lib/useApi';
 import { useSession } from '@/lib/session';
 import { useTenant } from '@/components/DealerShell';
@@ -227,9 +227,8 @@ export default function DealerOverview() {
       )}
 
       {/* Key numbers */}
-      <section aria-label="Key numbers" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Key numbers" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard label="Vehicles for sale" icon={Car} value={published} sub={`${data.vehicles.draft} draft${data.vehicles.draft === 1 ? '' : 's'} · ${data.vehicles.sold} sold`} />
-        <StatCard label="Inventory value" icon={CircleDollarSign} value={money(data.inventoryValue)} sub={`Average price ${money(data.averagePrice)}`} />
         <StatCard
           label="Inquiries · last 7 days"
           icon={Mail}

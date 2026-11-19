@@ -132,7 +132,7 @@ export function PostForm({ initial }: { initial: Record<string, any> }) {
             <div>
               <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2">
                 <span className="text-sm font-medium text-slate-700">Article</span>
-                <span className="text-xs text-slate-500">Headings, fonts, colours, lists, links and pictures appear on your website exactly as here.</span>
+                <span className="text-xs text-slate-500">Headings, fonts, colors, lists, links and pictures appear on your website exactly as here.</span>
               </div>
               {/* the editor keeps its own content while typing: a new key only when another post is opened */}
               <RichTextEditor key={p.id || 'new'} value={initial.body || ''} onChange={(html) => set('body', html)} />

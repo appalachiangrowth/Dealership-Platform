@@ -2635,7 +2635,6 @@ export const VEHICLE_TYPES: string[] = [
   "Performance",
   "Personal Watercraft",
   "Pickup Bed",
-  "Pickup Truck",
   "Plate Compactors",
   "Police Car",
   "Pontoon",

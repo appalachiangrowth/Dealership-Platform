@@ -36,7 +36,7 @@ export default function PhotoBrandingPage() {
     if (data) setColor(data.details.color);
   }, [data?.details.color]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // band pictures: own PNG, else drawn from Business details (with the colour being chosen, as a live preview)
+  // band pictures: own PNG, else drawn from Business details (with the color being chosen, as a live preview)
   useEffect(() => {
     if (!data) return;
     let stop = false;
@@ -190,8 +190,8 @@ export default function PhotoBrandingPage() {
         )}
         <div className="flex flex-wrap items-end gap-4 rounded-xl bg-slate-50 p-4">
           <div className="min-w-[200px] flex-1">
-            <b className="block text-sm text-slate-800">Band colour</b>
-            <span className="text-xs text-slate-500">Light colours get dark text, dark colours get white text automatically.</span>
+            <b className="block text-sm text-slate-800">Band color</b>
+            <span className="text-xs text-slate-500">Light colors get dark text, dark colors get white text automatically.</span>
             <div className="mt-2 flex items-center gap-2">
               <input type="color" value={/^#[0-9a-f]{6}$/i.test(color) ? color : '#EAF0F8'} onChange={(e) => setColor(e.target.value.toUpperCase())} className="h-10 w-12 cursor-pointer rounded border border-slate-300" />
               <Input value={color} maxLength={7} onChange={(e) => setColor(e.target.value)} className="w-28 font-mono uppercase" />
@@ -202,8 +202,8 @@ export default function PhotoBrandingPage() {
               <button key={c} type="button" title={c} onClick={() => setColor(c)} className={cx('h-8 w-8 rounded-full border-2', color.toUpperCase() === c ? 'border-blue-600' : 'border-slate-200')} style={{ background: c }} />
             ))}
           </div>
-          <Button size="sm" loading={busy === 'color'} disabled={color.toUpperCase() === D.color.toUpperCase()} onClick={() => put({ color }, 'Band colour saved', 'color')}>
-            Save colour
+          <Button size="sm" loading={busy === 'color'} disabled={color.toUpperCase() === D.color.toUpperCase()} onClick={() => put({ color }, 'Band color saved', 'color')}>
+            Save color
           </Button>
         </div>
         {slot('header', 'Top band', 'Your logo on the left, your address on the right.')}
