@@ -1,0 +1,20 @@
+# Happy Motors Dealer Portal (https://happymotors1.com/admin) — copy to .env.local
+# (VPS: /var/www/dealer-platform/dealer-portal-happymotors/dealer-portal/.env.local)
+# NEXT_PUBLIC_* values are built into the app: set them BEFORE `npm run build`.
+
+# Backend API. An http:// address = the browser goes through this portal's /admin/api proxy (BACKEND_URL);
+# an https:// API address would be called directly by the browser.
+NEXT_PUBLIC_API_URL=http://127.0.0.1:4000
+BACKEND_URL=http://127.0.0.1:4000
+
+# The one dealership this portal belongs to (Platform Admin › Dealers › its ID)
+NEXT_PUBLIC_TENANT=happymotors1
+NEXT_PUBLIC_DEALER_SLUG=happymotors1
+
+# The Happy Motors website ("View website", Design / Content / Pages previews) and this portal's own address
+NEXT_PUBLIC_FRONTEND_URL=https://happymotors1.com
+NEXT_PUBLIC_SITE_URL=https://happymotors1.com
+NEXT_PUBLIC_DEALER_PORTAL_URL=https://happymotors1.com/admin
+
+NODE_ENV=production
+PORT=3006

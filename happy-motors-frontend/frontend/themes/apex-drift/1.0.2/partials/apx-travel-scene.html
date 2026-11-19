@@ -1,0 +1,46 @@
+<div class="apx-travel-scene" aria-hidden="true">
+  <canvas class="apx-travel-canvas"></canvas>
+  <div class="apx-travel-overlay"></div>
+  <div class="apx-travel-car">
+    <svg viewBox="380 150 690 250">
+        <defs>
+          <linearGradient id="apx-hpaint" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBF8FF"/><stop offset=".35" stop-color="#E3E3F2"/><stop offset=".6" stop-color="#A9A8C9"/><stop offset="1" stop-color="#5E5B86"/></linearGradient>
+          <linearGradient id="apx-hglass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3A3566"/><stop offset=".45" stop-color="#0C0E22"/><stop offset=".8" stop-color="#1E1B3E"/><stop offset="1" stop-color="#FF9A5A" stop-opacity=".55"/></linearGradient>
+          <linearGradient id="apx-hbeam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FFF3DA" stop-opacity=".7"/><stop offset="1" stop-color="#FFF3DA" stop-opacity="0"/></linearGradient>
+          <linearGradient id="apx-htrail" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="#FF4A55" stop-opacity=".95"/><stop offset="1" stop-color="#FF4A55" stop-opacity="0"/></linearGradient>
+          <linearGradient id="apx-hbed" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#141433"/><stop offset="1" stop-color="#2A2752"/></linearGradient>
+          <radialGradient id="apx-hhub" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#2A2F48"/><stop offset=".7" stop-color="#151829"/><stop offset="1" stop-color="#0A0B14"/></radialGradient>
+          <filter id="apx-hblur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+          <filter id="apx-hblur2" x="-20%" y="-200%" width="140%" height="500%"><feGaussianBlur stdDeviation="2.4"/></filter>
+        </defs>
+        <ellipse cx="715" cy="388" rx="345" ry="11" fill="#000" opacity=".75" filter="url(#apx-hblur)"/>
+        <path d="M1036 268 L1470 226 L1470 330 Z" fill="url(#apx-hbeam)" opacity=".55"/>
+        <rect id="apx-trail" x="160" y="262" width="232" height="9" rx="4.5" fill="url(#apx-htrail)" filter="url(#apx-hblur2)"/>
+        <g id="apx-hbody">
+          <!-- original crew-cab pickup: bed + tailgate at the back, tall hood at the front -->
+          <path d="M392 330 L392 256 C392 253 394 251 397 251 L618 251 L622 198 C623 187 630 180 641 179 L790 177 C800 177 807 180 813 186 L876 246 L1014 254 C1026 255 1034 262 1035 274 L1037 322 C1037 332 1029 338 1019 338 L404 338 C397 338 392 335 392 330 Z" fill="url(#apx-hpaint)"/>
+          <path d="M641 179 L790 177 C800 177 807 180 813 186 L876 246 L1014 254" fill="none" stroke="#FFC48A" stroke-opacity=".75" stroke-width="2"/>
+          <rect x="398" y="251" width="218" height="7" rx="2" fill="url(#apx-hbed)"/>
+          <path d="M398 258 H616" stroke="#FFC48A" stroke-opacity=".5" stroke-width="1.2"/>
+          <path d="M636 246 L639 197 C640 191 644 188 650 188 L708 187 L708 246 Z" fill="url(#apx-hglass)"/>
+          <path d="M716 187 L788 186 C795 186 799 188 803 192 L854 244 L716 246 Z" fill="url(#apx-hglass)"/>
+          <path d="M712 186 V330 M620 256 V330" stroke="#3E3B66" stroke-opacity=".55" stroke-width="1.4"/>
+          <path d="M398 290 H1032" stroke="#fff" stroke-opacity=".6" stroke-width="1.2"/>
+          <path d="M672 266 h 24 M752 266 h 24" stroke="#3E3B66" stroke-width="3.5" stroke-linecap="round"/>
+          <path d="M806 206 l 16 2 v 16 l -14 -2 Z" fill="#2E2B55"/>
+          <rect x="600" y="328" width="300" height="10" rx="3" fill="#1B1838"/>
+          <path d="M440 338 C 440 290, 474 264, 510 264 C 546 264, 580 290, 580 338 L 566 338 C 566 302, 538 280, 510 280 C 482 280, 454 302, 454 338 Z" fill="#1B1838"/><path d="M800 338 C 800 290, 834 264, 870 264 C 906 264, 940 290, 940 338 L 926 338 C 926 302, 898 280, 870 280 C 842 280, 814 302, 814 338 Z" fill="#1B1838"/>
+          <path d="M454 338 C 454 302, 478 280, 510 280 C 542 280, 566 302, 566 338 Z" fill="#090A16"/>
+          <path d="M814 338 C 814 302, 838 280, 870 280 C 902 280, 926 302, 926 338 Z" fill="#090A16"/>
+          <rect x="996" y="300" width="42" height="38" rx="6" fill="#1B1838"/>
+          <rect x="1028" y="274" width="8" height="24" rx="2" fill="#141433"/>
+          <path d="M1014 260 C 1024 260, 1032 263, 1034 268 L 1034 272 L 1012 270 Z" fill="#FFF3DA"/>
+          <rect x="1010" y="259" width="28" height="14" rx="6" fill="#FFF3DA" filter="url(#apx-hblur2)"/>
+          <rect x="392" y="258" width="7" height="22" rx="2" fill="#FF4A55"/>
+          <rect x="388" y="256" width="14" height="27" rx="5" fill="#FF4A55" filter="url(#apx-hblur2)"/>
+        </g>
+        <g id="apx-hwA"><circle cx="510" cy="334" r="52" fill="#07080F"/><circle cx="510" cy="334" r="47" fill="none" stroke="#1C1F33" stroke-width="7" stroke-dasharray="6 5"/><circle cx="510" cy="334" r="34" fill="url(#apx-hhub)" stroke="#C9CCE0" stroke-width="2.5"/><g class="sp apx-travel-sp" stroke="#C9CCE0" stroke-width="7" stroke-linecap="round" opacity=".8"><line x1="510" y1="334" x2="538.0" y2="334.0"/><line x1="510" y1="334" x2="518.7" y2="360.6"/><line x1="510" y1="334" x2="487.3" y2="350.5"/><line x1="510" y1="334" x2="487.3" y2="317.5"/><line x1="510" y1="334" x2="518.6" y2="307.4"/></g><circle cx="510" cy="334" r="10" fill="#14172A" stroke="#C9CCE0" stroke-width="2"/><circle cx="510" cy="334" r="4" fill="#FFC765"/></g>
+        <g id="apx-hwB"><circle cx="870" cy="334" r="52" fill="#07080F"/><circle cx="870" cy="334" r="47" fill="none" stroke="#1C1F33" stroke-width="7" stroke-dasharray="6 5"/><circle cx="870" cy="334" r="34" fill="url(#apx-hhub)" stroke="#C9CCE0" stroke-width="2.5"/><g class="sp apx-travel-sp" stroke="#C9CCE0" stroke-width="7" stroke-linecap="round" opacity=".8"><line x1="870" y1="334" x2="898.0" y2="334.0"/><line x1="870" y1="334" x2="878.7" y2="360.6"/><line x1="870" y1="334" x2="847.3" y2="350.5"/><line x1="870" y1="334" x2="847.3" y2="317.5"/><line x1="870" y1="334" x2="878.6" y2="307.4"/></g><circle cx="870" cy="334" r="10" fill="#14172A" stroke="#C9CCE0" stroke-width="2"/><circle cx="870" cy="334" r="4" fill="#FFC765"/></g>
+      </svg>
+  </div>
+</div>

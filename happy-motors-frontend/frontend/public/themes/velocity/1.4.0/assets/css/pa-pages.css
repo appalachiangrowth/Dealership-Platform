@@ -1,0 +1,26 @@
+/* Extra rules shared by the separate pages (used-*.html): real photos on cards,
+   empty state, and spacing under the site header. Design CSS stays inside each page. */
+.pa-page .ph>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}
+.pa-page .ph .year,.pa-page .ph .tag{z-index:2}
+.pa-page .pa-empty{grid-column:1/-1;background:#fff;border:1px dashed #c9e5d6;border-radius:14px;padding:28px;text-align:center;color:#5c6f65}
+.pa-page .brands:empty{display:none}
+/* The site header is fixed + translucent, so heroes start underneath it: push the hero text down */
+.pa-page.pa-page .hero .wrap{padding-top:176px}
+@media(max-width:767px){.pa-page.pa-page .hero .wrap{padding-top:130px}}
+
+/* ===== Photos over the illustrations (illustration stays as fallback) ===== */
+.hero .scene{overflow:hidden}
+.hero .scene>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;z-index:1}
+.frame{position:relative}
+.frame>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}
+
+/* hero slideshow: full-width photos with fade */
+html body [class*="-page"] .hero .scene{width:100%;left:0;right:0}
+.hero .scene>img{opacity:0;transition:opacity .9s ease}
+.hero .scene>img.on{opacity:1}
+
+/* used-*.html headings use the theme's hub heading font */
+.pa-page h1,.pa-page h2,.pa-page h3,.pa-page h4{font-family:var(--font-heading-hub)}
+
+/* links written in the Website Editor as [text](page.html) */
+.pa-page .cta .box p a{color:inherit;text-decoration:underline}
