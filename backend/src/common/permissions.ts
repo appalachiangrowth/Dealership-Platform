@@ -6,7 +6,7 @@ export const PERMISSIONS = {
   blog: { label: 'Blog & news', desc: 'Write, edit and publish blog posts and announcements.' },
   leads: { label: 'Leads & inquiries', desc: 'Read customer inquiries, reply by email, change status.' },
   content: { label: 'Website content', desc: 'Edit headlines, about us, reviews and Google titles.' },
-  design: { label: 'Design & colours', desc: 'Switch the website design and change brand colours.' },
+  design: { label: 'Design & colors', desc: 'Switch the website design and change brand colors.' },
   business: { label: 'Business details', desc: 'Name, logo, phone, address, opening hours and social links.' },
   settings: { label: 'Email & advanced settings', desc: 'Inquiry email, SMTP, feeds, CarGurus FTP, photo branding.' },
   users: { label: 'Team', desc: 'Add logins and change what each person can do (Dealership admin only).' },

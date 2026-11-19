@@ -192,7 +192,7 @@ export class ThemeInstallerService implements OnModuleInit {
     });
     await this.audit.record('theme.custom', { actor: user.login, detail: { theme: key, private: vis.isPrivate, dealers: vis.allowedTenantIds } });
     const who = vis.isPrivate ? `only to ${vis.allowedTenantIds.length} chosen dealership${vis.allowedTenantIds.length === 1 ? '' : 's'}` : 'to every dealership';
-    return { ...r, message: `Custom theme "${name}" installed and shown ${who} in Design & colours. It has not been activated yet.`, theme: { ...r.theme, id: key, name, isPrivate: vis.isPrivate } };
+    return { ...r, message: `Custom theme "${name}" installed and shown ${who} in Design & colors. It has not been activated yet.`, theme: { ...r.theme, id: key, name, isPrivate: vis.isPrivate } };
   }
 
   /**

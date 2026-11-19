@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, CreditCard, Eye, Lock, RotateCcw, Smartphone, Sparkles, Undo2 } from 'lucide-react';
 import { api, mediaUrl, siteUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
+import { usSpelling } from '@/lib/spelling';
 import { useTenant } from '@/components/DealerShell';
 import { useToast } from '@/components/toast';
 import { Badge, Button, ErrorBox, Field, Input, Loading, Modal, Textarea, cx } from '@/components/ui';
@@ -126,7 +127,7 @@ export default function DesignPage() {
               {slots.map((s) => {
                 const v = colors[s.key] || '';
                 return (
-                  <Field key={s.key} label={s.label} hint={s.hint}>
+                  <Field key={s.key} label={usSpelling(s.label)} hint={s.hint ? usSpelling(s.hint) : s.hint}>
                     <div className="flex items-center gap-2">
                       <input
                         type="color"
@@ -184,7 +185,7 @@ export default function DesignPage() {
                         <Badge>{t.style}</Badge>
                       )}
                     </div>
-                    <p className="mt-1 line-clamp-2 min-h-[32px] text-xs text-slate-500">{t.description}</p>
+                    <p className="mt-1 line-clamp-2 min-h-[32px] text-xs text-slate-500">{usSpelling(t.description)}</p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {!t.active && (
                         <Button variant="secondary" size="sm" onClick={() => setPreviewId(t.id)} disabled={isTried}>
@@ -315,7 +316,7 @@ export default function DesignPage() {
             <div className="mb-4 flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
               <span className="min-w-0">
                 <b className="block text-slate-900">{request?.name}</b>
-                <span className="line-clamp-2 text-xs text-slate-500">{request?.description}</span>
+                <span className="line-clamp-2 text-xs text-slate-500">{usSpelling(request?.description)}</span>
               </span>
               <b className="shrink-0 text-lg text-slate-900">{request?.access.label}</b>
             </div>

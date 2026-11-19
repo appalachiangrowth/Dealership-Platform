@@ -89,7 +89,7 @@
     "colors": [
       {
         "var": "--sr-accent",
-        "label": "Accent colour",
+        "label": "Accent color",
         "default": "#e0212b",
         "also": [],
         "hint": "Buttons, highlights and glows"
@@ -113,7 +113,7 @@
         "label": "3D car paint",
         "default": "#8a0812",
         "also": [],
-        "hint": "Colour of the car in the 3D showroom"
+        "hint": "Color of the car in the 3D showroom"
       }
     ]
   },

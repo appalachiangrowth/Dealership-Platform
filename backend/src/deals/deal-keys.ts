@@ -43,7 +43,7 @@ export const DEAL_KEYS: DealKey[] = [
   { key: 'vehicle.make', label: 'Make', group: 'Vehicle', hints: ['vehiclemake', 'make'], get: (d) => d.vehicle.make },
   { key: 'vehicle.model', label: 'Model', group: 'Vehicle', hints: ['vehiclemodel', 'model'], get: (d) => d.vehicle.model },
   { key: 'vehicle.body', label: 'Body type', group: 'Vehicle', hints: ['bodytype', 'bodystyle', 'body'], get: (d) => d.vehicle.bodyStyle },
-  { key: 'vehicle.color', label: 'Colour', group: 'Vehicle', hints: ['vehiclecolor', 'color', 'colour'], get: (d) => d.vehicle.color },
+  { key: 'vehicle.color', label: 'Color', group: 'Vehicle', hints: ['vehiclecolor', 'color', 'colour'], get: (d) => d.vehicle.color },
   { key: 'vehicle.fuel', label: 'Fuel type', group: 'Vehicle', hints: ['fueltype', 'fuel'], get: (d) => d.vehicle.fuelType },
   { key: 'vehicle.gvwr', label: 'GVWR / weight', group: 'Vehicle', hints: ['gvwr', 'grossweight', 'weight'], get: (d) => d.gvwr },
   { key: 'vehicle.odometer', label: 'Odometer reading', group: 'Vehicle', hints: ['odometerreading', 'mileage', 'odometer', 'miles'], get: (d) => (d.odometer.reading === null ? '' : String(d.odometer.reading)) },

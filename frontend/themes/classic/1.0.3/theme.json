@@ -47,7 +47,7 @@
     "colors": [
       {
         "var": "--color-primary",
-        "label": "Main brand colour",
+        "label": "Main brand color",
         "default": "#0057B8",
         "also": [
           "--home-primary",
@@ -57,7 +57,7 @@
       },
       {
         "var": "--color-navy",
-        "label": "Dark colour",
+        "label": "Dark color",
         "default": "#062B49",
         "also": [
           "--home-dark",
@@ -67,7 +67,7 @@
       },
       {
         "var": "--home-accent",
-        "label": "Accent colour",
+        "label": "Accent color",
         "default": "#22D3EE",
         "also": [
           "--hub-accent",

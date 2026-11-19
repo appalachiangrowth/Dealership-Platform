@@ -56,8 +56,8 @@ const withOptions = (list: string[], cur: string) => (cur && !list.includes(cur)
 /* ───────────── look of the new design ───────────── */
 const CARD = 'rounded-[14px] border border-[#E5E9F0] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)]';
 const BOX =
-  'flex min-h-[42px] items-stretch overflow-hidden rounded-lg border bg-white transition focus-within:border-[#2563EB] focus-within:shadow-[0_0_0_3px_rgba(37,99,235,0.18)]';
-const CTRL = 'min-w-0 flex-1 border-0 bg-transparent px-3 text-sm text-[#0F172A] outline-none placeholder:text-[#7A8599]';
+  'flex min-h-[40px] sm:min-h-[42px] items-stretch overflow-hidden rounded-lg border bg-white transition focus-within:border-[#2563EB] focus-within:shadow-[0_0_0_3px_rgba(37,99,235,0.18)]';
+const CTRL = 'min-w-0 flex-1 border-0 bg-transparent px-2 text-sm text-[#0F172A] outline-none placeholder:text-[#7A8599] sm:px-3';
 const BTN_S =
   'inline-flex min-h-[42px] items-center justify-center gap-2 rounded-lg border border-[#CBD5E1] bg-white px-4 text-sm font-semibold text-[#0F172A] transition hover:bg-[#F8FAFC] disabled:opacity-60';
 const BTN_P =
@@ -190,7 +190,7 @@ function Sec({
         )}
       </div>
       {/* kept in the page when hidden, so "Still needed" links can find and open the field */}
-      <div className={cx('p-5', !shown && 'hidden')}>{children}</div>
+      <div className={cx('p-3.5 sm:p-5', !shown && 'hidden')}>{children}</div>
     </section>
   );
 }
@@ -486,9 +486,9 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   ) => {
     const err = filled(k) ? problem(k) : '';
     return (
-      <div key={k} data-f={k} className={cx('flex min-w-0 scroll-mt-28 flex-col gap-1.5', o.full ? 'col-span-full' : o.wide && 'md:col-span-2')}>
+      <div key={k} data-f={k} className={cx('flex min-w-0 scroll-mt-28 flex-col gap-1 sm:gap-1.5', o.full ? 'col-span-full' : o.wide && 'col-span-2')}>
         <div className="flex min-h-6 items-center gap-0.5">
-          <label htmlFor={`in-${k}`} className="text-[13px] font-semibold text-[#1E293B]">
+          <label htmlFor={`in-${k}`} className="min-w-0 truncate text-xs font-semibold text-[#1E293B] sm:text-[13px]">
             {label}
           </label>
           {isReq(k) && (
@@ -506,9 +506,9 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
           control
         ) : (
           <div className={cx(BOX, err ? 'border-[#DC2626]' : 'border-[#CBD5E1]', hot === k && 'ring-2 ring-amber-400 ring-offset-2')}>
-            {o.prefix && <span className="flex items-center pl-3 font-medium text-[#526077]">{o.prefix}</span>}
+            {o.prefix && <span className="flex items-center pl-2 font-medium text-[#526077] sm:pl-3">{o.prefix}</span>}
             {control}
-            {o.suffix && <span className="flex items-center pr-3 font-medium text-[#526077]">{o.suffix}</span>}
+            {o.suffix && <span className="flex items-center pr-2 font-medium text-[#526077] sm:pr-3">{o.suffix}</span>}
           </div>
         )}
         {err && <span className="text-xs font-medium text-[#B91C1C]">{err}</span>}
@@ -544,7 +544,8 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   const area = (value: string, onChange: (t: string) => void, props: React.TextareaHTMLAttributes<HTMLTextAreaElement> = {}) => (
     <textarea value={value} onChange={(e) => onChange(e.target.value)} className={cx(CTRL, 'min-h-[120px] resize-y py-2.5 leading-normal')} {...props} />
   );
-  const GRID = 'grid grid-cols-1 gap-x-4 gap-y-[18px] sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]';
+  // 2 fields per row on phones too (wide / full fields take the whole row); more columns as the screen grows
+  const GRID = 'grid grid-cols-2 gap-x-2.5 gap-y-3.5 sm:gap-x-4 sm:gap-y-[18px] sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]';
   const vinLen = String(v.vin || '').trim().length;
 
   const publishLabel = !isNew && status0 === 'PUBLISHED' ? 'Save changes' : 'Publish vehicle';

@@ -126,7 +126,7 @@ export class BrandingService {
     if (typeof b.enabled === 'boolean') data.brandImages = b.enabled;
     if (b.color !== undefined) {
       const c = String(b.color).trim().toUpperCase();
-      if (!/^#[0-9A-F]{6}$/.test(c)) throw new BadRequestException('Choose a colour like #EAF0F8.');
+      if (!/^#[0-9A-F]{6}$/.test(c)) throw new BadRequestException('Choose a color like #EAF0F8.');
       data.brandBandColor = c;
     }
     await this.settings(tenantId);

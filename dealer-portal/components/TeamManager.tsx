@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Check, Info, KeyRound, MoreVertical, Pencil, Search, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
+import { usSpelling } from '@/lib/spelling';
 import { useSession } from '@/lib/session';
 import { useToast } from './toast';
 import { Button, Drawer, ErrorBox, Field, Input, Loading, Select, Toggle, cx } from './ui';
@@ -84,7 +85,7 @@ export function TeamManager({ title = true }: { title?: boolean }) {
     u.role === 'ADMIN' && !isCustom(u)
       ? 'Everything, including website setup and team'
       : effective(u)
-          .map((p: string) => perms[p]?.label || p)
+          .map((p: string) => usSpelling(perms[p]?.label || p))
           .join(', ') || 'Nothing yet';
 
   const startAdd = () => {
@@ -362,8 +363,8 @@ export function TeamManager({ title = true }: { title?: boolean }) {
                 <tr key={k} className="hover:bg-[#F8FAFC]">
                   <td className={TD}>
                     <span className="flex flex-col">
-                      <span className="text-sm font-semibold text-[#0F172A]">{p.label}</span>
-                      <span className="text-[12.5px] text-[#526077]">{p.desc}</span>
+                      <span className="text-sm font-semibold text-[#0F172A]">{usSpelling(p.label)}</span>
+                      <span className="text-[12.5px] text-[#526077]">{usSpelling(p.desc)}</span>
                     </span>
                   </td>
                   {cols.map((c) => {
@@ -467,8 +468,8 @@ export function TeamManager({ title = true }: { title?: boolean }) {
                               const next = v ? Array.from(new Set([...cur, k])) : cur.filter((x: string) => x !== k);
                               setEdit({ ...edit, perms: next });
                             }}
-                            label={p.label}
-                            desc={p.desc}
+                            label={usSpelling(p.label)}
+                            desc={usSpelling(p.desc)}
                           />
                         </div>
                       );

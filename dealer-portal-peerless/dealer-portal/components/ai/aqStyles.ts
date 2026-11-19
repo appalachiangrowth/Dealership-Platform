@@ -132,5 +132,20 @@ export const AQ_CSS = `
 .aq .ev{white-space:pre-line}
 .aq .thumbs .th .tb button:hover,.aq .th .x:hover,.aq .th .c:hover{background:#fff;box-shadow:0 0 0 2px #2563EB}
 .aq .modal .card{max-width:520px}
-@media (max-width:640px){.aq .f.wide{grid-column:auto}}
+/* phones: the form stays 2 fields per row (wide / full fields take the whole row), compact labels and inputs */
+@media (max-width:640px){
+.aq .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 10px}
+.aq .f.wide,.aq .f.full{grid-column:1/-1}
+.aq .f{gap:4px}
+.aq .lbl{font-size:12px}
+.aq .lr{min-height:20px;gap:3px}
+.aq .lr .chip{font-size:10.5px;padding:1px 6px}
+.aq .fld{min-height:38px}
+.aq .fld input,.aq .fld select{padding:0 8px;font-size:14px}
+.aq .pre{padding-left:8px}
+.aq .suf{padding-right:8px}
+.aq .bd{padding:14px}
+.aq .hd{padding:14px}
+.aq .ev{font-size:11.5px}
+}
 `;

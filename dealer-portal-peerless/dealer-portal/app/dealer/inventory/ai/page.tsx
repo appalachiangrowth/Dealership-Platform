@@ -356,20 +356,7 @@ export default function AiAddVehiclePage() {
       }
       const notes: Note[] = [];
       if (!d.clean && d.warnings.length) notes.push({ kind: 'warn', icon: '⚠', html: <><b>The database flagged this VIN:</b> {d.warnings.join(' ')}</> });
-      const filled = Object.values(f).filter(Boolean).length + (d.safety || []).length;
-      notes.push({
-        kind: 'ok',
-        icon: '✓',
-        html: (
-          <>
-            <b>{[f.year, f.make, f.model, f.trim].filter(Boolean).join(' ')}</b>
-            {f.engine ? ` · ${f.engine}` : ''}
-            {f.body ? ` · ${f.body}` : ''}
-            <br />
-            {filled} details filled from the official record.
-          </>
-        ),
-      });
+      // no vehicle summary line here: the decoded fields are listed in the "fields decoded" card below
       setVinNotes(notes);
       setVinHint({ text: '', color: '#526077' });
       setDecoded(d);
@@ -1553,12 +1540,11 @@ export default function AiAddVehiclePage() {
                               key={k}
                               type="button"
                               onClick={() => goField(k)}
-                              title={`${LABEL[k]}: ${res.v[k]}`}
+                              title={`${LABEL[k]} — filled in from the ${FILLED_BY[res.src[k]] === 'AI' ? 'photos / video by AI' : 'official VIN record'}`}
                               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: 320, border: '1px solid #E5E9F0', borderRadius: 999, background: '#F8FAFC', padding: '4px 10px', fontSize: 12.5, cursor: 'pointer' }}
                             >
                               <span className={`chip ${SRC_CHIP[res.src[k]]?.[0] || 's-vin'}`}>{FILLED_BY[res.src[k]] || 'VIN'}</span>
-                              <b style={{ color: '#0F172A' }}>{LABEL[k]}</b>
-                              <span style={{ color: '#526077', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(res.v[k]).split('\n')[0]}</span>
+                              <b style={{ color: '#0F172A', whiteSpace: 'nowrap' }}>{LABEL[k]}</b>
                             </button>
                           ))}
                         </div>

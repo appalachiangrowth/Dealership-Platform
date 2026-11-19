@@ -89,7 +89,7 @@
     "colors": [
       {
         "var": "--color-primary",
-        "label": "Main brand colour",
+        "label": "Main brand color",
         "default": "#FFB547",
         "also": [
           "--home-primary",
@@ -99,7 +99,7 @@
       },
       {
         "var": "--sodium",
-        "label": "Accent colour",
+        "label": "Accent color",
         "default": "#FFB547",
         "also": [
           "--home-accent",

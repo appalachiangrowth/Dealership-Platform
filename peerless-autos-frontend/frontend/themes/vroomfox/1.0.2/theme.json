@@ -17,7 +17,7 @@
     "colors": [
       {
         "var": "--blue",
-        "label": "Main brand colour",
+        "label": "Main brand color",
         "default": "#1F7BFF",
         "also": [],
         "hint": "Buttons, links and highlights"
