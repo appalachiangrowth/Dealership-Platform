@@ -333,6 +333,7 @@ function mapHref(raw){
     return (m[1]||m[2])?"/"+h:null}
   try{var u=new URL(raw,D.baseURI);if(u.origin!==L.origin)return null;
     var p=u.pathname.replace(/^\\/+/,"").toLowerCase();
+    if(/(^|\\/)blog-post(\\.html?)?$/.test(p)){var pid=u.searchParams.get("id");if(pid){u.searchParams.delete("id");return "/blog/"+encodeURIComponent(pid)+u.search+u.hash}return null}
     if(/(^|\\/)vehicle\\.html$/.test(p)){var id=u.searchParams.get("id");if(id&&V&&V[id]){u.searchParams.delete("id");return "/"+B+"/"+V[id]+u.search+u.hash}return null}
     if(P[p])return P[p]+u.search+u.hash;
     if(/(^|\\/)index\\.html?$/.test(p))return "/"+p.replace(/(^|\\/)index\\.html?$/,"")+u.search+u.hash;

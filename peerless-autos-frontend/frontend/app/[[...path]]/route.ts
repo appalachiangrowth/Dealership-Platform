@@ -13,7 +13,7 @@
 import { backend, hostOf, originOf, securityHeaders, siteErrorPage, statePage, withTenant } from '@/lib/backend';
 import { loadTheme, themesInstalled, type Theme } from '@/lib/engine';
 import { renderPage, type ThemeContext } from '@/lib/page';
-import { applyMeta, cleanPages, gonePage, headScripts, injectHead, resolveSeo, rewriteStaticLinks, ruleRedirect, seoLinks, seoSkipped, templateForPath, type SeoLinks, type SeoMeta, type SeoResolve } from '@/lib/seo';
+import { absUrl, applyMeta, BLOG_POST_RE, blogPostPath, cleanPages, gonePage, headScripts, injectHead, resolveSeo, rewriteBlogLinks, rewriteStaticLinks, ruleRedirect, seoLinks, seoSkipped, templateForPath, type SeoLinks, type SeoMeta, type SeoResolve } from '@/lib/seo';
 import { outsideScripts, rewriteHashLinks, runtimeScript, spaConf, spaHashForKey, spaMatch, virtualizeHtml, virtualizeJs } from '@/lib/spa';
 import { allOn, blockedPaths, featureCss, featureOfPage, flagsOf, hideFeatures, hrefBlocked, markRoot, offText, themeFeatures } from '@/lib/features';
 import { injectNav, renderCustomPage, type CustomPage, type NavItem } from '@/lib/custom-pages';
@@ -131,6 +131,8 @@ type SeoOpts = {
   meta?: SeoMeta;
   path?: string;
   vehicleId?: string;
+  /** blog article shown on /blog/<slug>: the id the design's article page reads from ?id= */
+  postId?: string;
   /** design template being shown (index.html of a single-page design = its shell) */
   template?: string;
   /** view a single-page design opens: hash or vehicle id */
@@ -166,7 +168,7 @@ async function finishHtml(html: string, ctx: ThemeContext, theme: Theme, host: s
   const site = siteTokens(ctx.settings, origin).site_url;
   let out = html;
   if (o.path !== undefined) out = applyMeta(out, o.meta || {}, site + '/' + o.path, site);
-  out = rewriteStaticLinks(out, links);
+  out = rewriteStaticLinks(rewriteBlogLinks(out), links);
   const conf = spaConf(theme, links, customSlugs(ctx), flags);
   out = rewriteHashLinks(out, conf);
   if (featuresOff) out = markRoot(hideFeatures(out, flags, blocked, outsideScripts, heuristics), flags);
@@ -178,7 +180,7 @@ async function finishHtml(html: string, ctx: ThemeContext, theme: Theme, host: s
   const shell = !!conf && (o.template || '') === 'index.html';
   return injectHead(
     out,
-    headScripts({ base: !!o.path && o.path.includes('/'), vehicleId: o.vehicleId }) +
+    headScripts({ base: !!o.path && o.path.includes('/'), vehicleId: o.vehicleId, postId: o.postId }) +
       featureCss(flags, theme) +
       runtimeScript({ conf, links, vehicles, shell, init: shell ? o.init : null, flags, blocked, heuristics }),
   );
@@ -358,6 +360,48 @@ async function vehiclePage(req: Request, host: string, seo: Extract<SeoResolve, 
   });
 }
 
+/** the blog list's address (/blog, or the one set in SEO & URLs) */
+async function blogListPath(host: string, seo: SeoResolve | null): Promise<string> {
+  const { ctx } = await context(host);
+  try {
+    if (ctx) return cleanLinks(loadTheme(ctx.theme.id, ctx.theme.version), seo?.links).pages['blog.html'] || '/blog';
+  } catch {
+    /* design files missing */
+  }
+  return '/blog';
+}
+
+type PublicPost = { slug: string; title: string; excerpt?: string | null; coverImage?: string | null; metaTitle?: string | null; metaDescription?: string | null };
+
+/**
+ * A blog article at its clean address /blog/<slug>: the design's article page (blog-post.html) with the article's
+ * title / description / canonical in <head>. An older address of the article (its id or imported id) answers with
+ * a 301 to /blog/<slug>. null = the design has no article page (single-page designs open their blog view instead).
+ */
+async function blogPostPage(req: Request, url: URL, host: string, slug: string, seo: SeoResolve) {
+  const { ctx, error } = await context(host);
+  if (error) return siteErrorPage(error);
+  const theme = loadTheme(ctx.theme.id, ctx.theme.version);
+  const own = (theme.manifest.pages || []).find((p) => p.id === 'blog-post' || p.template === 'blog-post.html');
+  if (!own) return null;
+  const res = await backend(`/public/posts/${encodeURIComponent(slug)}`, host);
+  if (res.status === 404) return statePage(404, 'Article not found', 'This article may have been removed or unpublished.');
+  if (!res.ok) return siteErrorPage(res);
+  const { post } = (await res.json()) as { post: PublicPost };
+  if (post.slug && post.slug !== slug) return redirectTo(req, url, blogPostPath(post.slug), 301);
+  const path = 'blog/' + post.slug;
+  const site = siteTokens(ctx.settings, originOf(req)).site_url;
+  const meta: SeoMeta = {
+    title: (post.metaTitle || post.title || '').trim(),
+    description: (post.metaDescription || post.excerpt || '').trim().slice(0, 320),
+    ogTitle: post.title || '',
+    ogDescription: (post.excerpt || '').trim().slice(0, 320),
+    ogImage: post.coverImage ? absUrl(post.coverImage, site) : '',
+    canonicalUrl: site + blogPostPath(post.slug),
+  };
+  return themeResponse(req, host, ctx, theme, own.template, { seo, meta, path, postId: post.slug });
+}
+
 /** a custom page: published copy, or the draft with ?pa_page_preview=<token> from Platform Admin */
 async function customPage(req: Request, url: URL, host: string, slug: string, seoOpts?: SeoOpts) {
   const preview = url.searchParams.get('pa_page_preview') || '';
@@ -484,6 +528,16 @@ async function page(req: Request, { params }: Ctx) {
     }
     for (const p of seo?.sitemap.pages || []) add(p.path); // e.g. a single-page design's inventory with its own address
     for (const v of seo?.sitemap.vehicles || []) add(v.path, v.updatedAt);
+    // published blog articles at /blog/<slug>
+    try {
+      const sm = await backend('/public/sitemap', host, { signal: AbortSignal.timeout(5000) });
+      if (sm.ok) {
+        const d = (await sm.json()) as { posts?: { slug: string; updatedAt?: string }[] };
+        for (const p of d.posts || []) if (p.slug) add(blogPostPath(p.slug).slice(1), p.updatedAt);
+      }
+    } catch {
+      /* sitemap without articles */
+    }
     return new Response(xml + '</urlset>\n', { headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
   }
 
@@ -493,6 +547,15 @@ async function page(req: Request, { params }: Ctx) {
   // URL Redirects come before everything else: their exact status (301 / 302 / 307) to their destination, or 410 Gone
   if (seo?.type === 'gone') return removedPage(req, host, seo.links);
   if (seo?.type === 'redirect' && seo.manual) return ruleRedirect(seo.to, seo.status);
+  // blog articles live at /blog/<slug>: older blog-post.html?id=<slug> and /blog-post?id=<slug> answer with a 301
+  if (!seoSkipped(url) && BLOG_POST_RE.test(rawPath)) {
+    const id = (url.searchParams.get('id') || '').trim();
+    return redirectTo(req, url, id ? blogPostPath(id) : await blogListPath(host, seo), 301);
+  }
+  if (!seoSkipped(url) && /^blog\/[^/]+\/?$/i.test(rawPath)) {
+    const article = await blogPostPage(req, url, host, rawPath.replace(/^blog\/|\/+$/gi, ''), seo ? (seo.type === 'redirect' ? { type: 'none', links: seo.links } : seo) : { type: 'none', links: NO_SEO });
+    if (article) return article;
+  }
   // /index.html → / (a #view after it is kept by the browser and turned into its clean address on the page)
   if ((rawPath === 'index.html' || rawPath === 'index.php') && !seoSkipped(url)) return redirectTo(req, url, '/', 301);
   if (!seoSkipped(url) && rawPath) {

@@ -163,7 +163,7 @@ export class PublicService {
 
   async post(host: string, slug: string) {
     const t = await this.tenantFor(host);
-    const p = await this.prisma.blogPost.findFirst({ where: { tenantId: t.id, status: 'PUBLISHED', OR: [{ slug }, { id: slug }] } });
+    const p = await this.prisma.blogPost.findFirst({ where: { tenantId: t.id, status: 'PUBLISHED', OR: [{ slug }, { id: slug }, { legacyId: slug }] } });
     if (!p) throw new NotFoundException('Article not found');
     const more = await this.prisma.blogPost.findMany({
       where: { tenantId: t.id, status: 'PUBLISHED', id: { not: p.id } },
@@ -269,7 +269,10 @@ export class PublicService {
         images: v.images.map(rel),
       })),
       posts: posts.map((p) => ({
-        id: p.legacyId || p.slug,
+        // the post's web address is /blog/<slug>: the designs open an article by this id
+        id: p.slug,
+        slug: p.slug,
+        legacyId: p.legacyId || '',
         title: p.title,
         tag: p.category,
         date: p.publishedAt ? p.publishedAt.toISOString().slice(0, 10) : '',

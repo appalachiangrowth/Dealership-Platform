@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { clean, cleanMl, slugify, strArray } from '../common/util.js';
@@ -57,13 +57,38 @@ export class PostsService {
   }
 
   private async uniqueSlug(tenantId: string, base: string, exceptId?: string) {
-    const root = slugify(base, 80);
+    const root = slugify(base, 80) || 'post';
     let slug = root;
     for (let i = 2; ; i++) {
-      const hit = await this.prisma.blogPost.findFirst({ where: { tenantId, slug, ...(exceptId ? { NOT: { id: exceptId } } : {}) }, select: { id: true } });
-      if (!hit) return slug;
+      if (!(await this.slugTaken(tenantId, slug, exceptId))) return slug;
       slug = `${root}-${i}`;
     }
+  }
+
+  private async slugTaken(tenantId: string, slug: string, exceptId?: string) {
+    const hit = await this.prisma.blogPost.findFirst({ where: { tenantId, slug, ...(exceptId ? { NOT: { id: exceptId } } : {}) }, select: { id: true } });
+    return !!hit;
+  }
+
+  /**
+   * The post's web address (/blog/<slug>). A custom URL typed by the dealer is cleaned (lower case, a-z 0-9 and "-")
+   * and must be free on this dealership's website (409 otherwise); an empty one is made from the title.
+   */
+  private async resolveSlug(tenantId: string, raw: unknown, title: string, exceptId?: string): Promise<string> {
+    const typed = typeof raw === 'string' ? raw.trim() : '';
+    if (!typed) return this.uniqueSlug(tenantId, title, exceptId);
+    const slug = slugify(typed, 80);
+    if (!slug) throw new BadRequestException('The custom URL needs at least one letter or number');
+    if (await this.slugTaken(tenantId, slug, exceptId)) throw new ConflictException(`The URL "/blog/${slug}" is already used by another post`);
+    return slug;
+  }
+
+  /** Portal check while typing: the cleaned slug and whether it is free (id = the post being edited). */
+  async slugCheck(tenantId: string, raw: string, exceptId?: string) {
+    const slug = slugify(String(raw || ''), 80);
+    if (!slug) return { slug: '', available: false, reason: 'empty' as const };
+    const taken = await this.slugTaken(tenantId, slug, exceptId || undefined);
+    return { slug, available: !taken, reason: taken ? ('taken' as const) : null };
   }
 
   async create(tenantId: string, b: Record<string, unknown>, user: AuthUser) {
@@ -71,9 +96,9 @@ export class PostsService {
     if (!d.title) throw new BadRequestException('A title is required');
     if (d.status === 'PUBLISHED' && !d.publishedAt) d.publishedAt = new Date();
     if (!d.author) d.author = user.name;
-    const slug = await this.uniqueSlug(tenantId, String(b.slug || d.title));
+    const slug = await this.resolveSlug(tenantId, b.slug, String(d.title));
     const p = await this.prisma.blogPost.create({ data: { ...(d as Prisma.BlogPostUncheckedCreateInput), tenantId, slug } });
-    await this.audit.record('post.create', { tenantId, actor: user.login, detail: { id: p.id, title: p.title } });
+    await this.audit.record('post.create', { tenantId, actor: user.login, detail: { id: p.id, title: p.title, slug } });
     return p;
   }
 
@@ -81,9 +106,13 @@ export class PostsService {
     const cur = await this.get(tenantId, id);
     const d = cleanPost(b) as Record<string, unknown>;
     if (d.status === 'PUBLISHED' && !cur.publishedAt && !d.publishedAt) d.publishedAt = new Date();
-    if (b.slug) d.slug = await this.uniqueSlug(tenantId, String(b.slug), id);
+    // slug sent: a custom URL (checked) or empty = made from the title; not sent: unchanged
+    if ('slug' in b) {
+      const next = await this.resolveSlug(tenantId, b.slug, String(d.title || cur.title), id);
+      if (next !== cur.slug) d.slug = next;
+    }
     const p = await this.prisma.blogPost.update({ where: { id }, data: d });
-    await this.audit.record('post.update', { tenantId, actor: user.login, detail: { id, title: p.title } });
+    await this.audit.record('post.update', { tenantId, actor: user.login, detail: { id, title: p.title, slug: p.slug } });
     return p;
   }
 

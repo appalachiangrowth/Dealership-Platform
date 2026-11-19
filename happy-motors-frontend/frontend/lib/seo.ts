@@ -211,23 +211,47 @@ const js = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c').replace(/>
  *  · base      — <base href="/"> for addresses with a "/" (/inventory/2022-ford-f150) so the design's relative
  *                files (themes/…, inventory.json, api/lead.php) still load
  *  · vehicleId — the design's vehicle page reads ?id= from the address; on a clean address it gets the id here
+ *  · postId    — the same for the design's blog article page on /blog/<slug>
  */
-export function headScripts(o: { base?: boolean; vehicleId?: string }): string {
+export function headScripts(o: { base?: boolean; vehicleId?: string; postId?: string }): string {
   let out = '';
   if (o.base) out += '<base href="/">';
-  if (o.vehicleId) {
+  const id = o.vehicleId || o.postId;
+  if (id) {
+    const name = o.vehicleId ? 'PA_VEHICLE_ID' : 'PA_POST_ID';
     out +=
-      `<script data-pa>(function(){var I=${js(o.vehicleId)},U=window.URLSearchParams;window.PA_VEHICLE_ID=I;if(!U)return;` +
+      `<script data-pa>(function(){var I=${js(id)},U=window.URLSearchParams;window.${name}=I;if(!U)return;` +
       `function P(i){var p=new U(i);try{if(i===location.search&&!p.get("id"))p.set("id",I)}catch(e){}return p}` +
       `P.prototype=U.prototype;try{Object.setPrototypeOf(P,U)}catch(e){}window.URLSearchParams=P})();</script>`;
   }
   return out;
 }
 
+/* ───────────────── blog articles: /blog/<slug> ───────────────── */
+
+/** blog-post.html?id=<slug> / /blog-post?id=<slug> (any design) → the article's clean address */
+export const BLOG_POST_RE = /^(?:\.\/|\/)?blog-post(?:\.html?)?$/i;
+export const blogPostPath = (slug: string) => '/blog/' + encodeURIComponent(slug);
+
+/** links written in the page's HTML: href="blog-post.html?id=x" → href="/blog/x" (theme scripts: lib/spa.ts runtime) */
+export function rewriteBlogLinks(html: string): string {
+  const re = /(<a\s[^>]*?href=)(["'])(?:\.\/|\/)?blog-post(?:\.html?)?\?([^"'#]*)(#[^"']*)?\2/gi;
+  return outsideScripts(html, (part) =>
+    part.replace(re, (m, pre: string, q: string, query: string, hash: string | undefined) => {
+      const qs = new URLSearchParams(query.replace(/&amp;/g, '&'));
+      const id = qs.get('id');
+      if (!id) return m;
+      qs.delete('id');
+      const rest = qs.toString();
+      return `${pre}${q}${h(blogPostPath(id) + (rest ? '?' + rest : '') + (hash || ''))}${q}`;
+    }),
+  );
+}
+
 /* ───────────────── clean addresses for every design page (no .html) ───────────────── */
 
-/** design pages that are opened with ?id= and have their own clean address (vehicles: /inventory/<slug>) */
-const NO_DEFAULT_CLEAN = new Set(['index.html', 'vehicle.html']);
+/** design pages that are opened with ?id= and have their own clean address (vehicles: /inventory/<slug>, articles: /blog/<slug>) */
+const NO_DEFAULT_CLEAN = new Set(['index.html', 'vehicle.html', 'blog-post.html']);
 /** design page names whose clean address differs from the file name */
 const CLEAN_ALIAS: Record<string, string> = { about: 'about-us' };
 

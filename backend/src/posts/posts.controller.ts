@@ -13,6 +13,12 @@ export class PostsController {
     return this.posts.list(t, status);
   }
 
+  /** live check for the editor's Custom URL field: ?slug=<typed>&id=<post being edited> */
+  @Get('slug-check')
+  slugCheck(@TenantId() t: string, @Query('slug') slug = '', @Query('id') id = '') {
+    return this.posts.slugCheck(t, slug, id);
+  }
+
   @Get(':id')
   get(@TenantId() t: string, @Param('id') id: string) {
     return this.posts.get(t, id);
