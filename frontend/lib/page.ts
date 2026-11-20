@@ -38,6 +38,22 @@ export interface RenderOverride {
 }
 
 /** Dealership Portal + Platform Admin addresses that may drive the live preview (ADMIN_URL, comma-separated). */
+/**
+ * The platform's root domains (ROOT_DOMAINS or ROOT_DOMAIN, comma-separated). Both the new and the old domain are on
+ * by default, so nothing breaks while the platform moves from appalachiangrowthsolutions.com to revixasolutions.com.
+ */
+export function rootDomains(): string[] {
+  const raw = process.env.ROOT_DOMAINS || process.env.ROOT_DOMAIN || 'revixasolutions.com,appalachiangrowthsolutions.com';
+  return Array.from(
+    new Set(
+      raw
+        .split(',')
+        .map((d) => d.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^\.+|\.+$/g, ''))
+        .filter(Boolean),
+    ),
+  );
+}
+
 export function adminOrigins(): string[] {
   const fromEnv = (process.env.ADMIN_URL || '')
     .split(',')
@@ -49,7 +65,10 @@ export function adminOrigins(): string[] {
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
   ];
-  return Array.from(new Set([...defaults, ...fromEnv]));
+  // the platform's own addresses on every root domain (new + old during the move): Dealership Portal, Platform Admin,
+  // the shared website app — they show this website in their design / content previews
+  const platform = rootDomains().flatMap((d) => ['', 'www.', 'admin.', 'portal.', 'app.', 'sites.'].map((p) => `https://${p}${d}`));
+  return Array.from(new Set([...defaults, ...platform, ...fromEnv]));
 }
 
 export function renderPage(ctx: ThemeContext, theme: Theme, r: string, origin: string, themePreview: boolean, live = false, override?: RenderOverride): string {

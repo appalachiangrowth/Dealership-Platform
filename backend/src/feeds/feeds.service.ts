@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { TenantsService } from '../tenants/tenants.service.js';
+import { primarySitesDomain } from '../common/util.js';
 import * as cg from '../cargurus/ingestion.js';
 import type { Tenant, TenantDomain, TenantSettings, Vehicle } from '../generated/prisma/client.js';
 
@@ -113,7 +114,7 @@ export class FeedsService {
     const primary = t.domains?.find((d) => d.isPrimary) ?? t.domains?.[0];
     if (primary && !primary.domain.endsWith('localhost')) return `https://${primary.domain}`;
     // live server: the dealer's sub-domain <id>.<SITES_DOMAIN>
-    if (process.env.SITES_DOMAIN && !process.env.SITE_PATTERN) return `https://${t.id}.${process.env.SITES_DOMAIN.replace(/^\.+|\.+$/g, '')}`;
+    if (primarySitesDomain() && !process.env.SITE_PATTERN) return `https://${t.id}.${primarySitesDomain()}`;
     // on this computer the dealer websites are the website app (port 3002); SITE_PATTERN can change it
     return (process.env.SITE_PATTERN || 'http://{id}.localhost:3002').replace('{id}', t.id).replace(/\/+$/, '');
   }

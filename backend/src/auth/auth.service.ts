@@ -12,7 +12,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service.js';
 import { TenantsService, checkPassword, hashPassword } from '../tenants/tenants.service.js';
 import { signToken } from '../common/jwt.js';
-import { clean, rateLimit } from '../common/util.js';
+import { clean, primarySitesDomain, rateLimit } from '../common/util.js';
 import { PERMISSIONS, ROLES, CUSTOM_ALLOWED } from '../common/permissions.js';
 import type { AuthUser } from '../common/auth.types.js';
 import type { ChangePasswordDto, LoginDto, SetupDto, SignupDto } from './auth.dto.js';
@@ -156,6 +156,6 @@ export class AuthService {
     });
     await this.audit.record('signup', { tenantId: t.id, actor: email, ip });
     const r = await this.login({ login: email, password: dto.password, portal: 'dealer', tenantId: t.id }, ip);
-    return { ...r, websiteDomain: domains[0] || (process.env.SITES_DOMAIN ? `${id}.${process.env.SITES_DOMAIN}` : `${id}.localhost`) };
+    return { ...r, websiteDomain: domains[0] || (primarySitesDomain() ? `${id}.${primarySitesDomain()}` : `${id}.localhost`) };
   }
 }

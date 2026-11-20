@@ -1,7 +1,7 @@
 'use client';
 
 function getApiUrl(): string {
-  // Speed: once the API has its own HTTPS address (e.g. https://api.appalachiangrowthsolutions.com,
+  // Speed: once the API has its own HTTPS address (e.g. https://api.revixasolutions.com,
   // set as NEXT_PUBLIC_API_URL before `npm run build`), the browser calls it directly instead of
   // going through this website's /api proxy — one network hop less on every request.
   // Without an https:// address everything keeps going through /api as before.
@@ -102,23 +102,57 @@ export function mediaUrl(u?: string | null) {
  * Takes the first real http(s) address in the setting, so a value pasted as a Markdown link
  * like "[http://x](http://x)" still works, and NEVER returns a relative path.
  */
+/**
+ * The platform's root domains (NEXT_PUBLIC_ROOT_DOMAINS / NEXT_PUBLIC_ROOT_DOMAIN, comma-separated; the first is the
+ * main one). The new and the old domain both work while the platform moves to revixasolutions.com.
+ */
+export const ROOT_DOMAINS: string[] = Array.from(
+  new Set(
+    String(process.env.NEXT_PUBLIC_ROOT_DOMAINS || process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'appalachiangrowthsolutions.com,revixasolutions.com')
+      .split(',')
+      .map((d) => d.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^\.+|\.+$/g, ''))
+      .filter(Boolean),
+  ),
+);
+
+/** the root domain this app is opened on (admin.revixasolutions.com → revixasolutions.com), '' when none of them */
+function currentRootDomain(): string {
+  if (typeof window === 'undefined') return '';
+  const h = window.location.hostname.toLowerCase();
+  return ROOT_DOMAINS.find((d) => h === d || h.endsWith('.' + d)) || '';
+}
+
+/** an address on one of the platform's own domains (not a dealer's own website) */
+export function isPlatformUrl(u: string): boolean {
+  try {
+    const h = new URL(u).hostname.toLowerCase();
+    return ROOT_DOMAINS.some((d) => h === d || h.endsWith('.' + d));
+  } catch {
+    return false;
+  }
+}
+
 function frontendBase(): string {
+  // NEXT_PUBLIC_FRONTEND_URL wins (e.g. https://sites.revixasolutions.com)
   const raw = String(process.env.NEXT_PUBLIC_FRONTEND_URL || '');
   const m = raw.match(/https?:\/\/[^\s)\]"'<>]+/i);
   if (m) return m[0].replace(/\/+$/, '');
-  return isLocalAdmin() ? 'http://localhost:3002' : 'https://sites.appalachiangrowthsolutions.com';
+  if (isLocalAdmin()) return 'http://localhost:3002';
+  // otherwise the shared website app on the same domain the portal is opened on
+  // (portal on revixasolutions.com → sites.revixasolutions.com; on appalachiangrowthsolutions.com → sites.appalachian…)
+  return `https://sites.${currentRootDomain() || ROOT_DOMAINS[0] || 'appalachiangrowthsolutions.com'}`;
 }
 
 /** Where a dealership's website lives: its own domain, its own site address, or the shared website app (needs ?tenant=). */
 export function siteBase(t: { id: string; domains?: string[]; siteUrl?: string }): { base: string; shared: boolean } {
   // Every "View website" link and every preview uses the shared website app
-  // (https://sites.appalachiangrowthsolutions.com/?tenant=<id>), which always serves the right dealership.
+  // (https://sites.<platform domain>/?tenant=<id>), which always serves the right dealership.
   // A dealer's own domain (e.g. joesautos.com) is only used once those domains point at the server:
   // build with NEXT_PUBLIC_USE_DEALER_DOMAINS=1 to switch that on.
   if (/^(1|true|yes)$/i.test(String(process.env.NEXT_PUBLIC_USE_DEALER_DOMAINS || '').trim())) {
     const d = t.domains?.[0];
     if (d && !d.endsWith('localhost')) return { base: `https://${d}`.replace(/\/+$/, ''), shared: false };
-    if (t.siteUrl && /^https?:\/\//i.test(t.siteUrl) && !t.siteUrl.includes('appalachiangrowthsolutions.com')) {
+    if (t.siteUrl && /^https?:\/\//i.test(t.siteUrl) && !isPlatformUrl(t.siteUrl)) {
       return { base: t.siteUrl.replace(/\/+$/, ''), shared: false };
     }
   }

@@ -25,7 +25,9 @@ LEGACY_PATH="C:/Users/DELL/Documents/ags-dealer-platform-3.0.0 1"
 # Listen only on this server; Nginx sends the traffic in (see deploy/nginx-dealer-platform.conf)
 # HOST=127.0.0.1
 # Dealers without their own domain get <dealer-id>.<SITES_DOMAIN> (wildcard DNS record *.sites.yourcompany.com)
-# SITES_DOMAIN=sites.yourcompany.com
+# Several shared domains (comma-separated) while moving to a new domain: the first is used for new links,
+# every one is recognised, e.g.
+# SITES_DOMAIN=sites.revixasolutions.com,sites.appalachiangrowthsolutions.com
 
 # ---------- FB Poster (Facebook groups, Pages, Marketplace) — all optional ----------
 # Chrome used for Facebook (on Ubuntu after deploy/contabo-setup.sh: /usr/bin/google-chrome)

@@ -6,3 +6,11 @@ NEXT_PUBLIC_DEALER_PORTAL_URL=http://localhost:3000
 # How dealer websites are opened when a dealer has no domain yet.
 # On this computer: http://<dealer-id>.localhost:3002  (the website app)
 NEXT_PUBLIC_SITE_PATTERN=http://{id}.localhost:3002
+
+# Production — the platform's domains (comma-separated, first = main). Both work while moving domains:
+# NEXT_PUBLIC_ROOT_DOMAINS=revixasolutions.com,appalachiangrowthsolutions.com
+# The shared dealer-website app used by "View website" links and previews. Empty = sites.<the domain this app is
+# opened on> (portal on revixasolutions.com → https://sites.revixasolutions.com)
+# NEXT_PUBLIC_FRONTEND_URL=https://sites.revixasolutions.com
+# Optional: the API's own HTTPS address (calls skip the /api proxy)
+# NEXT_PUBLIC_API_URL=https://api.revixasolutions.com

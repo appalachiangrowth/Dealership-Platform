@@ -6,7 +6,7 @@ import { TenantsService } from '../tenants/tenants.service.js';
 import { ContentService } from '../content/content.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { SeoRedirectsService } from './seo-redirects.service.js';
-import { clean } from '../common/util.js';
+import { clean, primarySitesDomain } from '../common/util.js';
 import type { AuthUser } from '../common/auth.types.js';
 import type { Prisma, SeoPage, Tenant } from '../generated/prisma/client.js';
 import {
@@ -337,7 +337,7 @@ export class SeoService {
     const d = t.domains.find((x) => !x.domain.endsWith('localhost'))?.domain;
     if (d) return { url: `https://${d}`, domain: d, fixed: true };
     if (/^https?:\/\//i.test(siteUrl)) return { url: siteUrl.replace(/\/+$/, ''), domain: siteUrl.replace(/^https?:\/\//i, '').replace(/\/.*$/, ''), fixed: true };
-    const sites = String(process.env.SITES_DOMAIN || '').trim().toLowerCase().replace(/^\.+|\.+$/g, '');
+    const sites = primarySitesDomain();
     if (sites) return { url: `https://${t.id}.${sites}`, domain: `${t.id}.${sites}`, fixed: true };
     return { url: '', domain: t.domains[0]?.domain || '', fixed: false };
   }

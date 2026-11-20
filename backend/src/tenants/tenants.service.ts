@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service.js';
 import { AuditService } from '../audit/audit.service.js';
-import { clean, isEmail, normDomain, slugify, VALID_TENANT_ID } from '../common/util.js';
+import { clean, isEmail, normDomain, sitesDomains, slugify, VALID_TENANT_ID } from '../common/util.js';
 import { SECRET_FIELDS } from './settings.fields.js';
 import { BUILTIN_THEMES } from '../themes/themes.registry.js';
 import type { AccountSource, DealerRole, Prisma, Tenant } from '../generated/prisma/client.js';
@@ -124,9 +124,10 @@ export class TenantsService {
     const dom = await this.prisma.tenantDomain.findUnique({ where: { domain: d }, include: { tenant: true } });
     if (dom) return dom.tenant;
     const sub = d.match(/^([a-z0-9][a-z0-9-]{1,39})\.(localhost|lvh\.me)$/);
-    // live server: <dealer-id>.<SITES_DOMAIN> (e.g. blue-motors.sites.yourcompany.com) for dealers without their own domain
-    const sitesDomain = String(process.env.SITES_DOMAIN || '').trim().toLowerCase().replace(/^\.+|\.+$/g, '');
-    if (sitesDomain && d.endsWith('.' + sitesDomain)) {
+    // live server: <dealer-id>.<SITES_DOMAIN> (e.g. blue-motors.sites.revixasolutions.com) for dealers without their
+    // own domain — on every shared domain listed (new and old: sites.revixasolutions.com, sites.appalachiangrowthsolutions.com)
+    for (const sitesDomain of sitesDomains()) {
+      if (!d.endsWith('.' + sitesDomain)) continue;
       const t = await this.prisma.tenant.findUnique({ where: { id: d.slice(0, -sitesDomain.length - 1) } });
       if (t) return t;
     }

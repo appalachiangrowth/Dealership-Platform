@@ -8,3 +8,9 @@ ADMIN_URL=http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http
 # Optional: dealership shown when the site is opened on plain http://localhost:3002
 # (normally each dealer is opened on its own domain, or on http://<dealer-id>.localhost:3002)
 DEFAULT_TENANT=blue-motors
+
+# Production: the platform's root domains (comma-separated). Their portal / admin / sites addresses may show this
+# website in previews. Both are on by default while moving domains:
+# ROOT_DOMAINS=revixasolutions.com,appalachiangrowthsolutions.com
+# More preview origins (any other address of the portals), comma-separated:
+# ADMIN_URL=https://revixasolutions.com,https://admin.revixasolutions.com,https://appalachiangrowthsolutions.com,https://admin.appalachiangrowthsolutions.com

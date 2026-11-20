@@ -96,3 +96,16 @@ export function strArray(v: unknown, maxItems = 200, maxLen = 200): string[] {
   if (!Array.isArray(v)) return [];
   return v.map((x) => clean(x, maxLen)).filter(Boolean).slice(0, maxItems);
 }
+
+/**
+ * Shared dealer-website domains: SITES_DOMAIN may list several, comma-separated, so the platform answers on the new
+ * and the old domain at the same time, e.g. "sites.revixasolutions.com,sites.appalachiangrowthsolutions.com".
+ * The first one is used for new links (sign-up address, feeds, SEO); every one of them is recognised.
+ */
+export function sitesDomains(): string[] {
+  return String(process.env.SITES_DOMAIN || '')
+    .split(',')
+    .map((d) => d.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^\.+|\.+$/g, ''))
+    .filter(Boolean);
+}
+export const primarySitesDomain = (): string => sitesDomains()[0] || '';
