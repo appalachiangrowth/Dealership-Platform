@@ -118,7 +118,12 @@ export function offSectionAttr(value: string, flags: Flags): boolean {
   return false;
 }
 
-export const FEATURE_CSS = '<style data-pa>[data-pa-off]{display:none!important}li:has(>[data-pa-off]:only-child){display:none!important}</style>';
+/**
+ * Hide rules win over the design's own CSS: a design can show its menu links with a more specific
+ * `.menu > .dd a { display:block !important }`, so every rule gets two id-level :not()s (specificity 2,x,x).
+ */
+export const BOOST = ':not(#pa-x):not(#pa-y)';
+export const FEATURE_CSS = `<style data-pa>[data-pa-off]${BOOST}{display:none!important}li:has(>[data-pa-off]:only-child)${BOOST}{display:none!important}</style>`;
 
 const stripTags = (s: string) => s.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
 
@@ -241,5 +246,5 @@ export function featureCss(flags: Flags, theme?: Theme | null): string {
   feat('financing', 'financing');
   feat('tradeIn', 'tradeIn');
   // one rule per selector: a selector the browser does not understand only drops its own rule
-  return '<style data-pa>' + [...new Set(sel)].map((s) => `${s}{display:none!important}`).join('') + '</style>';
+  return '<style data-pa>' + [...new Set(sel)].map((s) => `:is(${s})${BOOST}{display:none!important}`).join('') + '</style>';
 }

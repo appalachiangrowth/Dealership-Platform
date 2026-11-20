@@ -350,21 +350,52 @@ function offName(n){n=low(n).replace(/^[#.\\/]+/,"").replace(/\\.html?$/,"");ret
 function offH(h){if(!h)return false;var i=h.indexOf("#"),hh=i>-1?h.slice(i+1):"";if(hh&&offName(hh))return true;if(h.charAt(0)==="#")return false;
   try{var u=new URL(h,D.baseURI);if(u.origin!==L.origin)return false;var p=low(u.pathname).replace(/^\\/+|\\/+$/g,"");return !!p&&(!!BL[p]||offName(p))}catch(e){return false}}
 function offSec(v){v=low(v);return (!F.fin&&/(^|[\\s._-])(financ\\w*|fin-calc\\w*|loan-calc\\w*|payment-calc\\w*|pre-?approv\\w*)($|[\\s._-])/.test(v))||(!F.trade&&/(^|[\\s._-])(trade-?in\\w*|value-your-trade|trade-value|trade-appraisal)($|[\\s._-])/.test(v))}
-function off(el){if(!el.hasAttribute("data-pa-off"))el.setAttribute("data-pa-off","")}
+/* hidden with an inline !important as well: beats any rule of the design (even "display:block!important") */
+function off(el){if(!el.hasAttribute("data-pa-off"))el.setAttribute("data-pa-off","");try{if(el.style&&el.style.getPropertyPriority("display")!=="important")el.style.setProperty("display","none","important")}catch(e){}}
+function vis(el){return !el.closest("[data-pa-off]")}
+/* text of an element without its hidden parts */
+function restTxt(el){var c=el.cloneNode(true),q=c.querySelectorAll("[data-pa-off],script,style,svg"),i;for(i=0;i<q.length;i++)if(q[i].parentNode)q[i].parentNode.removeChild(q[i]);return txt(c)}
+var DDC=/(^|[\\s_-])(dd|dropdown|drop-down|sub-?menu|has-?(sub|children|dropdown|submenu)|menu-item-has-children|nav-dropdown)([\\s_-]|$)/i;
+/* what is left around hidden links / buttons: a group with only its label ("Financing" + a call icon), a dropdown
+   whose entries are all hidden ("Our Store" with only financing pages), a row of feature buttons → hidden too, so
+   no empty box or gap stays behind */
+function collapse(){
+  var seen=[],q=D.querySelectorAll("[data-pa-off]"),i,j,el,a;
+  for(i=0;i<q.length;i++){el=q[i].parentElement;for(j=0;j<4&&el&&el!==D.body&&el!==D.documentElement;j++,el=el.parentElement){if(seen.indexOf(el)<0)seen.push(el)}}
+  for(i=0;i<seen.length;i++){el=seen[i];if(!vis(el)||/^(BODY|HTML|MAIN|HEADER|FOOTER|NAV|FORM)$/.test(el.tagName))continue;
+    var acts=el.querySelectorAll("a,button,[role=button],input,select,textarea"),live=0,cut=0;
+    for(j=0;j<acts.length;j++){a=acts[j];if(!vis(a)){cut++;continue}
+      if(a.tagName==="A"||a.tagName==="BUTTON"||a.getAttribute("role")==="button"){var at=txt(a);
+        /* a dropdown's own trigger, or an icon-only call / mail link of the group, is not content of its own */
+        if(a.getAttribute("aria-haspopup")||(!at&&/^(tel:|mailto:|sms:|#?$)/i.test(a.getAttribute("href")||"")))continue}
+      live++}
+    if(!cut||live)continue;
+    var rest=restTxt(el),dd=DDC.test(typeof el.className==="string"?el.className:"")||!!el.querySelector(":scope>[aria-haspopup],:scope>a:not([href]),:scope>button");
+    if(!rest||(rest.length<=40&&((!F.fin&&FR.test(rest))||(!F.trade&&TR.test(rest))))||(dd&&rest.length<=40&&el.querySelectorAll("[aria-haspopup]").length<=1))off(el)}
+  /* a grid of buttons / boxes (Financing | Trade-In) with one left: that one takes the whole row, no empty half */
+  q=D.querySelectorAll("[data-pa-off]");for(i=0;i<q.length;i++){el=q[i].parentElement;if(!el||!vis(el)||el.hasAttribute("data-pa-grid"))continue;
+    try{if(!/grid/.test(getComputedStyle(el).display))continue}catch(e){continue}
+    var left=[];for(j=0;j<el.children.length;j++)if(!el.children[j].hasAttribute("data-pa-off"))left.push(el.children[j]);
+    if(left.length===1){el.setAttribute("data-pa-grid","");left[0].style.gridColumn="1 / -1"}}
+}
 function hideOff(){
   if(F.on)return;var i,el,q;
   q=D.querySelectorAll("a[href],button,[role=button]");
   for(i=0;i<q.length;i++){el=q[i];if(el.hasAttribute("data-pa-off"))continue;
     if((F.h&&offT(txt(el)))||(el.tagName==="A"&&(offH(el.getAttribute("href"))||offH(el.getAttribute("data-pa-href")))))off(el)}
-  if(!F.h)return;
+  if(!F.h){collapse();return}
   q=D.querySelectorAll('[id*="financ" i],[id*="trade" i],[data-key*="financ" i],[data-key*="trade" i],[data-section*="financ" i],[data-section*="trade" i],[class*="financ" i],[class*="trade" i]');
   for(i=0;i<q.length;i++){el=q[i];if(el===D.body||el===D.documentElement)continue;
     if(offSec(el.id||"")||offSec(el.getAttribute("data-key")||"")||offSec(el.getAttribute("data-section")||"")||offSec(typeof el.className==="string"?el.className:""))off(el)}
   if(!F.fin){q=D.querySelectorAll(".est,.vd-est,[class*='payment' i],[class*='estimate' i],span,small,p");
     for(i=0;i<q.length;i++){el=q[i];if(el.hasAttribute("data-pa-off")||el.childElementCount>3)continue;var t=txt(el);if(t&&t.length<240&&EST.test(t))off(el)}}
   q=D.querySelectorAll("option");for(i=0;i<q.length;i++)if(offT(txt(q[i]))&&q[i].parentNode)q[i].parentNode.removeChild(q[i]);
+  /* buttons that open the feature's drawer / form: data-…-open="financing", data-action="trade-in" … */
+  q=D.querySelectorAll("button,a,[role=button]");for(i=0;i<q.length;i++){el=q[i];if(el.hasAttribute("data-pa-off"))continue;
+    for(var k=0,at=el.attributes;k<at.length;k++){if(at[k].name.indexOf("data-")===0&&at[k].name!=="data-pa-href"&&offSec(at[k].value)&&at[k].value.length<40){off(el);break}}}
+  collapse();
 }
-function soon(){if(!busy){busy=1;(W.requestAnimationFrame||setTimeout)(all)}}
+function soon(){if(!busy){busy=1;if(D.hidden||!W.requestAnimationFrame)setTimeout(all,40);else W.requestAnimationFrame(all)}}
 W.PA_HREF=function(el){return el&&el.getAttribute?(el.getAttribute("data-pa-href")||el.getAttribute("href")):null};
 
 /* ---------- virtual hash ---------- */
@@ -426,7 +457,7 @@ if(SHELL){
   W.addEventListener("load",function(){scrollTo(bootScroll);meta(L.pathname)});
 }
 D.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(a)fix(a)},true);
-function start(){all();try{new MutationObserver(soon).observe(D.documentElement,{childList:true,subtree:true})}catch(e){}}
+function start(){all();try{new MutationObserver(soon).observe(D.documentElement,{childList:true,subtree:true})}catch(e){}if(!F.on){setTimeout(soon,600);setTimeout(soon,2000)}}
 if(D.readyState==="loading")D.addEventListener("DOMContentLoaded",start);else start();
 W.addEventListener("load",soon);
 if(!V){try{fetch("/pa-seo.json"+tq(),{credentials:"same-origin"}).then(function(r){return r.ok?r.json():null}).then(function(d){if(d&&d.vehicles){V=d.vehicles;RV=null;if(d.base)B=d.base;soon()}}).catch(function(){})}catch(e){}}
