@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -115,6 +115,37 @@ export class AuthService {
     await this.audit.record('account.password', { tenantId: user.tenantId, actor: user.login });
     return { ok: true };
   }
+  /** Self-serve account deactivation / deletion for the authenticated user */
+  async deleteAccount(user: AuthUser) {
+    if (user.kind === 'owner') {
+      const remainingOwners = await this.prisma.platformOwner.count({ where: { disabled: false, NOT: { id: user.id } } });
+      if (remainingOwners === 0) {
+        throw new BadRequestException('Cannot delete the only active platform administrator account.');
+      }
+      await this.prisma.platformOwner.update({
+        where: { id: user.id },
+        data: { disabled: true },
+      });
+    } else {
+      const u = await this.prisma.dealerUser.findUniqueOrThrow({ where: { id: user.id } });
+      // If this user is an active admin, verify another active admin exists in this dealership
+      if (u.role === 'ADMIN' && !u.disabled) {
+        const remainingAdmins = await this.prisma.dealerUser.count({
+          where: { tenantId: u.tenantId, role: 'ADMIN', disabled: false, NOT: { id: user.id } },
+        });
+        if (remainingAdmins === 0) {
+          throw new BadRequestException('Cannot delete account. At least one active Dealership Admin must remain.');
+        }
+      }
+      await this.prisma.dealerUser.update({
+        where: { id: user.id },
+        data: { disabled: true },
+      });
+    }
+    forgetAuthCache();
+    await this.audit.record('account.delete', { tenantId: user.tenantId, actor: user.login, detail: { userId: user.id } });
+    return { success: true, message: 'Account deleted successfully' };
+  }
 
   async setupStatus() {
     const owners = await this.prisma.platformOwner.count();
@@ -159,3 +190,4 @@ export class AuthService {
     return { ...r, websiteDomain: domains[0] || (primarySitesDomain() ? `${id}.${primarySitesDomain()}` : `${id}.localhost`) };
   }
 }
+
