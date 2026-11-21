@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Account Deletion — Revixa Dealer Portal & Mobile App',
-  description: 'Instructions on how to permanently delete your Revixa Dealer user account and associated personal data.',
+  title: 'Account Deletion — Appalachian Growth Solutions Dealer Portal & Mobile App',
+  description: 'Instructions on how to permanently delete your Appalachian Growth Solutions Dealer user account and associated personal data.',
 };
 
 export default function DeleteAccountPage() {
@@ -13,8 +13,8 @@ export default function DeleteAccountPage() {
       <header className="border-b border-slate-200 bg-white/90 backdrop-blur sticky top-0 z-10 shadow-xs">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 text-slate-900 hover:text-indigo-600 font-bold text-lg tracking-tight transition-colors">
-            <span className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-extrabold text-sm shadow-xs">R</span>
-            <span>Revixa</span>
+            <span className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-extrabold text-sm shadow-xs">A</span>
+            <span>Appalachian Growth Solutions</span>
           </Link>
           <div className="flex items-center gap-4 text-sm font-medium">
             <Link href="/privacy-policy" className="text-slate-600 hover:text-slate-900 transition-colors">
@@ -36,10 +36,10 @@ export default function DeleteAccountPage() {
               User Data &amp; Account Management
             </div>
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900 font-heading">
-              Account Deletion — Revixa Dealer Portal &amp; Mobile App
+              Account Deletion — Appalachian Growth Solutions Dealer Portal &amp; Mobile App
             </h1>
             <p className="text-sm sm:text-base text-slate-600 max-w-2xl leading-relaxed">
-              In accordance with Google Play Store data safety and developer guidelines, Revixa provides authorized dealership users with simple and direct methods to request or execute permanent deletion of their account and associated personal data.
+              In accordance with Google Play Store data safety and developer guidelines, Appalachian Growth Solutions provides authorized dealership users with simple and direct methods to request or execute permanent deletion of their account and associated personal data.
             </p>
           </div>
 
@@ -54,7 +54,7 @@ export default function DeleteAccountPage() {
                 If you currently have the mobile application installed on your device:
               </p>
               <ol className="list-decimal list-inside space-y-2 text-sm sm:text-base text-slate-800 font-medium pl-1">
-                <li>Open the <strong className="text-slate-900">Revixa Dealer Mobile App</strong>.</li>
+                <li>Open the <strong className="text-slate-900">Appalachian Growth Solutions Dealer Mobile App</strong>.</li>
                 <li>Log in to your authorized dealership user account.</li>
                 <li>Navigate to <strong className="text-slate-900">Settings → Delete Account</strong>.</li>
                 <li>Confirm the prompt to permanently delete your user account immediately.</li>
@@ -108,8 +108,8 @@ export default function DeleteAccountPage() {
               </div>
               <div>
                 <strong className="text-slate-900">Website:</strong>{' '}
-                <a href="https://revixasolutions.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
-                  https://revixasolutions.com
+                <a href="https://appalachiangrowthsolutions.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
+                  https://appalachiangrowthsolutions.com
                 </a>
               </div>
             </div>

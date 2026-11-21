@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy — Revixa Dealer Portal & Mobile App',
-  description: 'Privacy Policy for Revixa Dealer Portal and Revixa Dealer Mobile App operated by Appalachian Growth Solutions.',
+  title: 'Privacy Policy — Appalachian Growth Solutions Dealer Portal & Mobile App',
+  description: 'Privacy Policy for Appalachian Growth Solutions Dealer Portal & Mobile App operated by Appalachian Growth Solutions.',
 };
 
 export default function PrivacyPolicyPage() {
@@ -13,8 +13,8 @@ export default function PrivacyPolicyPage() {
       <header className="border-b border-slate-200 bg-white/90 backdrop-blur sticky top-0 z-10 shadow-xs">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 text-slate-900 hover:text-indigo-600 font-bold text-lg tracking-tight transition-colors">
-            <span className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-extrabold text-sm shadow-xs">R</span>
-            <span>Revixa</span>
+            <span className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-extrabold text-sm shadow-xs">A</span>
+            <span>Appalachian Growth Solutions</span>
           </Link>
           <div className="flex items-center gap-4 text-sm font-medium">
             <Link href="/delete-account" className="text-slate-600 hover:text-slate-900 transition-colors">
@@ -36,7 +36,7 @@ export default function PrivacyPolicyPage() {
               Legal & Compliance
             </div>
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900 font-heading">
-              Privacy Policy — Revixa Dealer Portal &amp; Mobile App
+              Privacy Policy — Appalachian Growth Solutions Dealer Portal &amp; Mobile App
             </h1>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 text-xs sm:text-sm text-slate-600">
               <div>
@@ -51,8 +51,8 @@ export default function PrivacyPolicyPage() {
               </div>
               <div>
                 <span className="font-semibold text-slate-800">Platform Website:</span>{' '}
-                <a href="https://revixasolutions.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
-                  https://revixasolutions.com
+                <a href="https://appalachiangrowthsolutions.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
+                  https://appalachiangrowthsolutions.com
                 </a>
               </div>
             </div>
@@ -62,11 +62,11 @@ export default function PrivacyPolicyPage() {
           <section className="space-y-3">
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">1. Overview</h2>
             <p className="text-sm sm:text-base leading-relaxed text-slate-700">
-              Appalachian Growth Solutions (&ldquo;we,&rdquo; &ldquo;our,&rdquo; or &ldquo;us&rdquo;) develops and operates the Revixa Dealer Portal (
-              <a href="https://revixasolutions.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
-                https://revixasolutions.com
+              Appalachian Growth Solutions (&ldquo;we,&rdquo; &ldquo;our,&rdquo; or &ldquo;us&rdquo;) develops and operates the Appalachian Growth Solutions Dealer Portal (
+              <a href="https://appalachiangrowthsolutions.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
+                https://appalachiangrowthsolutions.com
               </a>
-              ) and the Revixa Dealer Mobile App (collectively, the &ldquo;Service&rdquo;). This Privacy Policy explains how we collect, use, store, and safeguard information when authorized automotive dealerships, dealership owners, and dealership staff members (&ldquo;you&rdquo; or &ldquo;Dealers&rdquo;) access or use our Service.
+              ) and the Appalachian Growth Solutions Dealer Mobile App (collectively, the &ldquo;Service&rdquo;). This Privacy Policy explains how we collect, use, store, and safeguard information when authorized automotive dealerships, dealership owners, and dealership staff members (&ldquo;you&rdquo; or &ldquo;Dealers&rdquo;) access or use our Service.
             </p>
           </section>
 
@@ -177,8 +177,8 @@ export default function PrivacyPolicyPage() {
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">6. Data Retention &amp; Account Deletion</h2>
             <p className="text-sm sm:text-base leading-relaxed text-slate-700">
               Information is retained while the dealership account is active. Users can permanently delete their account directly inside the mobile app via <strong className="text-slate-900">Settings -&gt; Delete Account</strong>, or via our Account Deletion page (
-              <a href="https://revixasolutions.com/delete-account" className="text-indigo-600 hover:underline">
-                https://revixasolutions.com/delete-account
+              <a href="https://appalachiangrowthsolutions.com/delete-account" className="text-indigo-600 hover:underline">
+                https://appalachiangrowthsolutions.com/delete-account
               </a>
               ) or by emailing{' '}
               <a href="mailto:appalachiangrowth@gmail.com" className="text-indigo-600 hover:underline">
@@ -220,8 +220,8 @@ export default function PrivacyPolicyPage() {
               </div>
               <div>
                 <strong className="text-slate-900">Website:</strong>{' '}
-                <a href="https://revixasolutions.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
-                  https://revixasolutions.com
+                <a href="https://appalachiangrowthsolutions.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
+                  https://appalachiangrowthsolutions.com
                 </a>
               </div>
             </div>
