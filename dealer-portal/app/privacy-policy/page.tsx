@@ -33,7 +33,7 @@ export default function PrivacyPolicyPage() {
           {/* Header block */}
           <div className="border-b border-slate-200 pb-8 space-y-3">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-              Legal & Compliance
+              Legal &amp; Privacy Policy
             </div>
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900 font-heading">
               Privacy Policy — Appalachian Growth Solutions Dealer Portal &amp; Mobile App
@@ -66,7 +66,7 @@ export default function PrivacyPolicyPage() {
               <a href="https://appalachiangrowthsolutions.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
                 https://appalachiangrowthsolutions.com
               </a>
-              ) and the Appalachian Growth Solutions Dealer Mobile App (collectively, the &ldquo;Service&rdquo;). This Privacy Policy explains how we collect, use, store, and safeguard information when authorized automotive dealerships, dealership owners, and dealership staff members (&ldquo;you&rdquo; or &ldquo;Dealers&rdquo;) access or use our Service.
+              ) and the Appalachian Growth Solutions Dealer Mobile App (collectively, the &ldquo;Service&rdquo;). This Privacy Policy explains how we collect, use, store, and protect information when authorized automotive dealerships, dealership owners, and dealership staff members (&ldquo;you&rdquo; or &ldquo;Dealers&rdquo;) access or use our Service.
             </p>
           </section>
 
@@ -74,37 +74,31 @@ export default function PrivacyPolicyPage() {
           <section className="space-y-4">
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">2. Information We Collect</h2>
             <p className="text-sm sm:text-base leading-relaxed text-slate-700">
-              We collect information required to deliver, secure, and operate our dealership software platform:
+              We collect only the information necessary to provide, secure, and operate our dealership software platform:
             </p>
             <ul className="space-y-3 pl-1 sm:pl-2 text-sm sm:text-base text-slate-700">
               <li className="flex items-start gap-2">
                 <span className="text-indigo-600 font-bold mt-1">•</span>
                 <div>
-                  <strong className="text-slate-900">Account &amp; Dealership Profile Information:</strong> Full name, email address, phone number, dealership name, dealership address, and encrypted password/authentication credentials.
+                  <strong className="text-slate-900">Account &amp; Dealership Profile Information:</strong> User display name, login username, email address, phone number, role, dealership business profile details (dealership name, physical address, business hours, contact numbers), and salted bcrypt cryptographic password hashes. We never store plain-text passwords.
                 </div>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-indigo-600 font-bold mt-1">•</span>
                 <div>
-                  <strong className="text-slate-900">Vehicle Inventory &amp; Media:</strong> Vehicle specifications (VIN, make, model, year, mileage, pricing, features, descriptions) and vehicle photographs/documents uploaded via device camera or photo gallery.
+                  <strong className="text-slate-900">Vehicle Inventory &amp; Media:</strong> Vehicle specifications (VIN, year, make, model, trim, mileage, price, features, description, stock number) and vehicle photographs or documents uploaded via camera, gallery, or batch CSV/XML inventory feeds.
                 </div>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-indigo-600 font-bold mt-1">•</span>
                 <div>
-                  <strong className="text-slate-900">Facebook / Meta Page Connection Data:</strong> When a dealership voluntarily connects its Facebook Page via Meta&apos;s official authentication flow, we receive and store authorized Meta Page Access Tokens, Page IDs, and Page Names solely to publish vehicle listings and updates on their behalf. We never collect or store personal Facebook passwords.
+                  <strong className="text-slate-900">Customer &amp; Dealership Lead Data:</strong> Inquiries submitted by prospective car buyers through your dealership storefront website (buyer name, phone number, email address, message, and vehicle of interest) or entered into your deal jacket and CRM forms.
                 </div>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-indigo-600 font-bold mt-1">•</span>
                 <div>
-                  <strong className="text-slate-900">Customer &amp; Lead Data:</strong> Prospective car buyer details (names, phone numbers, email addresses, vehicle inquiries) entered into the dealership CRM or received from the dealership storefront.
-                </div>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-indigo-600 font-bold mt-1">•</span>
-                <div>
-                  <strong className="text-slate-900">Technical, Diagnostic &amp; Usage Information:</strong> Basic device identifiers, app version, IP/session logs, and crash diagnostics required for security and reliable app performance.
+                  <strong className="text-slate-900">Technical &amp; Audit Logs:</strong> Client IP addresses, session tokens, audit timestamps, and operational event logs strictly used for security auditing, fraud prevention, and system diagnostics.
                 </div>
               </li>
             </ul>
@@ -114,24 +108,24 @@ export default function PrivacyPolicyPage() {
           <section className="space-y-3">
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">3. How We Use Your Information</h2>
             <p className="text-sm sm:text-base leading-relaxed text-slate-700">
-              We use collected information solely for business purposes related to operating our services:
+              We process information solely to provide authorized services to your dealership:
             </p>
             <ul className="space-y-2 pl-1 sm:pl-2 text-sm sm:text-base text-slate-700">
               <li className="flex items-start gap-2">
                 <span className="text-indigo-600 font-bold mt-1">•</span>
-                <span>Authentication &amp; multi-tenant access control;</span>
+                <span>Authenticating authorized dealership staff and enforcing multi-tenant role-based permissions;</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-indigo-600 font-bold mt-1">•</span>
-                <span>Managing vehicle inventory, website listings, and authorized inventory syndication feeds;</span>
+                <span>Powering your dealership website inventory, deal structuring, and lead management;</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-indigo-600 font-bold mt-1">•</span>
-                <span>Publishing vehicle posts/photos to connected Facebook Pages at the dealer&apos;s explicit direction;</span>
+                <span>Generating and transmitting inventory syndication feeds (such as CarGurus SFTP feeds, CSV, and XML feeds) when configured by your dealership;</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-indigo-600 font-bold mt-1">•</span>
-                <span>Sending transactional notifications, security alerts, and support responses.</span>
+                <span>Delivering lead notifications and security audit logs to authorized dealership personnel.</span>
               </li>
             </ul>
           </section>
@@ -140,25 +134,19 @@ export default function PrivacyPolicyPage() {
           <section className="space-y-3">
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">4. Data Sharing &amp; Third-Party Services</h2>
             <p className="text-sm sm:text-base leading-relaxed text-slate-700">
-              We do not sell, rent, or trade personal or dealership data. Information is shared strictly under the following limited conditions:
+              <strong className="text-slate-900">We do not sell, rent, or monetize your personal or dealership data.</strong> We do not run third-party advertising tracking networks. Information is disclosed solely in the following operational scenarios:
             </p>
             <ul className="space-y-2 pl-1 sm:pl-2 text-sm sm:text-base text-slate-700">
               <li className="flex items-start gap-2">
                 <span className="text-indigo-600 font-bold mt-1">•</span>
                 <div>
-                  <strong className="text-slate-900">Cloud Hosting &amp; Database Infrastructure:</strong> Trusted cloud hosting providers that maintain high-security standards to store our database and media files.
+                  <strong className="text-slate-900">Secure Cloud Infrastructure:</strong> Dedicated hosting and database servers running PostgreSQL and file storage services operated under strict access controls.
                 </div>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-indigo-600 font-bold mt-1">•</span>
                 <div>
-                  <strong className="text-slate-900">Meta Platforms:</strong> Facebook Graph API when connected by the dealer to publish inventory updates.
-                </div>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-indigo-600 font-bold mt-1">•</span>
-                <div>
-                  <strong className="text-slate-900">Authorized Feed Partners:</strong> Vehicle classified syndication partners only when explicitly enabled for the dealership.
+                  <strong className="text-slate-900">Authorized Inventory Syndication Partners:</strong> Third-party vehicle marketplaces (such as CarGurus via secure SFTP or export feeds) only when explicitly configured and enabled by the dealership.
                 </div>
               </li>
             </ul>
@@ -168,31 +156,43 @@ export default function PrivacyPolicyPage() {
           <section className="space-y-3">
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">5. Data Security &amp; Multi-Tenant Separation</h2>
             <p className="text-sm sm:text-base leading-relaxed text-slate-700">
-              We apply industry-standard security safeguards including encrypted HTTPS/TLS transmission, hashed passwords, role-based access controls, and strict multi-tenant data isolation so no dealership can view or access another dealership&apos;s inventory, leads, or integration credentials.
+              Our architecture enforces strict multi-tenant database isolation. Every database query is scoped to the authenticated dealership&apos;s unique identifier, preventing cross-tenant access. All communications are encrypted in transit over HTTPS/TLS, and credentials use cryptographic salted hashes.
             </p>
           </section>
 
           {/* Section 6 */}
           <section className="space-y-3">
-            <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">6. Data Retention &amp; Account Deletion</h2>
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">6. Data Retention &amp; Immediate Account Deletion</h2>
             <p className="text-sm sm:text-base leading-relaxed text-slate-700">
-              Information is retained while the dealership account is active. Users can permanently delete their account directly inside the mobile app via <strong className="text-slate-900">Settings -&gt; Delete Account</strong>, or via our Account Deletion page (
-              <a href="https://appalachiangrowthsolutions.com/delete-account" className="text-indigo-600 hover:underline">
-                https://appalachiangrowthsolutions.com/delete-account
-              </a>
-              ) or by emailing{' '}
-              <a href="mailto:appalachiangrowth@gmail.com" className="text-indigo-600 hover:underline">
-                appalachiangrowth@gmail.com
-              </a>
-              . Upon deletion, user profile, login credentials, and stored Facebook Page access tokens are permanently removed within 30 days (unless retention is required by law).
+              Dealership users have full control over their account lifecycle. You may deactivate and delete your user account immediately at any time:
             </p>
+            <ul className="space-y-2 pl-1 sm:pl-2 text-sm sm:text-base text-slate-700">
+              <li className="flex items-start gap-2">
+                <span className="text-indigo-600 font-bold mt-1">•</span>
+                <div>
+                  <strong className="text-slate-900">In-App Immediate Deactivation:</strong> Authenticated users can navigate to <strong className="text-slate-900">Settings → Delete Account</strong>. When confirmed, your user account is immediately disabled, session caches are purged, active login tokens are invalidated, and an audit record is logged.
+                </div>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-indigo-600 font-bold mt-1">•</span>
+                <div>
+                  <strong className="text-slate-900">Email Deletion Request:</strong> If you cannot access the app, you may email <a href="mailto:appalachiangrowth@gmail.com" className="text-indigo-600 hover:underline">appalachiangrowth@gmail.com</a> with the subject &ldquo;Account Deletion Request&rdquo; to have our administrative team process the deactivation.
+                </div>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-indigo-600 font-bold mt-1">•</span>
+                <div>
+                  <strong className="text-slate-900">Dealership Data Scope:</strong> Deleting an individual staff account disables that user&apos;s access immediately. Shared dealership inventory, deals, and customer lead records remain under the control of the dealership&apos;s surviving administrators.
+                </div>
+              </li>
+            </ul>
           </section>
 
           {/* Section 7 */}
           <section className="space-y-3">
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">7. Children&apos;s Privacy</h2>
             <p className="text-sm sm:text-base leading-relaxed text-slate-700">
-              Our platform is a B2B platform intended strictly for authorized automotive dealership professionals aged 18 and older; we do not knowingly collect data from children under 18.
+              Our Service is a business-to-business platform exclusively intended for commercial automotive dealerships and authorized professionals aged 18 and older. We do not knowingly collect or solicit personal information from children under 18.
             </p>
           </section>
 
@@ -200,7 +200,7 @@ export default function PrivacyPolicyPage() {
           <section className="space-y-3">
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">8. Changes to This Privacy Policy</h2>
             <p className="text-sm sm:text-base leading-relaxed text-slate-700">
-              Updates to this Privacy Policy will be posted on this page with an updated Effective Date.
+              We may update this Privacy Policy from time to time to reflect operational or legal updates. Any modifications will be posted directly to this page with an updated Effective Date.
             </p>
           </section>
 
@@ -208,10 +208,10 @@ export default function PrivacyPolicyPage() {
           <section className="space-y-3 border-t border-slate-200 pt-6">
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">9. Contact Us</h2>
             <p className="text-sm sm:text-base leading-relaxed text-slate-700">
-              If you have any questions, concerns, or requests regarding this Privacy Policy or your personal data, please contact:
+              If you have any questions or inquiries regarding this Privacy Policy or account data practices, please contact us:
             </p>
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm sm:text-base text-slate-800 space-y-1">
-              <div><strong className="text-slate-900">Developer / Operator:</strong> Appalachian Growth Solutions</div>
+              <div><strong className="text-slate-900">Developer &amp; Operator:</strong> Appalachian Growth Solutions</div>
               <div>
                 <strong className="text-slate-900">Email:</strong>{' '}
                 <a href="mailto:appalachiangrowth@gmail.com" className="text-indigo-600 hover:underline">
@@ -219,7 +219,7 @@ export default function PrivacyPolicyPage() {
                 </a>
               </div>
               <div>
-                <strong className="text-slate-900">Website:</strong>{' '}
+                <strong className="text-slate-900">Platform Website:</strong>{' '}
                 <a href="https://appalachiangrowthsolutions.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
                   https://appalachiangrowthsolutions.com
                 </a>
@@ -241,7 +241,7 @@ export default function PrivacyPolicyPage() {
               Account Deletion
             </Link>
             <Link href="/login" className="text-slate-700 hover:underline">
-              Dealer Portal
+              Dealer Login
             </Link>
           </div>
         </div>

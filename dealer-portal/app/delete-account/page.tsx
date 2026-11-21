@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'Account Deletion — Appalachian Growth Solutions Dealer Portal & Mobile App',
-  description: 'Instructions on how to permanently delete your Appalachian Growth Solutions Dealer user account and associated personal data.',
+  description: 'Instructions on how to immediately deactivate and delete your Appalachian Growth Solutions Dealer user account and personal data.',
 };
 
 export default function DeleteAccountPage() {
@@ -33,13 +33,13 @@ export default function DeleteAccountPage() {
           {/* Header block */}
           <div className="border-b border-slate-200 pb-8 space-y-3">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-100">
-              User Data &amp; Account Management
+              User Data &amp; Account Lifecycle
             </div>
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900 font-heading">
               Account Deletion — Appalachian Growth Solutions Dealer Portal &amp; Mobile App
             </h1>
             <p className="text-sm sm:text-base text-slate-600 max-w-2xl leading-relaxed">
-              In accordance with Google Play Store data safety and developer guidelines, Appalachian Growth Solutions provides authorized dealership users with simple and direct methods to request or execute permanent deletion of their account and associated personal data.
+              In accordance with Google Play Store data safety policies and user data rights, Appalachian Growth Solutions provides authorized dealership staff and administrators with immediate self-service account deletion and administrative deletion request options.
             </p>
           </div>
 
@@ -47,18 +47,21 @@ export default function DeleteAccountPage() {
           <section className="space-y-4">
             <div className="flex items-center gap-2">
               <span className="w-7 h-7 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs">1</span>
-              <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">Option 1: In-App Deletion (Immediate)</h2>
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">Option 1: In-App Immediate Deletion (Recommended)</h2>
             </div>
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3">
               <p className="text-sm sm:text-base text-slate-700 leading-relaxed">
-                If you currently have the mobile application installed on your device:
+                If you currently have the mobile app installed and have active login credentials:
               </p>
               <ol className="list-decimal list-inside space-y-2 text-sm sm:text-base text-slate-800 font-medium pl-1">
                 <li>Open the <strong className="text-slate-900">Appalachian Growth Solutions Dealer Mobile App</strong>.</li>
                 <li>Log in to your authorized dealership user account.</li>
-                <li>Navigate to <strong className="text-slate-900">Settings → Delete Account</strong>.</li>
-                <li>Confirm the prompt to permanently delete your user account immediately.</li>
+                <li>Go to the <strong className="text-slate-900">Settings</strong> tab and scroll to the <strong className="text-slate-900">Danger Zone</strong> section.</li>
+                <li>Tap <strong className="text-rose-600 font-bold">Delete Account</strong> and confirm the permanent deletion dialog.</li>
               </ol>
+              <p className="text-xs sm:text-sm text-slate-600 mt-2">
+                Upon confirmation, your user account is immediately disabled, authentication cache is purged, and your active session is logged out.
+              </p>
             </div>
           </section>
 
@@ -66,32 +69,41 @@ export default function DeleteAccountPage() {
           <section className="space-y-4">
             <div className="flex items-center gap-2">
               <span className="w-7 h-7 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs">2</span>
-              <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">Option 2: Email Request (Without App Access)</h2>
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">Option 2: Email Deletion Request (Without App Access)</h2>
             </div>
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3">
               <p className="text-sm sm:text-base text-slate-700 leading-relaxed">
-                If you have uninstalled the app or cannot log in, email{' '}
+                If you have uninstalled the mobile app, lost your device, or cannot log in:
+              </p>
+              <p className="text-sm sm:text-base text-slate-800 font-medium">
+                Email{' '}
                 <a href="mailto:appalachiangrowth@gmail.com?subject=Account%20Deletion%20Request" className="text-indigo-600 hover:underline font-semibold">
                   appalachiangrowth@gmail.com
                 </a>{' '}
-                from your registered email address with the subject <strong className="text-slate-900">&ldquo;Account Deletion Request&rdquo;</strong> and your dealership name.
+                from your registered email address with the subject <strong className="text-slate-900">&ldquo;Account Deletion Request&rdquo;</strong>, including your full name, username, and dealership name.
               </p>
               <div className="text-xs sm:text-sm text-slate-600 border-l-2 border-indigo-400 pl-3 py-0.5">
-                Our support team will process your request within 48 business hours and send a written confirmation once completed.
+                Our operations team will verify your identity, process the account deletion within 48 business hours, and send a written confirmation once completed.
               </div>
             </div>
           </section>
 
-          {/* Data Deleted & Retention */}
+          {/* Account Deletion Scope & Retention */}
           <section className="space-y-4 border-t border-slate-200 pt-6">
-            <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">Data Deleted &amp; Retention</h2>
-            <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-5 text-sm sm:text-base text-amber-950 leading-relaxed space-y-2">
-              <p>
-                Upon deletion, your user profile, login credentials, and stored Facebook Page access tokens are permanently deleted from active systems within 30 days (except minimal records required by legal or financial obligations).
-              </p>
-              <p className="text-xs sm:text-sm text-amber-900/80">
-                Shared dealership inventory and lead records created by your dealership may remain in your dealership organization&apos;s workspace if other authorized dealership members maintain active accounts.
-              </p>
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">Account Deletion Scope &amp; Data Handling</h2>
+            <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-5 text-sm sm:text-base text-amber-950 leading-relaxed space-y-3">
+              <div>
+                <strong className="text-amber-950 font-bold block mb-1">What Happens Immediately Upon Deletion:</strong>
+                <ul className="list-disc list-inside space-y-1 text-sm text-amber-900">
+                  <li>Your user login profile is immediately disabled in the database.</li>
+                  <li>Authentication tokens and active sessions are revoked instantly.</li>
+                  <li>You will no longer be able to log in to the Dealer Portal or Mobile App.</li>
+                  <li>An immutable audit log of the deletion action is recorded for security and compliance.</li>
+                </ul>
+              </div>
+              <div className="text-xs sm:text-sm text-amber-900/90 border-t border-amber-200 pt-3">
+                <strong>Dealership Organization Data:</strong> Vehicle inventory records, customer leads, and deal jackets created within your dealership organization remain available to your dealership&apos;s active administrators, as these constitute organizational business assets of the dealership.
+              </div>
             </div>
           </section>
 
@@ -107,7 +119,7 @@ export default function DeleteAccountPage() {
                 </a>
               </div>
               <div>
-                <strong className="text-slate-900">Website:</strong>{' '}
+                <strong className="text-slate-900">Platform Website:</strong>{' '}
                 <a href="https://appalachiangrowthsolutions.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
                   https://appalachiangrowthsolutions.com
                 </a>
@@ -129,7 +141,7 @@ export default function DeleteAccountPage() {
               Account Deletion
             </Link>
             <Link href="/login" className="text-slate-700 hover:underline">
-              Dealer Portal
+              Dealer Login
             </Link>
           </div>
         </div>
