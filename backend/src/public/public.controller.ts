@@ -73,9 +73,16 @@ export class PublicController {
 
   /** Inquiry from the contact form / vehicle request form. */
   @Post('leads')
-  async lead(@Query('host') host: string, @Headers('x-site-host') h: string, @Body() b: PublicLeadInput, @ClientIp() ip: string) {
+  async lead(
+    @Query('host') host: string,
+    @Headers('x-site-host') h: string,
+    @Body() b: PublicLeadInput,
+    @ClientIp() ip: string,
+    @Headers('x-visitor-user-agent') vua?: string,
+    @Headers('user-agent') ua?: string,
+  ) {
     const t = await this.pub.tenantFor(this.host(host, h));
-    return this.leads.submit(t.id, b, ip);
+    return this.leads.submit(t.id, b, ip, vua || ua || '');
   }
 
   @Get('feeds/inventory.xml')

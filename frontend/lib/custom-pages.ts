@@ -1474,7 +1474,7 @@ page.querySelectorAll('form.pa-form').forEach(function(f){f.addEventListener('su
 var m=f.querySelector('.pa-form-msg'),d={};new FormData(f).forEach(function(v,k){d[k]=String(v).trim();});
 if(!d.name||(!d.email&&!d.phone)||!d.message){m.className='pa-form-msg err';m.textContent='Please add your name, an email or phone number, and a message.';return;}
 var b=f.querySelector('button');b.disabled=true;m.className='pa-form-msg';m.textContent='Sending…';
-fetch('api/lead.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:d.name,email:d.email,phone:d.phone||'',message:d.message,topic:f.getAttribute('data-topic')||'Website inquiry',page:location.href,_honey:d._honey||''})})
+fetch('api/lead.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:d.name,email:d.email,phone:d.phone||'',message:d.message,topic:f.getAttribute('data-topic')||'Website inquiry',page:location.href,visitorId:window.PA_VID||'',_honey:d._honey||''})})
 .then(function(r){return r.json().catch(function(){return{};});}).then(function(j){b.disabled=false;if(j&&j.ok){f.reset();m.className='pa-form-msg ok';m.textContent='Thank you! We received your message and will get back to you shortly.';}else{m.className='pa-form-msg err';m.textContent=(j&&j.message)||'Sorry, the message could not be sent. Please call us instead.';}})
 .catch(function(){b.disabled=false;m.className='pa-form-msg err';m.textContent='Sorry, the message could not be sent. Please call us instead.';});});});
 })();</script>`;

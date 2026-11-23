@@ -263,6 +263,7 @@ model Tenant {
   stateFormTemplates StateFormTemplate[]
   seoSettings        SeoSettings?
   designRequests     DesignRequest[]
+  visitorActivities  VisitorActivity[]
 
   @@index([status])
 }
@@ -509,15 +510,19 @@ model Lead {
   status    LeadStatus @default(UNREAD)
   notes     String     @default("")
   emailed   Boolean    @default(false)
+  /// anonymous website visitor id (pa_vid cookie) that sent this inquiry: links the lead to its browsing history
+  visitorId String?
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
-  tenant  Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  vehicle Vehicle?    @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
-  replies LeadReply[]
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle    Vehicle?          @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  replies    LeadReply[]
+  activities VisitorActivity[]
 
   @@index([tenantId, status])
   @@index([tenantId, createdAt])
+  @@index([tenantId, visitorId])
 }
 
 model LeadReply {
@@ -534,6 +539,40 @@ model LeadReply {
   lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@index([leadId])
+}
+
+/// One thing a visitor did on a dealer website (storefront ActivityTracker → POST /public/track): a page or vehicle page
+/// view, how far they scrolled, time on the page, a WhatsApp / call click, starting a form, sending an inquiry.
+/// Anonymous (leadId null) until the same visitorId sends an inquiry; then every earlier row is linked to that lead.
+/// eventType: PAGE_VIEW | VIEW_VDP | SCROLL_DEPTH | TIME_SPENT | WHATSAPP_CLICK | CALL_CLICK | FORM_START | LEAD_SUBMITTED
+model VisitorActivity {
+  id           String   @id @default(uuid())
+  /// the dealership (Tenant.id is the dealer's slug)
+  tenantId     String
+  visitorId    String
+  leadId       String?
+  eventType    String
+  vehicleId    String?
+  vehicleTitle String?
+  pagePath     String?
+  /// 0–100
+  scrollDepth  Int?
+  durationSec  Int?
+  city         String?
+  region       String?
+  userAgent    String?
+  /// mobile | desktop
+  deviceType   String?
+  createdAt    DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead   Lead?  @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, visitorId])
+  @@index([leadId])
+  @@index([createdAt])
+  @@index([eventType, createdAt])
 }
 
 // ───────────────────────── website content & design ─────────────────────────

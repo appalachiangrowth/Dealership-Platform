@@ -27,6 +27,7 @@ import { AiModule } from './ai/ai.module.js';
 import { DealsModule } from './deals/deals.module.js';
 import { SeoModule } from './seo/seo.module.js';
 import { DesignRequestsModule } from './design-requests/design-requests.module.js';
+import { ActivityModule } from './activity/activity.module.js';
 import { AuthGuard } from './common/auth.guard.js';
 
 @Module({
@@ -59,6 +60,7 @@ import { AuthGuard } from './common/auth.guard.js';
     SeoModule,
     DesignRequestsModule,
     DealsModule,
+    ActivityModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: AuthGuard }],

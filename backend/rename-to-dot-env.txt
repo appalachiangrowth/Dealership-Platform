@@ -44,3 +44,6 @@ LEGACY_PATH="C:/Users/DELL/Documents/ags-dealer-platform-3.0.0 1"
 # FB_STORAGE_DIR=/home/dealer/dealer-platform/backend/storage/facebook
 # false = normal Chrome on a virtual screen (needs xvfb, see ecosystem.config.cjs); default is headless
 # FB_HEADLESS=true
+
+# Visitor Intelligence: website activity older than this many days is deleted every night (default 180)
+VISITOR_ACTIVITY_DAYS=180

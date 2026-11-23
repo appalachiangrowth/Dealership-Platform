@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Gauge, Building2, Car, Inbox, Users, Palette, ToggleRight, Settings, ShieldCheck, ScrollText, Server, LogOut, Menu, Plus, Search, KeyRound, Rss, X, FileText, Globe, MessageSquarePlus, FileSignature,
+  Gauge, Building2, Car, Inbox, Activity, Users, Palette, ToggleRight, Settings, ShieldCheck, ScrollText, Server, LogOut, Menu, Plus, Search, KeyRound, Rss, X, FileText, Globe, MessageSquarePlus, FileSignature,
 } from 'lucide-react';
 import { api, auth, DEALER_PORTAL_URL } from '@/lib/api';
 import { useSession } from '@/lib/session';
@@ -19,6 +19,7 @@ const NAV: { title: string; items: { href: string; label: string; icon: React.El
       { href: '/platform/accounts', label: 'Dealer accounts', icon: Users },
       { href: '/platform/inventory', label: 'Inventory', icon: Car },
       { href: '/platform/leads', label: 'Leads & inquiries', icon: Inbox },
+      { href: '/platform/visitors', label: 'Visitor Intelligence', icon: Activity },
       { href: '/platform/design-requests', label: 'Design requests', icon: MessageSquarePlus, badge: 'designRequests' },
       { href: '/platform/cargurus', label: 'CarGurus audit', icon: Rss },
     ],

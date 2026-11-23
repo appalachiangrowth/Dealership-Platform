@@ -192,3 +192,24 @@ the same file and route changes are in `peerless-autos-frontend/frontend`).
 * Tables: `SeoPage`, `SeoVehicle`, `SeoRedirect`, `SeoSettings` (additive only: `npx prisma db push`, done by start-all.cmd).
   Optional backend `.env`: `SEO_THEME_DIRS` (comma-separated design folders, default `../frontend/themes` and
   `../peerless-autos-frontend/frontend/themes`) so the page list matches each dealer's design.
+
+## 9. Visitor Intelligence (website activity → leads)
+Every public page of the dealer websites (`frontend`) carries a small tracker (`frontend/lib/activity-tracker.ts`,
+added to the page `<head>` by `finishHtml` in `app/[[...path]]/route.ts`; portal previews and framed pages are never
+tracked). It keeps an anonymous visitor id (`vis_<uuid>`, localStorage + first-party cookie `pa_vid`, 365 days) and
+sends page views, vehicle page views, scroll depth (25/50/75/100 %), visible time on page, WhatsApp / call clicks and
+form starts to `POST /api/track` (batched every 9 s, `sendBeacon` when the tab is hidden or closed).
+
+* Backend: `POST /public/track` (dealership from the site host or `dealerSlug`; unknown sites ignored; bots skipped;
+  rate-limited) → table `VisitorActivity`. `api/lead.php` sends the visitor id with every inquiry; the lead gets
+  `Lead.visitorId`, all earlier anonymous activity of that visitor is linked to it and an `LEAD_SUBMITTED` event is added.
+* Dealership Portal › Leads: intent badges (Hot lead / Repeat visitor / Viewed X cars) and, in the inquiry drawer,
+  "Website Activity & Journey" (`GET /dealer/leads/:id/activity`). Intent score: `backend/src/activity/activity.util.ts`.
+* Platform Admin › Visitor Intelligence (`/platform/visitors`): KPIs, per-dealership breakdown, top viewed vehicles and
+  a live activity stream (`GET /platform/visitors/overview`, `GET /platform/visitors/feed`).
+* City / region are stored only when a proxy in front already sends them (Cloudflare `cf-ipcity` / `cf-region` with
+  "Add visitor location headers", Vercel, or Nginx GeoIP2 as `X-GeoIP-City` / `X-GeoIP-Region`). No IP address is stored.
+* Database: `cd backend && npx prisma db push` (additive: new table + `Lead.visitorId`), or run
+  `backend/prisma/sql/2026-11-23_visitor_activity.sql` by hand. Then `npx prisma generate` (part of `npm run build`).
+* Optional: `VISITOR_ACTIVITY_DAYS=180` (backend .env, events older than this are deleted nightly),
+  `VISITOR_TRACKING=off` (frontend .env.local, switches the tracker off on every website).

@@ -19,6 +19,7 @@ import { allOn, blockedPaths, featureCss, featureOfPage, flagsOf, hideFeatures, 
 import { injectNav, renderCustomPage, type CustomPage, type NavItem } from '@/lib/custom-pages';
 import { rel, siteTokens } from '@/lib/tokens';
 import { applyFavicon, applyMediaMeta, cleanInventoryPosts, faviconResponse, richPostRuntime } from '@/lib/site-extras';
+import { activityTrackerScript } from '@/lib/activity-tracker';
 import { existsSync, statSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join, normalize } from 'path';
@@ -137,6 +138,8 @@ type SeoOpts = {
   template?: string;
   /** view a single-page design opens: hash or vehicle id */
   init?: { h?: string; v?: string };
+  /** vehicle shown on this address, for the visitor activity tracker (lib/activity-tracker.ts) */
+  track?: { vehicleId?: string; vehicleTitle?: string };
 };
 
 const NO_SEO: SeoLinks = { base: 'inventory', pages: {} };
@@ -153,6 +156,12 @@ const customSlugs = (ctx: ThemeContext) => new Set((ctx.pages || []).map((p) => 
  * for single-page designs (lib/spa.ts) and the small helper scripts. Nothing changes when SEO data is unavailable.
  */
 async function finishHtml(html: string, ctx: ThemeContext, theme: Theme, host: string, origin: string, o?: SeoOpts): Promise<string> {
+  // every public page (never the portal previews, which skip finishHtml) gets the visitor activity tracker
+  const out = await finishPage(html, ctx, theme, host, origin, o);
+  return injectHead(out, activityTrackerScript({ dealerSlug: ctx.tenant?.id || '', vehicleId: o?.track?.vehicleId, vehicleTitle: o?.track?.vehicleTitle }));
+}
+
+async function finishPage(html: string, ctx: ThemeContext, theme: Theme, host: string, origin: string, o?: SeoOpts): Promise<string> {
   // Financing / Trade-In switches (lib/features.ts): applied even when SEO data is unavailable
   const flags = flagsOf(ctx);
   const featuresOff = !allOn(flags);
@@ -357,6 +366,7 @@ async function vehiclePage(req: Request, host: string, seo: Extract<SeoResolve, 
     vehicleId: own ? publicId : undefined,
     // single-page designs open their vehicle view (virtual hash, lib/spa.ts)
     init: own ? undefined : { v: publicId },
+    track: { vehicleId: seo.vehicle.id },
   });
 }
 

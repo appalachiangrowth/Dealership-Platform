@@ -2,6 +2,8 @@ import { BadRequestException, HttpException, HttpStatus, Injectable, NotFoundExc
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { MailService } from '../mail/mail.service.js';
+import { ActivityService } from '../activity/activity.service.js';
+import { cleanVisitorId, type ActivitySummary } from '../activity/activity.util.js';
 import { clean, cleanMl, isEmail, rateLimit, toCsv } from '../common/util.js';
 import type { LeadStatus, Prisma } from '../generated/prisma/client.js';
 import type { AuthUser } from '../common/auth.types.js';
@@ -15,6 +17,8 @@ export interface PublicLeadInput {
   page?: string;
   vehicleId?: string;
   website?: string; // honeypot
+  /** anonymous website visitor id (storefront tracker): links the inquiry to the visitor's browsing history */
+  visitorId?: string;
 }
 
 const STATUSES: LeadStatus[] = ['UNREAD', 'READ', 'REPLIED', 'CLOSED'];
@@ -25,10 +29,11 @@ export class LeadsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly mail: MailService,
+    private readonly activity: ActivityService,
   ) {}
 
   /** Inquiry from the public website. Saved first (never lost), then e-mailed to the dealership. */
-  async submit(tenantId: string, b: PublicLeadInput, ip: string) {
+  async submit(tenantId: string, b: PublicLeadInput, ip: string, userAgent = '') {
     if (b.website) return { ok: true }; // bots fill the hidden field
     if (!rateLimit(`lead|${tenantId}|${ip}`, 5, 600)) throw new HttpException('Too many messages, please try again later.', HttpStatus.TOO_MANY_REQUESTS);
     const name = clean(b.name, 120);
@@ -47,9 +52,12 @@ export class LeadsService {
         vehicleLabel = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') + (v.stockNumber ? ` (stock ${v.stockNumber})` : '');
       }
     }
+    const visitorId = cleanVisitorId(b.visitorId) || null;
     const lead = await this.prisma.lead.create({
-      data: { tenantId, name, email, phone, topic, message, page: clean(b.page, 300), vehicleId, source: vehicleId || topic.startsWith('Vehicle') ? 'VEHICLE' : 'CONTACT' },
+      data: { tenantId, name, email, phone, topic, message, page: clean(b.page, 300), vehicleId, visitorId, source: vehicleId || topic.startsWith('Vehicle') ? 'VEHICLE' : 'CONTACT' },
     });
+    // the visitor's earlier (anonymous) website activity becomes part of this lead + the inquiry joins the journey
+    if (visitorId) await this.activity.onLeadCreated(tenantId, lead.id, visitorId, { pagePath: lead.page, vehicleId, vehicleTitle: vehicleLabel.replace(/ \(stock [^)]*\)$/, ''), userAgent });
     const s = await this.prisma.tenantSettings.findUnique({ where: { tenantId } });
     const to = s?.leadTo || s?.email || '';
     let emailed = false;
@@ -74,7 +82,7 @@ export class LeadsService {
     if (term) {
       where.OR = ['name', 'email', 'phone', 'message', 'topic'].map((f) => ({ [f]: { contains: term, mode: 'insensitive' } }));
     }
-    const [items, total, unread] = await Promise.all([
+    const [rows, total, unread] = await Promise.all([
       this.prisma.lead.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -85,6 +93,14 @@ export class LeadsService {
       this.prisma.lead.count({ where }),
       this.prisma.lead.count({ where: { tenantId, status: 'UNREAD' } }),
     ]);
+    // website activity per lead (intent badge, repeat visitor, vehicles viewed) — never breaks the list
+    const activity: Record<string, ActivitySummary> = await this.activity
+      .summariesFor(tenantId, rows.map((l) => ({ id: l.id, visitorId: l.visitorId })))
+      .catch(() => ({}));
+    const items = rows.map((l) => {
+      const a = activity[l.id];
+      return { ...l, activity: a ? { intentScore: a.intentScore, score: a.score, vehiclesViewed: a.vehiclesViewed, totalViews: a.totalViews, isRepeatVisitor: a.isRepeatVisitor, sessions: a.sessions } : null };
+    });
     return { items, total, page, pageSize, unread };
   }
 

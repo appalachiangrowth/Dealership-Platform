@@ -4,6 +4,14 @@
  */
 import { backend, hostOf } from '@/lib/backend';
 
+/** the visitor id of the activity tracker (lib/activity-tracker.ts): sent with the form, or its pa_vid cookie */
+function visitorIdOf(req: Request, b: Record<string, unknown>): string {
+  const fromBody = String(b.visitorId ?? '').trim();
+  if (/^[A-Za-z0-9_-]{8,80}$/.test(fromBody)) return fromBody;
+  const m = (req.headers.get('cookie') || '').match(/(?:^|;\s*)pa_vid=([A-Za-z0-9_-]{8,80})/);
+  return m ? m[1] : '';
+}
+
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
@@ -12,7 +20,11 @@ export async function POST(req: Request) {
   const fwd = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim();
   const res = await backend('/public/leads', hostOf(req), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(fwd ? { 'X-Forwarded-For': fwd } : {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(fwd ? { 'X-Forwarded-For': fwd } : {}),
+      'X-Visitor-User-Agent': (req.headers.get('user-agent') || '').slice(0, 400),
+    },
     body: JSON.stringify({
       name: b.name ?? '',
       email: b.email ?? '',
@@ -21,6 +33,8 @@ export async function POST(req: Request) {
       message: b.message ?? '',
       page: b.page ?? '',
       vehicleId: b.vehicleId ?? '',
+      // links the inquiry to the visitor's website journey (Dealership Portal › Leads)
+      visitorId: visitorIdOf(req, b),
     }),
   });
   const j = (await res.json().catch(() => ({}))) as Record<string, unknown>;
