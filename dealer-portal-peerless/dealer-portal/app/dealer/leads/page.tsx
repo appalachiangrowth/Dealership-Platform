@@ -8,6 +8,7 @@ import { useApi } from '@/lib/useApi';
 import { useToast } from '@/components/toast';
 import { Badge, Button, Card, Drawer, Empty, ErrorBox, Field, Input, Loading, PageHeader, Pagination, Select, StatusBadge, Table, Td, Textarea, cx } from '@/components/ui';
 import { ago, dateTime, vehicleName } from '@/lib/format';
+import { IntentBadges, LeadJourney } from '@/components/LeadJourney';
 
 function LeadEmail() {
   const { data, setData } = useApi('/dealer/leads/email');
@@ -85,7 +86,7 @@ function LeadDrawer({ id, onClose, onChange }: { id: string; onClose: () => void
   };
 
   return (
-    <Drawer open onClose={onClose} title={data ? `${data.name} · ${data.topic}` : 'Inquiry'}>
+    <Drawer open wide onClose={onClose} title={data ? `${data.name} · ${data.topic}` : 'Inquiry'}>
       {loading || !data ? (
         <Loading />
       ) : (
@@ -143,6 +144,7 @@ function LeadDrawer({ id, onClose, onChange }: { id: string; onClose: () => void
               </Button>
             </Field>
           )}
+          <LeadJourney leadId={id} />
           <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-5">
             <Field label="Status">
               <Select value={data.status} onChange={(e) => patch({ status: e.target.value })}>
@@ -243,6 +245,7 @@ function LeadsPage() {
                   <Td>
                     <div className="text-slate-900">{l.name}</div>
                     <div className="text-xs font-normal text-slate-500">{l.email || l.phone}</div>
+                    <IntentBadges a={l.activity} />
                   </Td>
                   <Td>
                     <div>{l.topic}</div>
