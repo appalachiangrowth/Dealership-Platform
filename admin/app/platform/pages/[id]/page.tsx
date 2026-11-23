@@ -8,6 +8,7 @@ import { api, siteBase, siteUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { SECTION_DEFS, TOKENS, make, type Section } from '@/lib/page-sections';
 import { SectionCard, cloneSection, ImageField } from '@/components/PageSectionEditor';
+import { PageLinksContext } from '@/components/RichText';
 import { PagePreview } from '@/components/PagePreview';
 import { useToast } from '@/components/toast';
 import { Badge, Button, Field, Input, Loading, Modal, Select, Tabs, Textarea, Toggle, ErrorBox, cx } from '@/components/ui';
@@ -28,6 +29,9 @@ export default function PageEditor() {
   const loaded = useApi<PageData>(`/platform/pages/${id}`, [id]);
   const tenants = useApi<Tenant[]>('/platform/tenants');
   const themes = useApi<{ themes: ThemeRow[] }>('/platform/themes');
+  // pages the text editor's link picker offers: this page's dealership + the pages for every dealership
+  const linkScope = loaded.data ? loaded.data.tenantId || 'all' : '';
+  const linkPages = useApi<{ pages: { slug: string; title: string }[] }>(linkScope ? `/platform/pages?tenantId=${encodeURIComponent(linkScope)}` : null, [linkScope]);
 
   const [p, setP] = useState<PageData | null>(null);
   const [tab, setTab] = useState('sections');
@@ -233,7 +237,7 @@ export default function PageEditor() {
           </div>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
             {tab === 'sections' && (
-              <>
+              <PageLinksContext.Provider value={(linkPages.data?.pages || []).filter((x) => x.slug !== p.slug)}>
                 {sections.map((s, i) => (
                   <SectionCard
                     key={s.id}
@@ -276,7 +280,7 @@ export default function PageEditor() {
                 <p className="px-1 text-xs text-slate-500">
                   Texts may use the dealership&apos;s details: <span className="font-mono">{TOKENS}</span>. Pages for every dealership show each one&apos;s own details.
                 </p>
-              </>
+              </PageLinksContext.Provider>
             )}
 
             {tab === 'settings' && (

@@ -14,6 +14,7 @@ import { join } from 'path';
 import { rawTemplate, type Theme } from './engine';
 import { renderPage, type ThemeContext } from './page';
 import { h, safeUrl } from './php';
+import { sanitizeRichHtml } from './rich-html';
 import { absSiteUrl, siteTokens, siteTokensDisplay } from './tokens';
 
 /* ============================================================================ types */
@@ -30,8 +31,24 @@ export interface CustomPage {
 export interface NavItem {
   slug?: string;
   url?: string;
+  /** a standard page of the design (home, inventory, about, contact, blog, used-suvs …): url is its quick link */
+  key?: string;
   label: string;
   children?: NavItem[];
+}
+
+/** a footer column from Pages & SEO › Footer: heading + links (custom page, standard page / quick link, or address) */
+export interface FooterCol {
+  heading: string;
+  links: { label: string; slug?: string; url?: string; key?: string; newTab?: boolean }[];
+}
+
+/** how the header menu and footer from Pages & SEO are applied */
+export interface ChromeOpts {
+  /** the menu holds the standard pages too: it replaces the design's own menu links (otherwise it is added after them) */
+  full?: boolean;
+  /** footer link columns that replace the design's own (null / undefined = the design's footer as it is) */
+  footer?: FooterCol[] | null;
 }
 /** a vehicle as /inventory.json publishes it */
 export type InvVehicle = Record<string, any>;
@@ -65,6 +82,8 @@ interface Links {
   about: string;
   category: (cat: string) => string;
   vehicle: (v: InvVehicle) => string;
+  /** blog list (default: blog.html) */
+  blog?: string;
   /** inventory filtered by make (empty = not supported) */
   make?: (make: string) => string;
 }
@@ -250,6 +269,7 @@ export const THEME_KITS: Record<string, ThemeKit> = {
       about: './#/about',
       category: (c) => `used-${c}.html`,
       vehicle: (v) => `./#/vehicle/${vid(v)}`,
+      blog: './#/blog',
     },
     nav: [
       { open: '<div class="nav-links" id="navLinks">', item: '<a href="{href}" data-nav="pa-{slug}"{current}>{label}</a>' },
@@ -379,6 +399,7 @@ export const THEME_KITS: Record<string, ThemeKit> = {
       contact: 'index.html#contact-page',
       about: 'index.html#about-page',
       category: (c) => `index.html#used-${c}`,
+      blog: 'index.html#blog-page',
       vehicle: (v) => `index.html#vehicle-${slugOf(String(v.title || '').trim() || [v.year, v.make, v.model, v.trim].filter(Boolean).join(' '))}`,
     },
     nav: [{ open: '<ul class="nav__list" id="menu">', item: '<li><a href="{href}"{current}>{label}</a></li>' }],
@@ -707,14 +728,17 @@ function fill(tpl: string, i: NavItem, c: NavCtx, opts: { current?: boolean } = 
   const cur = opts.current ?? (!!i.slug && i.slug === c.current);
   let out = tpl
     .replace(/\{href\}/g, h(href))
-    .replace(/\{slug\}/g, h(i.slug || slugOf(i.label)))
+    .replace(/\{slug\}/g, h(i.slug || i.key || slugOf(i.label)))
     .replace(/\{label\}/g, h(i.label))
     .replace(/\{current\}/g, cur ? ' aria-current="page" class="active is-active"' : '')
     // one class attribute when the menu links have their own class
     .replace(/(<a\b[^>]*?\sclass=")([^"]*)("[^>]*?) class="active is-active"/, '$1$2 active is-active$3')
     .replace(/(<a\b[^>]*?) class="active is-active"([^>]*?\sclass=")([^"]*)"/, '$1$2$3 active is-active"');
   if (/^https?:\/\//i.test(href)) out = out.replace(/<a\b/, '<a target="_blank" rel="noopener"');
-  return out;
+  // a standard page keeps the design's own router name (Classic highlights the current page by data-nav="inventory")
+  if (i.key) out = out.replace(`data-nav="pa-${h(i.key)}"`, `data-nav="${h(i.key)}"`);
+  // ours: a menu managed by Pages & SEO removes every other page link (server + runtime), never these
+  return out.replace(/<a\b(?![^>]*data-pa-nav)/, '<a data-pa-nav="1"');
 }
 
 /** a dropdown in a desktop menu: the theme's own markup, or the shared .pa-dd dropdown styled from the theme's links */
@@ -796,15 +820,56 @@ document.addEventListener('keydown',function(ev){if(ev.key==='Escape')closeAll(n
  * otherwise a dropdown in the colours of the header); mobile / drawer menus list a dropdown's entries indented under
  * its title.
  */
-export function injectNav(html: string, theme: Theme, items: NavItem[], current = '', t: Tokens = {}): string {
-  if (!items.length) return html;
+export function injectNav(html: string, theme: Theme, items: NavItem[], current = '', t: Tokens = {}, opts: ChromeOpts = {}): string {
   const kit = kitFor(theme);
   const c: NavCtx = { kit, t, current };
-  html = injectNavServer(html, items, c);
-  return addNavRuntime(html, items, c);
+  if (opts.footer) html = injectFooter(html, opts.footer, c);
+  if (!items.length && !opts.full) return html;
+  html = injectNavServer(html, items, c, !!opts.full);
+  return addNavRuntime(html, items, c, !!opts.full);
 }
 
-function injectNavServer(html: string, items: NavItem[], c: NavCtx): string {
+const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
+const BTN_CLASS = /(^|[\s_-])(btn|button|cta|logo|brand)([\s_-]|$)/i;
+
+/** the elements directly inside html[from, to) (positions of their opening tag and just after their end) */
+function directChildren(html: string, from: number, to: number): { s: number; e: number; tag: string; open: string }[] {
+  const out: { s: number; e: number; tag: string; open: string }[] = [];
+  const re = /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)\b[^>]*>/g;
+  re.lastIndex = from;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) && m.index < to) {
+    if (m[1]) continue;
+    const tag = m[2].toLowerCase();
+    if (VOID_TAGS.has(tag) || m[0].endsWith('/>')) {
+      out.push({ s: m.index, e: re.lastIndex, tag, open: m[0] });
+      continue;
+    }
+    const close = closeOf(html, m.index, tag);
+    if (close < 0 || close >= to) break;
+    const e = html.indexOf('>', close) + 1;
+    out.push({ s: m.index, e, tag, open: m[0] });
+    re.lastIndex = e;
+  }
+  return out;
+}
+
+/** a link to a page of the website (not a phone / email / other website / plain "#") */
+const sitePageHref = (href: string) => !!href && href !== '#' && !/^(tel:|mailto:|sms:|javascript:|data:)/i.test(href) && !/^(https?:)?\/\//i.test(href);
+const attrOf = (open: string, name: string) => (open.match(new RegExp(`\\s${name}\\s*=\\s*"([^"]*)"`, 'i')) || open.match(new RegExp(`\\s${name}\\s*=\\s*'([^']*)'`, 'i')) || [])[1] || '';
+
+/** one of the design's own page links in a menu: <a href="inventory.html">, or <li> holding only such a link */
+function isPageLinkUnit(html: string, ch: { s: number; e: number; tag: string; open: string }): boolean {
+  const own = (open: string) => !/\sdata-pa-nav\b/.test(open) && !BTN_CLASS.test(attrOf(open, 'class')) && sitePageHref(attrOf(open, 'href'));
+  if (ch.tag === 'a') return own(ch.open);
+  if (ch.tag !== 'li') return false;
+  const inner = html.slice(ch.s + ch.open.length, html.lastIndexOf('</', ch.e));
+  const as = inner.match(/<a\b[^>]*>/gi) || [];
+  if (as.length !== 1 || BTN_CLASS.test(attrOf(ch.open, 'class'))) return false;
+  return own(as[0]) && !inner.replace(/<a\b[\s\S]*<\/a>/i, '').replace(/<[^>]+>/g, '').trim();
+}
+
+function injectNavServer(html: string, items: NavItem[], c: NavCtx, full = false): string {
   const kit = c.kit;
   let usesShared = false;
   for (const slot of kit.nav) {
@@ -839,6 +904,18 @@ function injectNavServer(html: string, items: NavItem[], c: NavCtx): string {
       }
       if (tagStart > at) at2 = tagStart;
     }
+    if (full) {
+      // Pages & SEO manages the whole menu: the design's own page links go, ours take the place of the first one
+      // (the design's call button, address, social icons … stay where they are)
+      const openEnd = html.indexOf('>', at) + 1;
+      const units = directChildren(html, openEnd, close).filter((ch) => ch.s < at2 && isPageLinkUnit(html, ch));
+      if (units.length) {
+        let out = html.slice(0, units[0].s) + links;
+        for (let k = 0; k < units.length; k++) out += html.slice(units[k].e, k + 1 < units.length ? units[k + 1].s : html.length);
+        html = out;
+        continue;
+      }
+    }
     html = html.slice(0, at2) + links + html.slice(at2);
   }
   if (usesShared && !html.includes('id="pa-nav-style"')) {
@@ -848,6 +925,94 @@ function injectNavServer(html: string, items: NavItem[], c: NavCtx): string {
   return html;
 }
 
+/* ============================================================================ footer columns (Pages & SEO › Footer) */
+
+/**
+ * The link columns of the design's footer: an element inside <footer> holding exactly one heading (h2–h6) followed
+ * only by links (in a list or not) to pages of the website. The brand column (logo + text), the contact column
+ * (address, phone, email) and the bottom bar are not link columns and stay as they are.
+ */
+function footerLinkColumns(html: string, from: number, to: number): { s: number; e: number; tag: string; open: string; inner: string }[] {
+  const found: { s: number; e: number; tag: string; open: string; inner: string }[] = [];
+  const re = /<(div|section|nav|aside|li|article)\b[^>]*>/gi;
+  re.lastIndex = from;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) && m.index < to) {
+    const tag = m[1].toLowerCase();
+    const close = closeOf(html, m.index, tag);
+    if (close < 0 || close > to) continue;
+    const inner = html.slice(m.index + m[0].length, close);
+    const heads = inner.match(/<h[2-6]\b[^>]*>[\s\S]*?<\/h[2-6]>/gi) || [];
+    if (heads.length !== 1) continue;
+    const anchors = inner.match(/<a\b[^>]*>/gi) || [];
+    if (!anchors.length || inner.indexOf(heads[0]) > inner.search(/<a\b/i)) continue;
+    const hrefs = anchors.map((a) => attrOf(a, 'href'));
+    if (!hrefs.some(sitePageHref) || hrefs.some((x) => /^(tel:|mailto:|sms:)/i.test(x))) continue;
+    const rest = inner
+      .replace(heads[0], '')
+      .replace(/<a\b[\s\S]*?<\/a>/gi, '')
+      .replace(/<\/?(ul|ol|li|nav|div|span|p|br)\b[^>]*>/gi, '')
+      .replace(/&nbsp;|\s/g, '');
+    if (rest) continue;
+    found.push({ s: m.index, e: html.indexOf('>', close) + 1, tag, open: m[0], inner });
+  }
+  // innermost only: <div class="col"><h4/><ul/></div> — not a wrapper that happens to hold one column
+  return found.filter((x) => !found.some((y) => y !== x && y.s > x.s && y.e <= x.e));
+}
+
+const FOOTER_CSS =
+  '<style id="pa-footer-style">.pa-foot-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:28px;margin:0 0 28px}' +
+  '.pa-foot-cols h4{margin:0 0 12px;font-size:15px}.pa-foot-cols ul{list-style:none;margin:0;padding:0}.pa-foot-cols li{margin:6px 0}.pa-foot-cols a{color:inherit;opacity:.85;text-decoration:none}.pa-foot-cols a:hover{opacity:1;text-decoration:underline}' +
+  ':where(*):has(> [data-pa-footer-reflow]){grid-template-columns:repeat(auto-fit,minmax(150px,1fr))!important}</style>';
+
+/**
+ * Replaces the design's footer link columns with the columns from Pages & SEO › Footer, built from the design's own
+ * first link column (same column, heading, list and link markup, so it keeps the design's look). Deleted links and
+ * columns are simply not there. A design without recognisable link columns gets the columns at the top of its footer.
+ */
+function injectFooter(html: string, cols: FooterCol[], c: NavCtx): string {
+  if (html.includes('data-pa-footer')) return html;
+  const fs = html.lastIndexOf('<footer');
+  if (fs < 0) return html;
+  const fe = closeOf(html, fs, 'footer');
+  if (fe < 0) return html;
+  const found = footerLinkColumns(html, fs, fe);
+  const href = (l: FooterCol['links'][number]) => (l.slug ? l.slug : link(l.url || '', c.kit.links, c.t));
+  const target = (l: FooterCol['links'][number]) => (l.newTab ? ' target="_blank" rel="noopener noreferrer"' : '');
+  if (!found.length) {
+    const open = html.indexOf('>', fs) + 1;
+    const block =
+      `<div class="pa-foot-cols" data-pa-footer>` +
+      cols
+        .map((col) => `<div>${col.heading ? `<h4>${h(col.heading)}</h4>` : ''}<ul>${col.links.map((l) => `<li><a href="${h(href(l))}"${target(l)}>${h(l.label)}</a></li>`).join('')}</ul></div>`)
+        .join('') +
+      '</div>';
+    return injectHeadCss(html.slice(0, open) + block + html.slice(open), FOOTER_CSS);
+  }
+  const tpl = found[0];
+  const head = tpl.inner.match(/<(h[2-6])\b[^>]*>/i)!;
+  const ul = tpl.inner.match(/<(ul|ol)\b[^>]*>/i);
+  const li = ul ? (tpl.inner.slice(tpl.inner.indexOf(ul[0])).match(/<li\b[^>]*>/i) || ['<li>'])[0] : '';
+  const aOpen = (tpl.inner.match(/<a\b[^>]*>/i) || ['<a>'])[0]
+    .replace(/\s(href|target|rel|aria-current|onclick|data-[a-z0-9-]+)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/\s(active|is-active|current)(?=["\s])/g, '');
+  const reflow = cols.length !== found.length ? ' data-pa-footer-reflow' : '';
+  const colOpen = tpl.open.replace(/^<([a-z]+)/i, `<$1 data-pa-footer${reflow}`);
+  const one = (l: FooterCol['links'][number]) => {
+    const a = `${aOpen.replace(/>$/, '')} href="${h(href(l))}"${target(l)}>${h(l.label)}</a>`;
+    return ul ? `${li}${a}</li>` : a;
+  };
+  const columns = cols
+    .map((col) => `${colOpen}${col.heading ? `${head[0]}${h(col.heading)}</${head[1]}>` : ''}${ul ? `${ul[0]}${col.links.map(one).join('')}</${ul[1]}>` : col.links.map(one).join('')}</${tpl.tag}>`)
+    .join('');
+  let out = html.slice(0, found[0].s) + columns;
+  for (let k = 0; k < found.length; k++) out += html.slice(found[k].e, k + 1 < found.length ? found[k + 1].s : html.length);
+  return reflow ? injectHeadCss(out, FOOTER_CSS) : out;
+}
+
+const injectHeadCss = (html: string, css: string) =>
+  html.includes(css.slice(0, 30)) ? html : /<\/head>/i.test(html) ? html.replace(/<\/head>/i, css + '</head>') : css + html;
+
 /**
  * The menus as the visitor's browser has them. Some designs build or rebuild their header / mobile menus with
  * their own scripts, use markup no kit knows, or keep the mobile menu only on some pages — then the links added
@@ -855,7 +1020,7 @@ function injectNavServer(html: string, items: NavItem[], c: NavCtx): string {
  * that share them) and adds every menu entry that is not there yet, copying a link of that menu so it looks the
  * same. Entries already in a menu (from the server) are never added twice. Works for every installed design.
  */
-function addNavRuntime(html: string, items: NavItem[], c: NavCtx): string {
+function addNavRuntime(html: string, items: NavItem[], c: NavCtx, full = false): string {
   if (html.includes('id="pa-nav-rt"')) return html;
   const data = items
     .filter((i) => i.slug || i.url || (i.children || []).length)
@@ -864,14 +1029,14 @@ function addNavRuntime(html: string, items: NavItem[], c: NavCtx): string {
       h: i.slug || i.url ? navHref(i, c) : '',
       c: (i.children || []).filter((k) => k && k.label && (k.slug || k.url)).map((k) => ({ l: k.label, h: navHref(k, c) })),
     }));
-  if (!data.length) return html;
-  const json = JSON.stringify({ items: data }).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
+  if (!data.length && !full) return html;
+  const json = JSON.stringify({ items: data, full }).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
   const css = html.includes('id="pa-nav-style"') ? '' : NAV_CSS;
   const tag = `${css}<script id="pa-nav-rt">window.__PA_NAV=${json};${NAV_RUNTIME}</script>`;
   return /<\/body>/i.test(html) ? html.replace(/<\/body>(?![\s\S]*<\/body>)/i, tag + '</body>') : html + tag;
 }
 
-const NAV_RUNTIME = `(function(){var D=window.__PA_NAV;if(!D||!D.items||!D.items.length||window.__paNavRt)return;window.__paNavRt=1;
+const NAV_RUNTIME = `(function(){var D=window.__PA_NAV;if(!D||!D.items||(!D.items.length&&!D.full)||window.__paNavRt)return;window.__paNavRt=1;
 var HINT=/(^|[\\s_-])(nav|navbar|navigation|menu|menus|drawer|offcanvas|off-canvas|sidebar|mobile|header|topbar|links)/i;
 var BAD=/breadcrumb|pagination|pager|social|footer|tabs?\\b|filter|sort|share|lang|crumbs/i;
 var BTN=/(^|[\\s_-])(btn|button|cta|logo|brand)([\\s_-]|$)/i;
@@ -895,14 +1060,14 @@ function clean(a,h,t,cur){cur=cur&&h&&h!=="#";a.setAttribute("href",h);a.removeA
 [].slice.call(a.attributes).forEach(function(x){if(/^data-/.test(x.name))a.removeAttribute(x.name)});
 if(a.classList)["active","is-active","current","selected","router-link-active","router-link-exact-active"].forEach(function(c){a.classList.remove(c)});
 setText(a,t);a.setAttribute("data-pa-nav","1");if(/^https?:/i.test(h)&&key(h).indexOf(location.origin)!==0){a.target="_blank";a.rel="noopener"}if(cur)a.setAttribute("aria-current","page")}
-function pick(m){for(var i=m.units.length-1;i>=0;i--){var u=m.units[i],a=u.tagName==="A"?u:u.querySelector("a");if(a&&!BTN.test(cls(a))&&!BTN.test(cls(u))&&u.querySelectorAll("a").length<=1)return u}return m.units[m.units.length-1]}
+function pick(m){if(!m.units.length&&m.tpl)return m.tpl;for(var i=m.units.length-1;i>=0;i--){var u=m.units[i],a=u.tagName==="A"?u:u.querySelector("a");if(a&&!BTN.test(cls(a))&&!BTN.test(cls(u))&&u.querySelectorAll("a").length<=1)return u}return m.units[m.units.length-1]}
 function make(m,h,t){var u=pick(m).cloneNode(true),a=u.tagName==="A"?u:u.querySelector("a");if(u!==a&&u.querySelectorAll){var x=u.querySelectorAll("ul,ol,[class*=drop],[class*=sub]");for(var i=0;i<x.length;i++)x[i].parentNode&&x[i].parentNode.removeChild(x[i]);if(u.classList)["active","is-active","current","open","has-sub","has-dropdown"].forEach(function(c){u.classList.remove(c)})}
 clean(a,h,t,key(h)===key(location.href));return u}
-function where(m){var last=m.units[m.units.length-1],a=last.tagName==="A"?last:last.querySelector("a");if(a&&(BTN.test(cls(a))||BTN.test(cls(last))))return last;var nx=last.nextSibling;return nx}
+function where(m){if(m.mark&&m.mark.parentNode===m.el)return m.mark;var last=m.units[m.units.length-1],a=last.tagName==="A"?last:last.querySelector("a");if(a&&(BTN.test(cls(a))||BTN.test(cls(last))))return last;var nx=last.nextSibling;return nx}
 function add(m){var horiz=vis(m.el)&&m.el.getBoundingClientRect().height<120,before=where(m);
 D.items.forEach(function(i){var all=i.c||[],miss=all.filter(function(k){return !has(m,k.h)});
 var needTop=i.h?!has(m,i.h):(all.length>0&&miss.length===all.length);if(!needTop&&!miss.length)return;var nodes=[];
-if(horiz&&all.length){if(!needTop)return;var w=document.createElement(m.units[0].tagName==="LI"?"li":"span");w.className="pa-dd";
+if(horiz&&all.length){if(!needTop)return;var w=document.createElement((m.units[0]||m.tpl).tagName==="LI"?"li":"span");w.className="pa-dd";
 var tr=make(m,i.h||"#",i.l),ta=tr.tagName==="A"?tr:tr.querySelector("a");ta.classList.add("pa-dd-trigger");ta.setAttribute("aria-haspopup","true");ta.setAttribute("aria-expanded","false");if(!i.h)ta.setAttribute("data-pa-dd-toggle","");
 var car=document.createElement("span");car.className="pa-dd-caret";car.setAttribute("aria-hidden","true");ta.appendChild(car);
 var mn=document.createElement("span");mn.className="pa-dd-menu";mn.setAttribute("role","menu");all.forEach(function(k){var x=document.createElement("a");x.className="pa-dd-link";x.setAttribute("role","menuitem");clean(x,k.h,k.l,key(k.h)===key(location.href));mn.appendChild(x)});
@@ -910,7 +1075,10 @@ w.appendChild(ta);w.appendChild(mn);nodes.push(w)}
 else{if(needTop){if(i.h)nodes.push(make(m,i.h,i.l));else{var lb=make(m,"#",i.l),la=lb.tagName==="A"?lb:lb.querySelector("a");la.removeAttribute("href");la.classList.add("pa-nav-label");nodes.push(lb)}}
 miss.forEach(function(k){var x=make(m,k.h,k.l),xa=x.tagName==="A"?x:x.querySelector("a");xa.classList.add("pa-nav-sub");nodes.push(x)})}
 nodes.forEach(function(nd){m.el.insertBefore(nd,before&&before.parentNode===m.el?before:null)})})}
-var runs=0,T=0;function ensure(){T=0;if(runs>60)return;runs++;try{menus().forEach(add)}catch(e){}}
+function prune(m){if(!D.full)return;m.units=m.units.filter(function(u){var a=u.tagName==="A"?u:u.querySelector("a");if(!a||a.hasAttribute("data-pa-nav")||a.closest("[data-pa-nav]")||BTN.test(cls(a))||BTN.test(cls(u))||u.querySelectorAll("a").length>1)return true;
+if(!m.tpl){m.tpl=u.cloneNode(true);m.mark=document.createComment("pa-nav");u.parentNode.insertBefore(m.mark,u)}u.parentNode&&u.parentNode.removeChild(u);return false})}
+function fill2(m){prune(m);if(!m.units.length&&!m.tpl)return;add(m)}
+var runs=0,T=0;function ensure(){T=0;if(runs>60)return;runs++;try{menus().forEach(fill2)}catch(e){}}
 function soon(){if(!T)T=setTimeout(ensure,120)}
 document.addEventListener("click",function(ev){var t=ev.target&&ev.target.closest&&ev.target.closest(".pa-dd-trigger[data-pa-nav]");if(!t)return;var d=t.parentElement,small=innerWidth<=900||(window.matchMedia&&matchMedia("(hover: none)").matches);if(t.hasAttribute("data-pa-dd-toggle")||(small&&!d.classList.contains("pa-open"))){ev.preventDefault();var o=!d.classList.contains("pa-open");d.classList.toggle("pa-open",o);t.setAttribute("aria-expanded",o?"true":"false")}},true);
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",ensure);else ensure();
@@ -979,6 +1147,12 @@ function link(raw: unknown, links: Links, t: Tokens): string {
       return links.about;
     case 'home':
       return links.home;
+    case 'blog':
+      return links.blog || 'blog.html';
+    // Financing / Trade-In: the Pages & SEO pages at these addresses (lib/features.ts follows the switches)
+    case 'financing':
+    case 'trade-in':
+      return s;
     case 'call':
       return String(t.tel_link || '#');
     case 'email':
@@ -1035,6 +1209,48 @@ function headBlock(b: Block, rc: Rc, opts: { center?: boolean; tag?: string } = 
     b.intro ? `<p class="pa-intro">${txt(b.intro, rc.t)}</p>` : '',
   ].join('');
   return parts ? `<div class="pa-head${opts.center ? ' pa-center' : ''}">${parts}</div>` : '';
+}
+
+/* ---------------- Text / Picture & Text: headings (H1–H6) + formatted text ---------------- */
+
+const LEVEL = /^h[1-6]$/;
+
+/** the first heading of a section (picture alt text, page description) */
+function firstHeading(b: Block): string {
+  if (Array.isArray(b.content)) return String((b.content.find((x: any) => x && x.kind === 'heading' && x.text) || {}).text || '');
+  return String(b.title || '');
+}
+
+function eyebrowOf(b: Block, rc: Rc): string {
+  return b.eyebrow ? `<p class="pa-eyebrow">${txt(b.eyebrow, rc.t)}</p>` : '';
+}
+
+/**
+ * Formatted text from the Pages & SEO editor (bold, italic, underline, highlight, lists, links …): {name}-style values
+ * filled in, quick links ("#pa:inventory", "#pa:category:suvs") turned into the design's own addresses, then cleaned
+ * like a blog article (lib/rich-html.ts) — only safe formatting reaches the visitor; new-window links get
+ * target="_blank" rel="noopener noreferrer".
+ */
+function richHtml(src: unknown, rc: Rc): string {
+  const linked = String(src ?? '').replace(/href=(["'])#pa:([^"']{1,200})\1/gi, (_m, q: string, k: string) => `href=${q}${h(link(k.replace(/&amp;/g, '&'), rc.kit.links, rc.t))}${q}`);
+  return sanitizeRichHtml(sub(linked, rc.t), 120_000);
+}
+
+/** the section's headings and text blocks, in order (null = a section saved before: title + body) */
+function contentBlocks(b: Block, rc: Rc): string | null {
+  if (!Array.isArray(b.content)) return null;
+  return b.content
+    .map((x: any) => {
+      if (!x || typeof x !== 'object') return '';
+      if (x.kind === 'heading') {
+        const level = LEVEL.test(String(x.level)) ? String(x.level) : 'h2';
+        const text = String(x.text ?? '').trim();
+        return text ? `<${level} class="pa-title pa-h pa-${level}">${headline(text, rc.t)}</${level}>` : '';
+      }
+      const html = richHtml(x.html, rc);
+      return html ? `<div class="pa-rich">${html}</div>` : '';
+    })
+    .join('');
 }
 
 /** "Find your *next* car" → the starred word in the brand colour (like the themes do) */
@@ -1198,14 +1414,20 @@ const SECTIONS: Record<string, (b: Block, rc: Rc) => string> = {
     );
   },
   text(b, rc) {
-    return `<div class="pa-wrap ${b.width === 'wide' ? '' : 'pa-narrow'}${b.align === 'center' ? ' pa-center' : ''}">${headBlock(b, rc, { center: b.align === 'center' })}<div class="pa-rich">${rich(b.body, rc.kit.links, rc.t)}</div>${buttons(b.buttons, rc)}</div>`;
+    const center = b.align === 'center';
+    const content = contentBlocks(b, rc);
+    // sections saved before headings + formatted text existed: one heading + simple formatting, as before
+    const body = content ?? `${headBlock(b, rc, { center })}<div class="pa-rich">${rich(b.body, rc.kit.links, rc.t)}</div>`;
+    return `<div class="pa-wrap ${b.width === 'wide' ? '' : 'pa-narrow'}${center ? ' pa-center' : ''}">${content !== null ? eyebrowOf(b, rc) : ''}${body}${buttons(b.buttons, rc)}</div>`;
   },
   split(b, rc) {
     const pic = img(b.image);
+    const content = contentBlocks(b, rc);
+    const body = content !== null ? eyebrowOf(b, rc) + content : `${headBlock(b, rc)}<div class="pa-rich">${rich(b.body, rc.kit.links, rc.t)}</div>`;
     return (
       `<div class="pa-wrap pa-split${b.imageSide === 'left' ? ' pa-split--left' : ''}">` +
-      `<div class="pa-split-text">${headBlock(b, rc)}<div class="pa-rich">${rich(b.body, rc.kit.links, rc.t)}</div>${buttons(b.buttons, rc)}</div>` +
-      `<div class="pa-split-media">${pic ? `<img src="${h(pic)}" alt="${txt(b.imageAlt || b.title || '', rc.t)}" loading="lazy">` : '<div class="pa-ph"></div>'}</div></div>`
+      `<div class="pa-split-text">${body}${buttons(b.buttons, rc)}</div>` +
+      `<div class="pa-split-media">${pic ? `<img src="${h(pic)}" alt="${txt(b.imageAlt || b.title || firstHeading(b) || '', rc.t)}" loading="lazy">` : '<div class="pa-ph"></div>'}</div></div>`
     );
   },
   cards(b, rc) {
@@ -1355,6 +1577,12 @@ const BASE_CSS = `
 .pa-center .pa-intro,.pa-center .pa-lead{margin-left:auto;margin-right:auto}
 .pa-muted{color:var(--pa-muted)}
 .pa-rich{color:var(--pa-text)}.pa-rich p,.pa-rich ul,.pa-rich ol{margin:0 0 1em}.pa-rich h3{font-family:var(--pa-fh);color:var(--pa-head);font-size:22px;margin:1.4em 0 .5em;text-transform:var(--pa-head-case)}
+.pa-page .pa-title.pa-h{margin:0 0 .45em}.pa-page .pa-rich+.pa-title.pa-h{margin-top:1.1em}
+.pa-page .pa-title.pa-h1{font-size:clamp(34px,5vw,64px);line-height:1.04}.pa-page .pa-title.pa-h2{font-size:clamp(28px,3.6vw,46px);line-height:1.08}
+.pa-page .pa-title.pa-h3{font-size:clamp(23px,2.6vw,32px);line-height:1.15}.pa-page .pa-title.pa-h4{font-size:clamp(20px,2vw,25px);line-height:1.2;letter-spacing:-.01em}
+.pa-page .pa-title.pa-h5{font-size:18px;line-height:1.3;letter-spacing:0}.pa-page .pa-title.pa-h6{font-size:14px;line-height:1.35;letter-spacing:.12em;text-transform:uppercase;color:var(--pa-muted)}
+.pa-rich u{text-decoration:underline;text-underline-offset:.15em}.pa-rich mark,.pa-rich span[style*="background"]{padding:.05em .25em;border-radius:3px;color:inherit}.pa-rich mark{background:color-mix(in srgb,var(--pa-accent) 28%,#fff3a0)}
+.pa-rich em{font-style:italic}.pa-rich h1,.pa-rich h2,.pa-rich h4{font-family:var(--pa-fh);color:var(--pa-head);margin:1.2em 0 .5em}
 .pa-rich ul,.pa-rich ol{padding-left:1.3em}.pa-page .pa-rich ul{list-style:disc}.pa-page .pa-rich ol{list-style:decimal}.pa-rich li{margin:.3em 0}.pa-rich a{color:var(--pa-primary);font-weight:600}.pa-rich strong{color:var(--pa-head)}
 .pa-btns{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}
 .pa-btn{display:inline-flex;align-items:center;gap:8px;padding:14px 24px;border-radius:var(--pa-btn-radius);background:var(--pa-primary);color:var(--pa-on-primary)!important;font-family:var(--pa-fb);font-weight:700;font-size:15px;line-height:1;text-decoration:none;border:2px solid transparent;cursor:pointer;transition:transform .2s,box-shadow .2s,filter .2s;box-shadow:0 10px 26px -12px var(--pa-primary)}
@@ -1521,6 +1749,8 @@ export function pageCss(theme: Theme): string {
 export interface RenderOptions {
   vehicles: InvVehicle[];
   navPages: NavItem[];
+  /** header menu mode + footer columns from Pages & SEO */
+  chrome?: ChromeOpts;
   themePreview?: boolean;
   /** draft preview from Platform Admin: never indexed */
   preview?: boolean;
@@ -1533,7 +1763,9 @@ export function renderCustomPage(ctx: ThemeContext, theme: Theme, page: CustomPa
   const body = renderSections(page.sections, rc);
   const tag = kit.shell.wrapMain ? 'main' : 'div';
   const seo = page.seo || {};
-  const firstText = (page.sections || []).map((b) => b.text || b.intro || b.body || '').find((x) => String(x).trim()) || '';
+  const textOf = (b: Block) =>
+    b.text || b.intro || b.body || (Array.isArray(b.content) ? String((b.content.find((x: any) => x && x.kind === 'text' && x.html) || {}).html || '').replace(/<[^>]*>/g, ' ') : '');
+  const firstText = (page.sections || []).map(textOf).find((x) => String(x).trim()) || '';
   const title = sub(seo.title || `${page.title} | {name}`, t).trim();
   const desc = sub(seo.description || String(firstText).replace(/[*#\[\]()]/g, '').slice(0, 158), t).replace(/\s+/g, ' ').trim();
   const raw: Record<string, string> = {
@@ -1552,5 +1784,5 @@ export function renderCustomPage(ctx: ThemeContext, theme: Theme, page: CustomPa
       '<div style="position:fixed;left:12px;bottom:12px;z-index:99999;background:#1d4ed8;color:#fff;font:600 12px/1 system-ui,sans-serif;padding:9px 12px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.25);pointer-events:none">Draft preview — not published</div>';
   }
   const html = renderPage(ctx, theme, 'index.html', origin, !!opts.themePreview, false, { source: shellSource(theme, kit), path: page.slug, raw });
-  return injectNav(html, theme, opts.navPages, page.slug, t);
+  return injectNav(html, theme, opts.navPages, page.slug, t, opts.chrome);
 }

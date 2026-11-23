@@ -42,6 +42,24 @@ export class SitePagesController {
     return this.pages.saveMenu(b, u);
   }
 
+  /** Footer: ?scope=<dealership id> | all */
+  @Get('footer')
+  footer(@Query('scope') scope: string) {
+    return this.pages.getFooter(scope);
+  }
+
+  /** { scope, columns: [{ id, heading, hidden, links: [{ id, type: page | default | link, slug?, key?, url?, label, newTab }] }] } */
+  @Put('footer')
+  saveFooter(@Body() b: Record<string, unknown>, @CurrentUser() u: AuthUser) {
+    return this.pages.saveFooter(b, u);
+  }
+
+  /** a dealership goes back to the footer for every dealership; "all" goes back to the designs' own footer links */
+  @Delete('footer')
+  resetFooter(@Query('scope') scope: string, @CurrentUser() u: AuthUser) {
+    return this.pages.resetFooter(scope, u);
+  }
+
   /** a dealership goes back to the menu for every dealership; "all" goes back to the automatic menu */
   @Delete('menu')
   resetMenu(@Query('scope') scope: string, @CurrentUser() u: AuthUser) {

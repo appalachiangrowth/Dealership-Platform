@@ -19,6 +19,10 @@ export interface ThemeContext {
   pages?: { slug: string; title: string; navLabel: string; showInNav: boolean; navOrder: number; noindex: boolean }[];
   /** the header menu from Pages & SEO › Header menu: top-level entries and dropdowns (null / missing = automatic from `pages`) */
   menu?: MenuEntry[] | null;
+  /** full = the menu also holds the design's standard pages and replaces the design's own menu links */
+  menuMode?: 'full' | 'append';
+  /** footer link columns from Pages & SEO › Footer (null / missing = the design's own footer links) */
+  footer?: { heading: string; links: { label: string; slug?: string; url?: string; key?: string; newTab?: boolean }[] }[] | null;
   /** alt text / title per uploaded picture (Platform Admin › SEO & URLs › Images) */
   mediaMeta?: Record<string, { a?: string; t?: string }>;
 }
@@ -28,6 +32,8 @@ export interface MenuEntry {
   label: string;
   slug?: string;
   url?: string;
+  /** a standard page of the design (home, inventory, about …) */
+  key?: string;
   children?: MenuEntry[];
 }
 

@@ -256,6 +256,7 @@ model Tenant {
   fbPostRuns         FbPostRun[]
   sitePages          SitePage[]
   siteMenu           SiteMenu?
+  siteFooter         SiteFooter?
   seoPages           SeoPage[]
   seoVehicles        SeoVehicle[]
   seoRedirects       SeoRedirect[]
@@ -877,6 +878,22 @@ model SiteMenu {
   tenantId  String?  @unique
   /// [{ id, type: "page" | "group" | "link", slug?, url?, label, hidden, children: [{ id, type: "page" | "link", … }] }]
   items     Json     @default("[]")
+  updatedBy String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// Platform Admin › Pages & SEO › Footer: the link columns of a website's footer (headings + links to standard pages,
+/// Pages & SEO pages or any address). No row = the design's own footer links. Columns without a heading-and-links
+/// layout in the design (address, opening hours, social icons) are never touched.
+model SiteFooter {
+  id        String   @id @default(uuid())
+  /// null = the footer of every dealership that has no footer of its own
+  tenantId  String?  @unique
+  /// [{ id, heading, hidden, links: [{ id, type: "page" | "default" | "link", slug?, key?, url?, label, newTab }] }]
+  columns   Json     @default("[]")
   updatedBy String   @default("")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

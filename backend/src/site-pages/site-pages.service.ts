@@ -9,6 +9,8 @@ import { UPLOAD_ROOT, sniffImage } from '../media/media.service.js';
 import { clean, randomHex } from '../common/util.js';
 import type { AuthUser } from '../common/auth.types.js';
 import type { Prisma, SitePage } from '../generated/prisma/client.js';
+import { sanitizeRichHtml } from '../posts/rich-html.js';
+import { DEFAULT_BY_KEY, DEFAULT_PAGES, LINK_URL, cleanFooter, resolveFooter, starterFooter, type FooterColumn, type FooterEntry } from './site-nav.js';
 
 /** Section types the website knows (frontend/lib/custom-pages.ts). */
 export const SECTION_TYPES = ['hero', 'header', 'text', 'split', 'cards', 'inventory', 'cta', 'stats', 'testimonials', 'faq', 'gallery', 'form', 'map', 'html', 'spacer'] as const;
@@ -62,9 +64,14 @@ export async function publishedPagesFor(prisma: PrismaService, tenantId: string)
 /** one entry of a website's header menu, as stored (SiteMenu.items) */
 export type MenuItem = {
   id: string;
-  /** page = a custom page (by address) · group = a dropdown title without a page of its own · link = any address */
-  type: 'page' | 'group' | 'link';
+  /**
+   * page = a custom page (by address) · default = a standard page of the design (Home, Inventory, About Us …; its
+   * address is locked) · group = a dropdown title without a page of its own · link = any address
+   */
+  type: 'page' | 'default' | 'group' | 'link';
   slug?: string;
+  /** default pages: home | inventory | used-cars … (site-nav.ts DEFAULT_PAGES) */
+  key?: string;
   url?: string;
   /** menu text; empty = the page's menu text */
   label: string;
@@ -72,24 +79,35 @@ export type MenuItem = {
   /** dropdown entries (top level only): pages and links */
   children?: MenuItem[];
 };
-/** what the website draws: visible entries only, pages resolved */
-export type NavEntry = { label: string; slug?: string; url?: string; children?: NavEntry[] };
+/** what the website draws: visible entries only, pages resolved (key = a standard page of the design) */
+export type NavEntry = { label: string; slug?: string; url?: string; key?: string; children?: NavEntry[] };
+/**
+ * full = the menu holds the standard pages too and replaces the design's own menu links (Pages & SEO manages the
+ * whole header) · append = only extra entries, after the design's own links (menus saved before this existed)
+ */
+export type MenuMode = 'full' | 'append';
+export const menuModeOf = (items: MenuItem[]): MenuMode => (items.some((i) => i.type === 'default' || (i.children || []).some((c) => c.type === 'default')) ? 'full' : 'append');
 
 const MAX_MENU_TOP = 30;
 const MAX_MENU_CHILDREN = 15;
-/** inventory, contact, about, home, category:suvs (they follow the theme), /path, #anchor, https://…, tel:, mailto: */
-const MENU_URL = /^(inventory|contact|about|home|category:[a-z]{2,20}|\/[^\s"'<>]{0,300}|#[A-Za-z0-9_-]{1,60}|https?:\/\/[^\s"'<>]{3,500}|tel:[+0-9 ()-]{3,30}|mailto:[^\s"'<>]{3,200})$/;
+/** inventory, contact, about, home, blog, category:suvs … (they follow the theme), /path, #anchor, https://…, tel:, mailto: */
+const MENU_URL = LINK_URL;
 
 function cleanMenuItem(v: unknown, top: boolean): MenuItem | null {
   if (!v || typeof v !== 'object') return null;
   const o = v as Record<string, unknown>;
-  const type = o.type === 'group' && top ? 'group' : o.type === 'link' ? 'link' : o.type === 'page' ? 'page' : null;
+  const type = o.type === 'group' && top ? 'group' : o.type === 'link' ? 'link' : o.type === 'page' ? 'page' : o.type === 'default' ? 'default' : null;
   if (!type) return null;
   const item: MenuItem = { id: String(o.id || randomHex(6)).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || randomHex(6), type, label: clean(o.label, 40), hidden: !!o.hidden };
   if (type === 'page') {
     const slug = String(o.slug || '').trim().toLowerCase();
     if (!SLUG.test(slug)) return null;
     item.slug = slug;
+  }
+  if (type === 'default') {
+    const key = String(o.key || '');
+    if (!DEFAULT_BY_KEY.has(key)) return null;
+    item.key = key;
   }
   if (type === 'link') {
     const url = String(o.url || '').trim();
@@ -107,11 +125,19 @@ function cleanMenuItem(v: unknown, top: boolean): MenuItem | null {
   return item;
 }
 
-/** the stored menu: two levels (top level + dropdown entries), known types, safe links */
+/** the stored menu: two levels (top level + dropdown entries), known types, safe links, each standard page once */
 export function cleanMenu(v: unknown): MenuItem[] {
   if (!Array.isArray(v)) throw new BadRequestException('The menu must be a list');
   if (v.length > MAX_MENU_TOP) throw new BadRequestException(`The menu can have at most ${MAX_MENU_TOP} top-level entries.`);
-  return v.map((x) => cleanMenuItem(x, true)).filter((x): x is MenuItem => !!x);
+  const items = v.map((x) => cleanMenuItem(x, true)).filter((x): x is MenuItem => !!x);
+  const seen = new Set<string>();
+  const once = (it: MenuItem) => (it.type !== 'default' ? true : seen.has(it.key!) ? false : (seen.add(it.key!), true));
+  return items.filter(once).map((it) => (it.children ? { ...it, children: it.children.filter(once) } : it));
+}
+
+/** the standard pages, in the order most designs show them (the ones designs do not show in the header are hidden) */
+export function defaultMenuItems(): MenuItem[] {
+  return DEFAULT_PAGES.map((d) => ({ id: randomHex(6), type: 'default' as const, key: d.key, label: '', hidden: !d.menu }));
 }
 
 type PublishedPage = Awaited<ReturnType<typeof publishedPagesFor>>[number];
@@ -135,6 +161,10 @@ export function resolveMenu(items: MenuItem[] | null, pages: PublishedPage[]): N
       return p ? { label: it.label || p.navLabel || p.title, slug: p.slug } : null;
     }
     if (it.type === 'link') return it.url ? { label: it.label, url: it.url } : null;
+    if (it.type === 'default') {
+      const d = DEFAULT_BY_KEY.get(it.key || '');
+      return d ? { label: it.label || d.label, url: d.url, key: d.key } : null;
+    }
     return { label: it.label };
   };
   const out: NavEntry[] = [];
@@ -144,7 +174,7 @@ export function resolveMenu(items: MenuItem[] | null, pages: PublishedPage[]): N
     const children = it.hidden ? [] : (it.children || []).map(one).filter((c): c is NavEntry => !!c);
     if (!e) {
       // an unpublished page that holds a dropdown: keep the dropdown under the page's menu text
-      if (!it.hidden && it.type === 'page' && children.length) out.push({ label: it.label || it.slug || 'Menu', children });
+      if (!it.hidden && (it.type === 'page' || it.type === 'default') && children.length) out.push({ label: it.label || it.slug || 'Menu', children });
       continue;
     }
     if (children.length) e.children = children;
@@ -161,15 +191,64 @@ async function storedMenu(prisma: PrismaService, tenantId: string | null) {
 
 /** the header menu for a dealership's website (null = automatic) */
 export async function publishedMenuFor(prisma: PrismaService, tenantId: string, pages: PublishedPage[]): Promise<NavEntry[] | null> {
+  return (await publishedNavFor(prisma, tenantId, pages)).menu;
+}
+
+async function storedFooter(prisma: PrismaService, tenantId: string | null) {
+  return prisma.siteFooter.findFirst({ where: { tenantId } });
+}
+
+/**
+ * Header menu + footer for a dealership's website: its own, otherwise the ones for every dealership.
+ * menu null = automatic (custom pages after the design's links) · footer null = the design's own footer links.
+ */
+export async function publishedNavFor(
+  prisma: PrismaService,
+  tenantId: string,
+  pages: PublishedPage[],
+): Promise<{ menu: NavEntry[] | null; menuMode: MenuMode; footer: FooterEntry[] | null }> {
   const row = (await storedMenu(prisma, tenantId)) ?? (await storedMenu(prisma, null));
-  if (!row) return null;
-  let items: MenuItem[];
-  try {
-    items = cleanMenu(row.items);
-  } catch {
-    return null;
+  let menu: NavEntry[] | null = null;
+  let menuMode: MenuMode = 'append';
+  if (row) {
+    try {
+      const items = cleanMenu(row.items);
+      menu = resolveMenu(items, pages);
+      menuMode = menuModeOf(items);
+    } catch {
+      menu = null;
+    }
   }
-  return resolveMenu(items, pages);
+  let footer: FooterEntry[] | null = null;
+  try {
+    const f = (await storedFooter(prisma, tenantId)) ?? (await storedFooter(prisma, null));
+    if (f) footer = resolveFooter(cleanFooter(f.columns), pages);
+  } catch {
+    footer = null;
+  }
+  return { menu, menuMode, footer };
+}
+
+/* ───────────── Text / Picture & Text: headings (H1–H6) + rich text ───────────── */
+
+const HEADING_LEVELS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
+
+/**
+ * content = [{ kind: "heading", level: "h1"…"h6", text } | { kind: "text", html }] — the headings and formatted text
+ * of a Text or Picture & Text section (sections saved before keep title + body and are shown as before).
+ * The formatted text is cleaned like a blog article (bold, italic, underline, highlight, lists, links …).
+ */
+function cleanContent(v: unknown): Record<string, unknown>[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v
+    .slice(0, 60)
+    .filter((x) => x && typeof x === 'object')
+    .map((x) => {
+      const o = x as Record<string, unknown>;
+      const id = String(o.id || randomHex(6)).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || randomHex(6);
+      if (o.kind === 'heading') return { id, kind: 'heading', level: HEADING_LEVELS.has(String(o.level)) ? String(o.level) : 'h2', text: clean(o.text, 300) };
+      return { id, kind: 'text', html: sanitizeRichHtml(o.html, 60_000) };
+    });
 }
 
 /** keeps the section list a list of plain objects with a known type (texts are escaped by the website) */
@@ -178,7 +257,15 @@ function cleanSections(v: unknown): Prisma.InputJsonValue {
   if (v.length > 80) throw new BadRequestException('A page can have at most 80 sections');
   const out = v
     .filter((s) => s && typeof s === 'object' && (SECTION_TYPES as readonly string[]).includes(String((s as { type?: unknown }).type)))
-    .map((s) => ({ ...(s as Record<string, unknown>), id: String((s as { id?: unknown }).id || randomHex(6)).slice(0, 40) }));
+    .map((s) => {
+      const o: Record<string, unknown> = { ...(s as Record<string, unknown>), id: String((s as { id?: unknown }).id || randomHex(6)).slice(0, 40) };
+      if ((o.type === 'text' || o.type === 'split') && 'content' in o) {
+        const content = cleanContent(o.content);
+        if (content) o.content = content;
+        else delete o.content;
+      }
+      return o;
+    });
   const json = JSON.stringify(out);
   if (json.length > MAX_JSON) throw new BadRequestException('This page is too large. Split it into two pages.');
   return JSON.parse(json) as Prisma.InputJsonValue;
@@ -392,9 +479,17 @@ export class SitePagesService {
     return [...bySlug.values()].sort((a, b) => a.navOrder - b.navOrder || a.title.localeCompare(b.title));
   }
 
-  /** the automatic menu (no menu saved): published pages with "Show in the menu", by order */
+  /**
+   * the menu an admin starts from when nothing is saved: the design's standard pages (Home, Inventory, About Us, Blog,
+   * Contact Us shown; Used Cars …, Financing, Trade-In hidden), then the published pages with "Show in the menu".
+   * Until it is saved the website keeps the automatic menu.
+   */
   private automatic(pages: { slug: string; showInNav: boolean; status: string }[]): MenuItem[] {
-    return pages.filter((p) => p.status === 'PUBLISHED' && p.showInNav).map((p) => ({ id: randomHex(6), type: 'page' as const, slug: p.slug, label: '', hidden: false }));
+    const own = new Set(pages.map((p) => p.slug));
+    const defaults = defaultMenuItems().filter((d) => !own.has(d.key!)); // a Pages & SEO page /financing is the Financing entry
+    const custom = pages.filter((p) => p.status === 'PUBLISHED' && p.showInNav).map((p) => ({ id: randomHex(6), type: 'page' as const, slug: p.slug, label: '', hidden: false }));
+    const contact = defaults.findIndex((d) => d.key === 'contact');
+    return [...defaults.slice(0, contact), ...custom, ...defaults.slice(contact)];
   }
 
   /**
@@ -418,6 +513,10 @@ export class SitePagesService {
       source: own ? 'own' : shared ? 'shared' : 'automatic',
       updatedAt: own?.updatedAt ?? null,
       updatedBy: own?.updatedBy ?? '',
+      /** full = replaces the design's own menu links · append = after them (a menu saved before standard pages existed) */
+      mode: menuModeOf(items),
+      /** the standard pages a menu can hold (locked addresses) */
+      defaults: DEFAULT_PAGES.map((d) => ({ key: d.key, label: d.label, url: d.url })),
       items,
       pages: pages.map((p) => ({ id: p.id, slug: p.slug, title: p.title, navLabel: p.navLabel || p.title, showInNav: p.showInNav, status: p.status, shared: !p.tenantId })),
       /** what the website shows right now (published pages only) */
@@ -443,6 +542,54 @@ export class SitePagesService {
     return this.getMenu(tenantId || 'all');
   }
 
+  /* ───────────── footer ───────────── */
+
+  /**
+   * ?scope=<dealership id> | all — the footer to edit. Nothing saved = the design's own footer links on the website;
+   * the editor then starts from a ready-made footer (Quick Links, Company, Legal) that is fully editable.
+   */
+  async getFooter(scopeId: unknown) {
+    const tenantId = await this.scope(scopeId);
+    const pages = await this.menuPages(tenantId);
+    const own = await storedFooter(this.prisma, tenantId);
+    const shared = tenantId ? await storedFooter(this.prisma, null) : null;
+    const from = own ?? shared;
+    let columns: FooterColumn[];
+    try {
+      columns = from ? cleanFooter(from.columns) : starterFooter(pages.filter((p) => p.status === 'PUBLISHED'));
+    } catch {
+      columns = starterFooter(pages.filter((p) => p.status === 'PUBLISHED'));
+    }
+    return {
+      scope: tenantId || 'all',
+      /** own / shared = the website shows these columns · design = nothing saved, the design's own footer links */
+      source: own ? 'own' : shared ? 'shared' : 'design',
+      updatedAt: own?.updatedAt ?? null,
+      updatedBy: own?.updatedBy ?? '',
+      columns,
+      defaults: DEFAULT_PAGES.map((d) => ({ key: d.key, label: d.label, url: d.url })),
+      pages: pages.map((p) => ({ id: p.id, slug: p.slug, title: p.title, status: p.status, shared: !p.tenantId })),
+    };
+  }
+
+  async saveFooter(b: Record<string, unknown>, u: AuthUser) {
+    const tenantId = await this.scope(b.scope);
+    const columns = cleanFooter(b.columns) as unknown as Prisma.InputJsonValue;
+    const cur = await storedFooter(this.prisma, tenantId);
+    if (cur) await this.prisma.siteFooter.update({ where: { id: cur.id }, data: { columns, updatedBy: u.login } });
+    else await this.prisma.siteFooter.create({ data: { tenantId, columns, updatedBy: u.login } });
+    await this.audit.record('footer.save', { tenantId, actor: u.login, detail: { scope: tenantId || 'all' } });
+    return this.getFooter(tenantId || 'all');
+  }
+
+  /** back to the footer for every dealership (a dealership) or to the design's own footer links (every dealership) */
+  async resetFooter(scopeId: unknown, u: AuthUser) {
+    const tenantId = await this.scope(scopeId);
+    await this.prisma.siteFooter.deleteMany({ where: { tenantId } });
+    await this.audit.record('footer.reset', { tenantId, actor: u.login, detail: { scope: tenantId || 'all' } });
+    return this.getFooter(tenantId || 'all');
+  }
+
   /** a page's address changed: menus that link to it follow */
   private async renameInMenus(from: string, to: string) {
     const rows = await this.prisma.siteMenu.findMany({ select: { id: true, items: true } });
@@ -451,6 +598,16 @@ export class SitePagesService {
       if (!json.includes(`"slug":"${from}"`)) continue;
       const fix = (list: unknown): unknown => (Array.isArray(list) ? list.map((x) => (x && typeof x === 'object' ? { ...(x as object), ...((x as MenuItem).slug === from ? { slug: to } : {}), ...((x as MenuItem).children ? { children: fix((x as MenuItem).children) } : {}) } : x)) : list);
       await this.prisma.siteMenu.update({ where: { id: r.id }, data: { items: fix(r.items) as Prisma.InputJsonValue } });
+    }
+    const footers = await this.prisma.siteFooter.findMany({ select: { id: true, columns: true } });
+    for (const f of footers) {
+      if (!JSON.stringify(f.columns).includes(`"slug":"${from}"`)) continue;
+      const cols = (Array.isArray(f.columns) ? f.columns : []).map((c) =>
+        c && typeof c === 'object' && Array.isArray((c as { links?: unknown }).links)
+          ? { ...(c as object), links: ((c as { links: { slug?: string }[] }).links).map((l) => (l && l.slug === from ? { ...l, slug: to } : l)) }
+          : c,
+      );
+      await this.prisma.siteFooter.update({ where: { id: f.id }, data: { columns: cols as Prisma.InputJsonValue } });
     }
   }
 

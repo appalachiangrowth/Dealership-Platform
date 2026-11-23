@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronDown, CornerDownRight, CornerUpLeft, Eye, EyeOff, FolderPlus, Link2, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, CornerDownRight, CornerUpLeft, Eye, EyeOff, FolderPlus, Link2, Lock, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { MENU_LINKS, newId, type MenuItem } from '@/lib/page-sections';
+import { MENU_LINKS, newId, type DefaultPage, type MenuItem } from '@/lib/page-sections';
 import { useToast } from './toast';
 import { Badge, Button, Card, Field, Input, Loading, Modal, Select, ErrorBox, cx } from './ui';
 
@@ -13,9 +13,25 @@ type MenuData = {
   source: 'own' | 'shared' | 'automatic';
   updatedAt: string | null;
   updatedBy: string;
+  /** full = Pages & SEO manages the whole header (standard pages included) · append = after the design's own links */
+  mode: 'full' | 'append';
+  defaults: DefaultPage[];
   items: MenuItem[];
   pages: MenuPage[];
 };
+
+/** standard pages most designs show in their header (the others start hidden) */
+const SHOWN_BY_DEFAULT = new Set(['home', 'inventory', 'about', 'blog', 'contact']);
+
+/** every standard page the menu holds (top level + dropdowns) */
+function defaultsIn(items: MenuItem[]): Set<string> {
+  const out = new Set<string>();
+  for (const it of items) {
+    if (it.type === 'default' && it.key) out.add(it.key);
+    for (const c of it.children || []) if (c.type === 'default' && c.key) out.add(c.key);
+  }
+  return out;
+}
 
 const MAX_CHILDREN = 15;
 
@@ -30,9 +46,9 @@ function mentioned(items: MenuItem[]): Set<string> {
 }
 
 /** what the website will show: visible entries, published pages only, then published "Show in menu" pages not placed yet */
-function preview(items: MenuItem[], pages: MenuPage[]) {
+function preview(items: MenuItem[], pages: MenuPage[], defaults: Map<string, DefaultPage>) {
   const live = new Map(pages.filter((p) => p.status === 'PUBLISHED').map((p) => [p.slug, p]));
-  const label = (it: MenuItem) => it.label || (it.slug ? live.get(it.slug)?.navLabel : '') || it.slug || '';
+  const label = (it: MenuItem) => it.label || (it.slug ? live.get(it.slug)?.navLabel : '') || (it.key ? defaults.get(it.key)?.label : '') || it.slug || '';
   const show = (it: MenuItem) => !it.hidden && (it.type !== 'page' || live.has(it.slug || ''));
   const out: { label: string; children: string[] }[] = [];
   for (const it of items) {
@@ -82,7 +98,29 @@ export function MenuBuilder({ scope, scopeName }: { scope: string; scopeName: st
   const bySlug = useMemo(() => new Map(pages.map((p) => [p.slug, p])), [pages]);
   const used = useMemo(() => mentioned(items), [items]);
   const notPlaced = pages.filter((p) => !used.has(p.slug));
-  const live = useMemo(() => preview(items, pages), [items, pages]);
+  const defaults = useMemo(() => new Map((data?.defaults || []).map((d) => [d.key, d])), [data]);
+  const live = useMemo(() => preview(items, pages, defaults), [items, pages, defaults]);
+  const placedDefaults = useMemo(() => defaultsIn(items), [items]);
+  const full = placedDefaults.size > 0;
+  const missingDefaults = (data?.defaults || []).filter((d) => !placedDefaults.has(d.key));
+  const defaultItem = (d: DefaultPage): MenuItem => ({ id: newId(), type: 'default', key: d.key, label: '', hidden: !SHOWN_BY_DEFAULT.has(d.key) });
+  /** append menu → Pages & SEO manages the whole header: the standard pages go first, in the designs' usual order */
+  const takeOver = () => {
+    const own = new Set(pages.map((p) => p.slug));
+    const add = (data?.defaults || []).filter((d) => !placedDefaults.has(d.key) && !own.has(d.key)).map(defaultItem);
+    const contact = add.findIndex((d) => d.key === 'contact');
+    update(contact >= 0 ? [...add.slice(0, contact), ...items, ...add.slice(contact)] : [...add, ...items]);
+  };
+  /** back to adding entries after the design's own links: standard pages leave the menu (their dropdown entries stay) */
+  const giveBack = () => {
+    const out: MenuItem[] = [];
+    for (const it of items) {
+      const kids = (it.children || []).filter((c) => c.type !== 'default');
+      if (it.type === 'default') out.push(...kids);
+      else out.push(it.children ? { ...it, children: kids } : it);
+    }
+    update(out);
+  };
 
   const update = (list: MenuItem[]) => {
     setItems(list);
@@ -164,6 +202,12 @@ export function MenuBuilder({ scope, scopeName }: { scope: string; scopeName: st
 
   const pageLine = (it: MenuItem) => {
     if (it.type === 'group') return <span className="text-slate-500">Dropdown title — no page of its own</span>;
+    if (it.type === 'default')
+      return (
+        <span className="inline-flex items-center gap-1 text-slate-500">
+          <Lock className="h-3 w-3" /> Standard page of the design · address locked ({defaults.get(it.key || '')?.label || it.key})
+        </span>
+      );
     if (it.type === 'link') return <span className="font-mono text-slate-500">{it.url}</span>;
     const p = bySlug.get(it.slug || '');
     if (!p) return <span className="text-red-600">/{it.slug} — page not found (skipped on the website)</span>;
@@ -191,6 +235,8 @@ export function MenuBuilder({ scope, scopeName }: { scope: string; scopeName: st
                 ? 'Right now the website lists every published page with "Show in the website menu", in their order. Arrange them below and save to take control.'
                 : data.source === 'shared'
                   ? `${scopeName} has no menu of its own and shows the menu for every dealership. Saving here gives it its own menu.`
+                  : full
+                  ? `Replaces the theme's own menu links on desktop and mobile — the whole header comes from here, styled like the theme.${data.updatedBy ? ` Last saved by ${data.updatedBy}.` : ''}`
                   : `Appears after the theme's own links (Home, Inventory …) on desktop and mobile, styled like the theme.${data.updatedBy ? ` Last saved by ${data.updatedBy}.` : ''}`}
             </p>
           </div>
@@ -211,11 +257,33 @@ export function MenuBuilder({ scope, scopeName }: { scope: string; scopeName: st
           </div>
         </div>
 
+        {!full ? (
+          <div className="flex flex-wrap items-center gap-3 border-b border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="min-w-0 flex-1">
+              <b>The theme&apos;s own links stay in front.</b> To move, nest or hide Home, Inventory, About Us … too, let this menu manage the whole header.
+            </div>
+            <Button size="sm" variant="secondary" onClick={takeOver}>
+              Manage the whole header menu
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-emerald-50/60 px-4 py-2 text-xs text-emerald-900">
+            <span className="min-w-0 flex-1">
+              Standard pages (<Lock className="-mt-0.5 inline h-3 w-3" /> locked address) can be renamed, moved, put into dropdowns or hidden — not deleted.
+            </span>
+            <button type="button" onClick={giveBack} className="font-semibold text-emerald-800 underline hover:text-emerald-950">
+              Only add entries after the theme&apos;s links instead
+            </button>
+          </div>
+        )}
+
         {/* live preview of the header */}
         <div className="border-b border-slate-100 bg-slate-900 px-4 py-3">
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Website header preview (after the theme&apos;s own links)</div>
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+            Website header preview{full ? '' : " (after the theme's own links)"}
+          </div>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-white/90">
-            <span className="text-white/40">Home · Inventory · …</span>
+            {!full && <span className="text-white/40">Home · Inventory · …</span>}
             {live.length ? (
               live.map((e, i) => (
                 <span key={i} className="group relative inline-flex items-center gap-1">
@@ -247,16 +315,16 @@ export function MenuBuilder({ scope, scopeName }: { scope: string; scopeName: st
             <div key={it.id} className={cx('rounded-xl border bg-white', it.hidden ? 'border-dashed border-slate-300 opacity-60' : 'border-slate-200')}>
               <Row
                 item={it}
-                placeholder={it.type === 'page' ? bySlug.get(it.slug || '')?.navLabel || it.slug || '' : it.type === 'group' ? 'Dropdown title' : 'Menu text'}
+                placeholder={it.type === 'page' ? bySlug.get(it.slug || '')?.navLabel || it.slug || '' : it.type === 'default' ? defaults.get(it.key || '')?.label || '' : it.type === 'group' ? 'Dropdown title' : 'Menu text'}
                 line={pageLine(it)}
                 onLabel={(v) => patchTop(i, { label: v })}
                 onHide={() => patchTop(i, { hidden: !it.hidden })}
                 onUp={i > 0 ? () => update(swap(items, i, i - 1)) : undefined}
                 onDown={i < items.length - 1 ? () => update(swap(items, i, i + 1)) : undefined}
                 onIndent={i > 0 && it.type !== 'group' && !(it.children || []).length ? () => indent(i) : undefined}
-                onRemove={() => update(items.filter((_, j) => j !== i))}
-                removeTitle={(it.children || []).length ? 'Remove (its dropdown entries move to the top level)' : 'Remove from the menu'}
-                onRemoveKeepKids={(it.children || []).length ? () => update([...items.slice(0, i), ...(it.children || []), ...items.slice(i + 1)]) : undefined}
+                onRemove={it.type === 'default' ? undefined : () => update(items.filter((_, j) => j !== i))}
+                removeTitle={it.type === 'default' ? 'Standard pages can be hidden, not removed' : (it.children || []).length ? 'Remove (its dropdown entries move to the top level)' : 'Remove from the menu'}
+                onRemoveKeepKids={it.type !== 'default' && (it.children || []).length ? () => update([...items.slice(0, i), ...(it.children || []), ...items.slice(i + 1)]) : undefined}
               />
               {(it.type === 'group' || !!(it.children || []).length) && (
                 <div className="space-y-1.5 border-t border-slate-100 bg-slate-50/70 px-3 py-2.5 pl-8">
@@ -265,15 +333,15 @@ export function MenuBuilder({ scope, scopeName }: { scope: string; scopeName: st
                       <Row
                         small
                         item={c}
-                        placeholder={c.type === 'page' ? bySlug.get(c.slug || '')?.navLabel || c.slug || '' : 'Menu text'}
+                        placeholder={c.type === 'page' ? bySlug.get(c.slug || '')?.navLabel || c.slug || '' : c.type === 'default' ? defaults.get(c.key || '')?.label || '' : 'Menu text'}
                         line={pageLine(c)}
                         onLabel={(v) => patchChild(i, k, { label: v })}
                         onHide={() => patchChild(i, k, { hidden: !c.hidden })}
                         onUp={k > 0 ? () => patchTop(i, { children: swap(it.children!, k, k - 1) }) : undefined}
                         onDown={k < it.children!.length - 1 ? () => patchTop(i, { children: swap(it.children!, k, k + 1) }) : undefined}
                         onOutdent={() => outdent(i, k)}
-                        onRemove={() => patchTop(i, { children: it.children!.filter((_, x) => x !== k) })}
-                        removeTitle="Remove from the menu"
+                        onRemove={c.type === 'default' ? undefined : () => patchTop(i, { children: it.children!.filter((_, x) => x !== k) })}
+                        removeTitle={c.type === 'default' ? 'Standard pages can be hidden, not removed' : 'Remove from the menu'}
                       />
                     </div>
                   ))}
@@ -314,6 +382,18 @@ export function MenuBuilder({ scope, scopeName }: { scope: string; scopeName: st
           <span className="ml-auto text-xs text-slate-500">Tip: ↳ puts an entry into the dropdown of the entry above it — any page can hold a dropdown.</span>
         </div>
       </Card>
+
+      {full && !!missingDefaults.length && (
+        <Card title="Standard pages not in the menu" className="self-start">
+          <div className="flex flex-wrap gap-2">
+            {missingDefaults.map((d) => (
+              <Button key={d.key} size="sm" variant="secondary" onClick={() => update([...items, { ...defaultItem(d), hidden: false }])}>
+                <Plus className="h-3.5 w-3.5" /> {d.label}
+              </Button>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card title="Pages not in the menu" className="self-start">
         {!notPlaced.length ? (
@@ -400,12 +480,17 @@ function Row({
 }: {
   item: MenuItem; placeholder: string; line: React.ReactNode; small?: boolean;
   onLabel: (v: string) => void; onHide: () => void; onUp?: () => void; onDown?: () => void; onIndent?: () => void; onOutdent?: () => void;
-  onRemove: () => void; removeTitle: string; onRemoveKeepKids?: () => void;
+  onRemove?: () => void; removeTitle: string; onRemoveKeepKids?: () => void;
 }) {
-  const kind = item.type === 'group' ? 'Dropdown' : item.type === 'link' ? 'Link' : 'Page';
+  const kind = item.type === 'group' ? 'Dropdown' : item.type === 'link' ? 'Link' : item.type === 'default' ? 'Default' : 'Page';
   return (
     <div className={cx('flex items-center gap-2', small ? 'px-2.5 py-1.5' : 'px-3 py-2.5')}>
-      <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide', item.type === 'group' ? 'bg-violet-100 text-violet-700' : item.type === 'link' ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-600')}>
+      <span
+        className={cx(
+          'shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+          item.type === 'group' ? 'bg-violet-100 text-violet-700' : item.type === 'link' ? 'bg-sky-100 text-sky-700' : item.type === 'default' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600',
+        )}
+      >
         {kind}
       </span>
       <div className="min-w-0 flex-1">

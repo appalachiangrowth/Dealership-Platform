@@ -56,15 +56,34 @@ export const SECTION_DEFS: SectionDef[] = [
     type: 'text',
     label: 'Text',
     icon: '📝',
-    desc: 'A heading with paragraphs, lists and links.',
-    make: () => ({ type: 'text', eyebrow: '', title: 'Section heading', body: 'Write your text here.\n\n- Use a dash for a list\n- **Bold** and *italic* work too\n\n[Link text](contact)', width: 'narrow', align: 'left' }),
+    desc: 'Headings (H1–H6) with formatted text: bold, italic, underline, highlight, lists and links.',
+    make: () => ({
+      type: 'text',
+      eyebrow: '',
+      content: [
+        { id: newId(), kind: 'heading', level: 'h2', text: 'Section heading' },
+        { id: newId(), kind: 'text', html: '<p>Write your text here. Use the toolbar for <strong>bold</strong>, <em>italic</em>, lists and links.</p>' },
+      ],
+      width: 'narrow',
+      align: 'left',
+    }),
   },
   {
     type: 'split',
     label: 'Picture + text',
     icon: '🖼️',
-    desc: 'Text next to a picture (picture left or right).',
-    make: () => ({ type: 'split', eyebrow: '', title: 'Why choose {name}', body: 'Tell your story here.', image: '', imageSide: 'right', buttons: [{ label: 'Contact us', link: 'contact' }] }),
+    desc: 'Headings and formatted text next to a picture (picture left or right).',
+    make: () => ({
+      type: 'split',
+      eyebrow: '',
+      content: [
+        { id: newId(), kind: 'heading', level: 'h2', text: 'Why choose {name}' },
+        { id: newId(), kind: 'text', html: '<p>Tell your story here.</p>' },
+      ],
+      image: '',
+      imageSide: 'right',
+      buttons: [{ label: 'Contact us', link: 'contact' }],
+    }),
   },
   {
     type: 'cards',
@@ -192,13 +211,83 @@ export const MENU_LINKS: [string, string][] = [
 /** one entry of a website's header menu (Pages & SEO › Header menu) */
 export type MenuItem = {
   id: string;
-  type: 'page' | 'group' | 'link';
+  /** default = a standard page of the design (Home, Inventory …): its address is locked */
+  type: 'page' | 'default' | 'group' | 'link';
   slug?: string;
+  /** default pages: home | inventory | used-cars … */
+  key?: string;
   url?: string;
   label: string;
   hidden: boolean;
   children?: MenuItem[];
 };
+
+/** a standard page of the design (from the API: key, label, quick link) */
+export type DefaultPage = { key: string; label: string; url: string };
+
+/** one footer link (Pages & SEO › Footer) */
+export type FooterLink = {
+  id: string;
+  type: 'page' | 'default' | 'link';
+  slug?: string;
+  key?: string;
+  url?: string;
+  label: string;
+  newTab: boolean;
+};
+/** one footer column: heading + links */
+export type FooterColumn = { id: string; heading: string; hidden: boolean; links: FooterLink[] };
+
+/** Text / Picture & Text content: headings (H1–H6) and formatted text, in order */
+export type ContentBlock = { id: string; kind: 'heading'; level: string; text: string } | { id: string; kind: 'text'; html: string };
+
+const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** quick link of an old section ("contact", "category:suvs") → the link form of the rich text ("#pa:contact") */
+export const quickHref = (u: string) => (/^(inventory|contact|about|home|call|email|directions|category:[a-z]+)$/.test(u) ? `#pa:${u}` : u);
+
+/**
+ * The simple formatting of sections saved before (paragraphs, "- " lists, "## " headings, **bold**, *italic*,
+ * [text](link)) as formatted text, so an old section opens in the new editor looking the same.
+ */
+export function markdownToHtml(src: string): string {
+  const inline = (s: string) =>
+    escHtml(s)
+      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+      .replace(/\[([^\]\n]{1,200})\]\(([^)\s]{1,500})\)/g, (_m, label: string, url: string) => {
+        const href = quickHref(url.replace(/&amp;/g, '&'));
+        return `<a href="${escHtml(href)}"${/^https?:/i.test(href) ? ' target="_blank"' : ''}>${label}</a>`;
+      });
+  return String(src || '')
+    .replace(/\r\n?/g, '\n')
+    .trim()
+    .split(/\n{2,}/)
+    .filter((b) => b.trim())
+    .map((b) => {
+      const lines = b.split('\n');
+      if (lines.every((l) => /^\s*[-•*]\s+/.test(l))) return '<ul>' + lines.map((l) => `<li>${inline(l.replace(/^\s*[-•*]\s+/, ''))}</li>`).join('') + '</ul>';
+      if (lines.every((l) => /^\s*\d+[.)]\s+/.test(l))) return '<ol>' + lines.map((l) => `<li>${inline(l.replace(/^\s*\d+[.)]\s+/, ''))}</li>`).join('') + '</ol>';
+      return lines
+        .map((l) => {
+          const hd = l.match(/^\s*#{2,3}\s+(.+)$/);
+          return hd ? `<h3>${inline(hd[1])}</h3>` : `<p>${inline(l)}</p>`;
+        })
+        .join('');
+    })
+    .join('');
+}
+
+/** the headings + text of a Text / Picture & Text section (an old section: its heading + text, converted) */
+export function contentOf(s: Section): ContentBlock[] {
+  if (Array.isArray(s.content)) return s.content as ContentBlock[];
+  // ids from the section's own id: stable across renders until the first change saves the blocks
+  const out: ContentBlock[] = [];
+  if (s.title) out.push({ id: `${s.id}h`, kind: 'heading', level: 'h2', text: String(s.title) });
+  if (s.body) out.push({ id: `${s.id}t`, kind: 'text', html: markdownToHtml(String(s.body)) });
+  if (!out.length) out.push({ id: `${s.id}t`, kind: 'text', html: '' });
+  return out;
+}
 
 export const CATEGORIES: [string, string][] = [
   ['', 'All body styles'],

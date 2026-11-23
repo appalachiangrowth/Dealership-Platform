@@ -1,9 +1,10 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronDown, Copy, ImagePlus, Plus, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, Copy, Heading as HeadingIcon, ImagePlus, Pilcrow, Plus, Trash2, X } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
-import { CATEGORIES, DEF, LINKS, TONES, newId, type Section } from '@/lib/page-sections';
+import { CATEGORIES, DEF, LINKS, TONES, contentOf, newId, type ContentBlock, type Section } from '@/lib/page-sections';
+import { RichText } from './RichText';
 import { useToast } from './toast';
 import { Button, Field, Input, Select, Spinner, Textarea, Toggle, cx } from './ui';
 
@@ -259,6 +260,91 @@ function Heading({ s, set, intro = true }: { s: Section; set: SetFn; intro?: boo
   );
 }
 
+/**
+ * Text / Picture & Text: any number of headings (H1–H6, each with its own level) and formatted-text boxes, in any
+ * order. A section saved before (one heading + simple text) opens converted and is saved in the new form on the
+ * first change; until then the website shows it exactly as before.
+ */
+const LEVELS: [string, string][] = [
+  ['h1', 'H1 — page title'],
+  ['h2', 'H2 — section'],
+  ['h3', 'H3'],
+  ['h4', 'H4'],
+  ['h5', 'H5'],
+  ['h6', 'H6 — small'],
+];
+
+function ContentFields({ s, set }: { s: Section; set: SetFn }) {
+  const blocks = contentOf(s);
+  const save = (list: ContentBlock[]) => set({ content: list, title: undefined, body: undefined });
+  const patch = (i: number, p: Partial<ContentBlock>) => save(blocks.map((b, j) => (j === i ? ({ ...b, ...p } as ContentBlock) : b)));
+  const move = (i: number, d: number) => {
+    const j = i + d;
+    if (j < 0 || j >= blocks.length) return;
+    const n = [...blocks];
+    [n[i], n[j]] = [n[j], n[i]];
+    save(n);
+  };
+  const add = (kind: 'heading' | 'text') =>
+    save([...blocks, kind === 'heading' ? { id: newId(), kind, level: blocks.some((b) => b.kind === 'heading') ? 'h3' : 'h2', text: '' } : { id: newId(), kind, html: '' }]);
+  const tools = (i: number) => (
+    <div className="flex shrink-0 items-center">
+      <button type="button" title="Move up" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-25">
+        <ArrowUp className="h-4 w-4" />
+      </button>
+      <button type="button" title="Move down" aria-label="Move down" disabled={i === blocks.length - 1} onClick={() => move(i, 1)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-25">
+        <ArrowDown className="h-4 w-4" />
+      </button>
+      <button type="button" title="Delete" aria-label="Delete" onClick={() => save(blocks.filter((_, j) => j !== i))} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600">
+        <Trash2 className="h-4 w-4" />
+      </button>
+    </div>
+  );
+  return (
+    <div className="space-y-2">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Headings &amp; text</div>
+      {!Array.isArray(s.content) && (s.title || s.body) && (
+        <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">This section was made with the older editor. It is shown below in the new editor and saved in the new form when you change it.</p>
+      )}
+      {blocks.map((b, i) =>
+        b.kind === 'heading' ? (
+          <div key={b.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2">
+            <HeadingIcon className="h-4 w-4 shrink-0 text-slate-400" />
+            <Select value={b.level} onChange={(e) => patch(i, { level: e.target.value })} className="w-36 shrink-0 py-1.5 text-xs" aria-label="Heading level">
+              {LEVELS.map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </Select>
+            <Input value={b.text} onChange={(e) => patch(i, { text: e.target.value.slice(0, 300) })} placeholder="Heading text — *stars* show a word in the brand colour" className="min-w-0 flex-1" />
+            {tools(i)}
+          </div>
+        ) : (
+          <div key={b.id} className="rounded-lg border border-slate-200 bg-slate-50/60 p-2">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500">
+                <Pilcrow className="h-3.5 w-3.5" /> Text
+              </span>
+              {tools(i)}
+            </div>
+            <RichText value={b.html} onChange={(html) => patch(i, { html })} />
+          </div>
+        ),
+      )}
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Button variant="secondary" size="sm" onClick={() => add('heading')} disabled={blocks.length >= 60}>
+          <Plus className="h-3.5 w-3.5" /> Add heading
+        </Button>
+        <Button variant="secondary" size="sm" onClick={() => add('text')} disabled={blocks.length >= 60}>
+          <Plus className="h-3.5 w-3.5" /> Add text
+        </Button>
+        <span className="self-center text-xs text-slate-500">Values like {'{name}'} and {'{phone}'} work in headings and text.</span>
+      </div>
+    </div>
+  );
+}
+
 /** a colour: picker + text box (#hex, rgb(), or a theme variable like var(--color-primary)) */
 function ColorField({ label, value, onChange, hint }: { label: string; value: string; onChange: (v: string) => void; hint?: string }) {
   const hex = /^#[0-9a-f]{6}$/i.test(value || '') ? value : '#000000';
@@ -376,8 +462,8 @@ function Fields({ s, set }: { s: Section; set: SetFn }) {
     case 'text':
       return (
         <>
-          <Heading s={s} set={set} intro={false} />
-          <Area s={s} k="body" set={set} label="Text" rows={8} hint="Empty line = new paragraph. “- ” list, “## ” small heading, **bold**, *italic*, [link text](contact)." />
+          <Txt s={s} k="eyebrow" set={set} label="Small text above the headings (optional)" />
+          <ContentFields s={s} set={set} />
           <div className="grid grid-cols-2 gap-3">
             <Choice label="Width" value={s.width || 'narrow'} onChange={(v) => set({ width: v })} options={[['narrow', 'Easy to read'], ['wide', 'Full width']]} />
             <Choice label="Alignment" value={s.align || 'left'} onChange={(v) => set({ align: v })} options={[['left', 'Left'], ['center', 'Centre']]} />
@@ -388,8 +474,8 @@ function Fields({ s, set }: { s: Section; set: SetFn }) {
     case 'split':
       return (
         <>
-          <Heading s={s} set={set} intro={false} />
-          <Area s={s} k="body" set={set} label="Text" rows={6} hint="Lists, **bold** and [links](contact) work here." />
+          <Txt s={s} k="eyebrow" set={set} label="Small text above the headings (optional)" />
+          <ContentFields s={s} set={set} />
           <ImageField value={s.image} onChange={(v) => set({ image: v })} />
           <Choice label="Picture side" value={s.imageSide || 'right'} onChange={(v) => set({ imageSide: v })} options={[['right', 'Right'], ['left', 'Left']]} />
           <Buttons s={s} set={set} />
@@ -534,7 +620,8 @@ function Fields({ s, set }: { s: Section; set: SetFn }) {
 
 /** a short line shown on a closed section */
 function summary(s: Section) {
-  const t = String(s.title || s.eyebrow || s.text || s.subtitle || s.body || '').replace(/[*#\[\]]/g, '').trim();
+  const first = Array.isArray(s.content) ? (s.content as ContentBlock[]).find((b) => b.kind === 'heading' && b.text) : undefined;
+  const t = String((first && first.kind === 'heading' ? first.text : '') || s.title || s.eyebrow || s.text || s.subtitle || s.body || '').replace(/[*#\[\]]/g, '').trim();
   if (s.type === 'inventory') {
     const f = (s.filter || {}) as Record<string, string>;
     return [f.category || 'all vehicles', f.make, f.featured ? 'featured' : '', `${s.limit || 6} cars`].filter(Boolean).join(' · ');

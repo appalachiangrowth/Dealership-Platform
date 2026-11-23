@@ -16,7 +16,7 @@ import { renderPage, type ThemeContext } from '@/lib/page';
 import { absUrl, applyMeta, BLOG_POST_RE, blogPostPath, cleanPages, gonePage, headScripts, injectHead, resolveSeo, rewriteBlogLinks, rewriteStaticLinks, ruleRedirect, seoLinks, seoSkipped, templateForPath, type SeoLinks, type SeoMeta, type SeoResolve } from '@/lib/seo';
 import { outsideScripts, rewriteHashLinks, runtimeScript, spaConf, spaHashForKey, spaMatch, virtualizeHtml, virtualizeJs } from '@/lib/spa';
 import { allOn, blockedPaths, featureCss, featureOfPage, flagsOf, hideFeatures, hrefBlocked, markRoot, offText, themeFeatures } from '@/lib/features';
-import { injectNav, renderCustomPage, type CustomPage, type NavItem } from '@/lib/custom-pages';
+import { injectNav, renderCustomPage, type ChromeOpts, type CustomPage, type FooterCol, type NavItem } from '@/lib/custom-pages';
 import { rel, siteTokens } from '@/lib/tokens';
 import { applyFavicon, applyMediaMeta, cleanInventoryPosts, faviconResponse, richPostRuntime } from '@/lib/site-extras';
 import { activityTrackerScript } from '@/lib/activity-tracker';
@@ -94,7 +94,7 @@ const ctxMemo = new Map<string, { at: number; ctx: ThemeContext }>();
 function navItems(ctx: ThemeContext): NavItem[] {
   // Financing / Trade-In switched off in Platform Admin: their menu entries are left out
   const flags = flagsOf(ctx);
-  if (allOn(flags)) return navItemsAll(ctx);
+  if (allOn(flags)) return navItemsAll(ctx).map(noBlog(ctx)).filter((n): n is NavItem => !!n);
   const blocked = blockedPaths(flags, ctx);
   const keep = (n: NavItem): NavItem | null => {
     if ((n.slug && hrefBlocked(n.slug, flags, blocked)) || (n.url && hrefBlocked(n.url, flags, blocked)) || offText(n.label, flags)) return null;
@@ -102,17 +102,50 @@ function navItems(ctx: ThemeContext): NavItem[] {
     const children = n.children.map(keep).filter((c): c is NavItem => !!c);
     return children.length || n.slug || n.url ? { ...n, children: children.length ? children : undefined } : null;
   };
-  return navItemsAll(ctx).map(keep).filter((n): n is NavItem => !!n);
+  return navItemsAll(ctx).map(noBlog(ctx)).filter((n): n is NavItem => !!n).map(keep).filter((n): n is NavItem => !!n);
+}
+
+/** the standard Blog entry only while the dealership's blog is on (like the designs' own {%if feature.blog%}) */
+const noBlog = (ctx: ThemeContext) => {
+  const on = !!ctx.features?.blog;
+  const one = (n: NavItem): NavItem | null => {
+    if (!on && n.key === 'blog') return n.children?.length ? { ...n, key: undefined, url: undefined } : null;
+    return n.children ? { ...n, children: n.children.map(one).filter((c): c is NavItem => !!c) } : n;
+  };
+  return one;
+};
+
+/**
+ * Header menu mode + footer columns (Pages & SEO › Header menu / Footer). The footer leaves out links to a switched
+ * off feature (Financing / Trade-In) and the standard Blog link while the blog is off.
+ */
+function chromeOf(ctx: ThemeContext): ChromeOpts {
+  const flags = flagsOf(ctx);
+  const blocked = allOn(flags) ? null : blockedPaths(flags, ctx);
+  const blog = !!ctx.features?.blog;
+  const footer: FooterCol[] | null = Array.isArray(ctx.footer)
+    ? ctx.footer.map((col) => ({
+        heading: String(col.heading || ''),
+        links: (Array.isArray(col.links) ? col.links : []).filter((l) => {
+          if (!l || !String(l.label || '').trim()) return false;
+          if (l.key === 'blog' && !blog) return false;
+          if (!blocked) return true;
+          return !((l.slug && hrefBlocked(l.slug, flags, blocked)) || (l.url && hrefBlocked(l.url, flags, blocked)) || offText(l.label, flags));
+        }),
+      }))
+    : null;
+  return { full: ctx.menuMode === 'full', footer };
 }
 
 function navItemsAll(ctx: ThemeContext): NavItem[] {
   if (Array.isArray(ctx.menu)) {
     const entry = (e: unknown, top: boolean): NavItem | null => {
       if (!e || typeof e !== 'object') return null;
-      const o = e as { label?: unknown; slug?: unknown; url?: unknown; children?: unknown };
+      const o = e as { label?: unknown; slug?: unknown; url?: unknown; key?: unknown; children?: unknown };
       const label = String(o.label || '').trim();
       if (!label) return null;
       const item: NavItem = { label };
+      if (typeof o.key === 'string' && /^[a-z-]{2,20}$/.test(o.key)) item.key = o.key;
       if (typeof o.slug === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(o.slug)) item.slug = o.slug;
       else if (typeof o.url === 'string' && o.url) item.url = o.url;
       if (top && Array.isArray(o.children)) {
@@ -294,7 +327,7 @@ async function removedPage(req: Request, host: string, links: SeoLinks) {
 async function themeResponse(req: Request, host: string, ctx: ThemeContext, theme: Theme, template: string, o: SeoOpts) {
   const origin = originOf(req);
   const t = siteTokens(ctx.settings, origin);
-  const html = applyMediaMeta(applyFavicon(injectNav(renderPage(ctx, theme, template, origin, false, false), theme, navItems(ctx), '', t), ctx.settings?.faviconUrl), ctx.mediaMeta);
+  const html = applyMediaMeta(applyFavicon(injectNav(renderPage(ctx, theme, template, origin, false, false), theme, navItems(ctx), '', t, chromeOf(ctx)), ctx.settings?.faviconUrl), ctx.mediaMeta);
   // rich text blog articles: shown formatted in place of the design's plain paragraphs (lib/site-extras.ts)
   const out = injectHead(await finishHtml(html, ctx, theme, host, origin, { ...o, template }), richPostRuntime());
   return new Response(out, { headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }) });
@@ -438,7 +471,7 @@ async function customPage(req: Request, url: URL, host: string, slug: string, se
     const inv = await backend('/public/inventory.json', host);
     if (inv.ok) vehicles = ((await inv.json()) as { vehicles?: Record<string, unknown>[] }).vehicles || [];
   }
-  let html = applyMediaMeta(applyFavicon(renderCustomPage(ctx, theme, data.page, originOf(req), { vehicles, navPages: navItems(ctx), themePreview, preview: data.preview }), ctx.settings?.faviconUrl), ctx.mediaMeta);
+  let html = applyMediaMeta(applyFavicon(renderCustomPage(ctx, theme, data.page, originOf(req), { vehicles, navPages: navItems(ctx), chrome: chromeOf(ctx), themePreview, preview: data.preview }), ctx.settings?.faviconUrl), ctx.mediaMeta);
   if (!data.preview && !themePreview) html = await finishHtml(html, ctx, theme, host, originOf(req), seoOpts);
   return new Response(html, {
     headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': data.preview || themePreview ? 'no-store' : 'no-cache' }),
@@ -616,7 +649,7 @@ async function page(req: Request, { params }: Ctx) {
   // ?pa_live=1 — live preview inside the Dealership Portal editors (texts / colours update while typing)
   const live = url.searchParams.get('pa_live') === '1';
   // menu links of the custom pages (not in the editor preview: the dealer edits the theme's own texts there)
-  let html = injectNav(renderPage(ctx, theme, r, originOf(req), themePreview, live), theme, live ? [] : navItems(ctx), '', siteTokens(ctx.settings, originOf(req)));
+  let html = injectNav(renderPage(ctx, theme, r, originOf(req), themePreview, live), theme, live ? [] : navItems(ctx), '', siteTokens(ctx.settings, originOf(req)), live ? {} : chromeOf(ctx));
   if (!themePreview && !live) html = await finishHtml(html, ctx, theme, host, originOf(req), { seo: seoOn, template: r, path: r === 'index.html' ? '' : undefined });
   html = injectHead(applyMediaMeta(applyFavicon(html, ctx.settings?.faviconUrl), ctx.mediaMeta), richPostRuntime());
   return new Response(html, {

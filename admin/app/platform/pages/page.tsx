@@ -3,12 +3,13 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import { ExternalLink, FileText, Globe, Layers, Menu, Palette, Plus, Search } from 'lucide-react';
+import { ExternalLink, FileText, Globe, Layers, Menu, Palette, PanelBottom, Plus, Search } from 'lucide-react';
 import { api, mediaUrl, siteUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { TEMPLATES } from '@/lib/page-sections';
 import { useToast } from '@/components/toast';
 import { MenuBuilder } from '@/components/MenuBuilder';
+import { FooterBuilder } from '@/components/FooterBuilder';
 import { Badge, Button, Card, Empty, Field, Input, Loading, Modal, PageHeader, Select, Table, Tabs, Td, cx } from '@/components/ui';
 
 type Row = {
@@ -36,24 +37,25 @@ export default function PagesHome() {
   const [q, setQ] = useState('');
   const [newFor, setNewFor] = useState<string | null>(null);
   // ?view=menu opens the Header menu of the selected dealership
-  const [view, setView] = useState<'pages' | 'menu'>('pages');
+  const [view, setView] = useState<'pages' | 'menu' | 'footer'>('pages');
 
   // ?dealer=<id> opens that dealership (links from the editor come back here)
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     const d = q.get('dealer');
     if (d) setSelected(d);
-    if (q.get('view') === 'menu') setView('menu');
+    const v = q.get('view');
+    if (v === 'menu' || v === 'footer') setView(v);
   }, []);
   useEffect(() => {
     if (!selected && tenants.data?.length) setSelected(tenants.data[0].id);
   }, [tenants.data, selected]);
   const pick = (id: string, v = view) => {
     setSelected(id);
-    window.history.replaceState(null, '', `/platform/pages?dealer=${encodeURIComponent(id)}${v === 'menu' ? '&view=menu' : ''}`);
+    window.history.replaceState(null, '', `/platform/pages?dealer=${encodeURIComponent(id)}${v !== 'pages' ? `&view=${v}` : ''}`);
   };
   const switchView = (v: string) => {
-    const next = v === 'menu' ? 'menu' : 'pages';
+    const next = v === 'menu' || v === 'footer' ? v : 'pages';
     setView(next);
     if (selected) pick(selected, next);
   };
@@ -168,10 +170,13 @@ export default function PagesHome() {
             tabs={[
               { id: 'pages', label: <span className="inline-flex items-center gap-1.5"><FileText className="h-4 w-4" /> Pages ({shown.length})</span> },
               { id: 'menu', label: <span className="inline-flex items-center gap-1.5"><Menu className="h-4 w-4" /> Header menu</span> },
+              { id: 'footer', label: <span className="inline-flex items-center gap-1.5"><PanelBottom className="h-4 w-4" /> Footer</span> },
             ]}
             value={view}
             onChange={switchView}
           />
+
+          {view === 'footer' && selected && <FooterBuilder scope={selected === SHARED ? 'all' : selected} scopeName={selected === SHARED ? 'Every dealership' : tenant?.name || 'This dealership'} />}
 
           {view === 'menu' && selected && <MenuBuilder scope={selected === SHARED ? 'all' : selected} scopeName={selected === SHARED ? 'Every dealership' : tenant?.name || 'This dealership'} />}
 
