@@ -67,6 +67,8 @@
     try { all = (window.PADB && window.PADB.getV()) || []; } catch (e) { }
     return all.filter(function (v) { return v.status !== "draft"; });
   }
+  /* home page vehicle sections: only vehicles with at least one real photo (the inventory view is unchanged) */
+  function paPhotoOk(u){if(u&&typeof u==="object")u=u.url||u.src||u.path||"";u=String(u==null?"":u).trim();if(!u||/^(null|undefined|#|about:blank)$/i.test(u)||/^data:/i.test(u))return false;return !/(^|[\/_.-])(placeholder|no[-_]?(image|photo|pic|img)s?|(image|photo)s?[-_]?(coming[-_]?soon|unavailable|not[-_]?available)|coming[-_]?soon|default[-_]?(car|vehicle|image|photo))([\/_.?-]|$)/i.test(u)}function paHasPhoto(v){var a=v&&v.images;if(typeof a==="string"){try{a=JSON.parse(a)}catch(e){a=a?[a]:[]}}return Array.isArray(a)&&a.some(paPhotoOk)}
   function featuredList(list) {
     var f = list.filter(function (v) { return v.featured; }).slice(0, 4);
     if (f.length < 4) f = f.concat(list.filter(function (v) { return f.indexOf(v) === -1; }).slice(0, 4 - f.length));
@@ -98,7 +100,7 @@
   };
   var filter = "All";
   function drawTrend() {
-    var list = vehicles().filter(function (v) { return match(v, filter); });
+    var list = vehicles().filter(function (v) { return match(v, filter) && paHasPhoto(v); });
     $("#plTrend").innerHTML = list.length ? list.slice(0, 8).map(card).join("") : '<p class="pl-empty">' + esc(T("inv_empty_text")) + '</p>';
     reveal();
   }
@@ -208,7 +210,7 @@
   /* ---------- render everything that depends on real inventory ---------- */
   var HERO_EMPTY = $("#plHeroCar") ? $("#plHeroCar").textContent : "";
   function render() {
-    var list = vehicles(), f = featuredList(list);
+    var list = vehicles(), f = featuredList(list.filter(paHasPhoto));
     if (window.PADB && window.PADB.loaded && !window.PADB.loaded()) { $("#plFeat").innerHTML = ""; return; }
     buildPool(list);
     $("#plFeat").innerHTML = f.length ? f.map(card).join("") : '<p class="pl-empty">' + esc(T("home_empty")) + '</p>';

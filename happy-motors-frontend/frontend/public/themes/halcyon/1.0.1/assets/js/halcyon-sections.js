@@ -229,6 +229,8 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitFooterWord);
 
   /* ---------- data-driven parts ---------- */
+  /* home page vehicle sections: only vehicles with at least one real photo */
+  function paPhotoOk(u){if(u&&typeof u==="object")u=u.url||u.src||u.path||"";u=String(u==null?"":u).trim();if(!u||/^(null|undefined|#|about:blank)$/i.test(u)||/^data:/i.test(u))return false;return !/(^|[\/_.-])(placeholder|no[-_]?(image|photo|pic|img)s?|(image|photo)s?[-_]?(coming[-_]?soon|unavailable|not[-_]?available)|coming[-_]?soon|default[-_]?(car|vehicle|image|photo))([\/_.?-]|$)/i.test(u)}function paHasPhoto(v){var a=v&&v.images;if(typeof a==="string"){try{a=JSON.parse(a)}catch(e){a=a?[a]:[]}}return Array.isArray(a)&&a.some(paPhotoOk)}
   function init() {
     var all = PA.published(), makes = {};
     all.forEach(function (v) { if (v.make) makes[v.make] = (makes[v.make] || 0) + 1; });
@@ -258,7 +260,7 @@
     }
 
     /* featured lane */
-    var lane = $("#lane"), feat = PA.list("featured"); if (!feat.length) feat = all;
+    var lane = $("#lane"), feat = PA.list("featured").filter(paHasPhoto); if (!feat.length) feat = all.filter(paHasPhoto);
     lane.innerHTML = feat.length ? feat.map(function (v, i) { return cardHTML(v, i); }).join("") : '<p class="sr-empty" style="flex:1">New inventory is arriving soon. Call us for what is on the lot today.</p>';
     watch(lane);
     $$(".sr-fc", lane).forEach(tilt);
@@ -311,7 +313,7 @@
     tabs.forEach(function (t, i) { var b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "tab"); b.innerHTML = esc(t) + "<em>" + (t === "All" ? all.length : bc[t]) + "</em>"; b.addEventListener("click", function () { pick(i); }); gear.appendChild(b); });
     function place(b) { if (!b) return; knob.style.left = b.offsetLeft + "px"; knob.style.top = b.offsetTop + "px"; knob.style.width = b.offsetWidth + "px"; knob.style.height = b.offsetHeight + "px"; }
     function render(list, animate) {
-      var total = list.length; list = list.slice(0, innerWidth <= 980 ? 8 : 4);
+      var total = list.length; list = list.filter(paHasPhoto).slice(0, innerWidth <= 980 ? 8 : 4);
       grid.innerHTML = list.length ? list.map(function (v, i) { return cardHTML(v, i); }).join("") : '<p class="sr-empty">No vehicles in this style right now. Call us and we will help you find one.</p>';
       if (!grid.__w) { grid.__w = true; watch(grid); }
       $$(".sr-fc", grid).forEach(function (el, k) { tilt(el); if (animate && !RM) { el.classList.add("enter"); el.style.animationDelay = (k * .07) + "s"; } });

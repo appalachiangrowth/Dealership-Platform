@@ -17,6 +17,7 @@ import { useToast } from '@/components/toast';
 import { PHOTO_ACCEPT, uploadFiles } from '@/components/ImageUploader';
 import { FbPostModal } from '@/components/fb/FbPostModal';
 import { AQ_CSS } from '@/components/ai/aqStyles';
+import { usePhotoSort } from '@/lib/use-photo-sort';
 import { api, mediaUrl } from '@/lib/api';
 import { BODY_STYLES, checkVin, normBodyStyle, normVin, VinDup } from '@/lib/vin-check';
 import { brandRun } from '@/lib/branding';
@@ -142,10 +143,14 @@ function Tip({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 /* ======================= photo strip (drag, ◀ ▶, ★, ×) ======================= */
+/**
+ * Mouse: drag any photo. Touch: drag a photo by its grip (⠿), the rest of the strip still scrolls the page.
+ * The first photo is the Cover Photo (website, CarGurus, Facebook); drop a photo on the first spot to make it the cover.
+ */
 function Thumbs({ photos, onChange }: { photos: Photo[]; onChange: (p: Photo[]) => void }) {
-  const from = useRef<number | null>(null);
-  const [over, setOver] = useState<number | null>(null);
   const n = photos.length;
+  const sort = usePhotoSort(photos, onChange);
+  const sd = sort.drag;
   const move = (i: number, j: number) => {
     if (j < 0 || j >= n) return;
     const a = photos.slice();
@@ -153,80 +158,70 @@ function Thumbs({ photos, onChange }: { photos: Photo[]; onChange: (p: Photo[]) 
     onChange(a);
   };
   return (
-    <div className="thumbs">
-      {photos.map((p, i) => (
-        <div
-          key={p.id}
-          className={`th${from.current === i ? ' drag' : ''}${over === i ? ' over' : ''}`}
-          draggable
-          onDragStart={(e) => {
-            from.current = i;
-            e.dataTransfer.effectAllowed = 'move';
-          }}
-          onDragOver={(e) => {
-            if (from.current === null) return;
-            e.preventDefault();
-            setOver(i);
-          }}
-          onDrop={(e) => {
-            if (from.current === null) return;
-            e.preventDefault();
-            e.stopPropagation();
-            const a = photos.slice();
-            const [x] = a.splice(from.current, 1);
-            a.splice(i, 0, x);
-            from.current = null;
-            setOver(null);
-            onChange(a);
-          }}
-          onDragEnd={() => {
-            from.current = null;
-            setOver(null);
-          }}
-        >
+    <>
+      <div className="thumbs" role="list" aria-label="Photos, first photo is the cover">
+        {photos.map((p, i) => {
+          const target = !!sd && sd.to === i && sd.from !== i;
+          return (
+            <div
+              key={p.id}
+              {...sort.tileProps(i)}
+              role="listitem"
+              aria-label={`Photo ${i + 1}${i === 0 ? ' (cover photo)' : ''}`}
+              className={`th${i === 0 ? ' cover' : ''}${sd?.from === i ? ' drag' : ''}${target ? ` over ${sd && sd.from > i ? 'before' : 'after'}` : ''}${sd && i === 0 && sd.from !== 0 ? ' slot' : ''}`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={p.url} alt={`Photo ${i + 1}`} draggable={false} />
+              {i === 0 ? <span className="n cv">★ Cover Photo</span> : <span className="n">{i + 1}</span>}
+              {sd && i === 0 && sd.from !== 0 && <span className="slotx">{target ? 'Drop: new cover' : 'Drop here for cover'}</span>}
+              <span className="grip" {...sort.handleProps(i)} title="Drag to reorder" aria-hidden>
+                ⠿
+              </span>
+              {p.angle && (
+                <span className="ang">
+                  {ANGLE_LABEL[p.angle] || p.angle}
+                  {p.quality && p.quality <= 2 ? ' · blurry?' : ''}
+                </span>
+              )}
+              <span className="tb">
+                {i > 0 && (
+                  <button type="button" onClick={() => move(i, i - 1)} aria-label={`Move photo ${i + 1} left`}>
+                    ◀
+                  </button>
+                )}
+                {i < n - 1 && (
+                  <button type="button" onClick={() => move(i, i + 1)} aria-label={`Move photo ${i + 1} right`}>
+                    ▶
+                  </button>
+                )}
+              </span>
+              {i > 0 && (
+                <button type="button" className="c" title="Make cover photo" aria-label={`Make photo ${i + 1} the cover photo`} onClick={() => onChange([p, ...photos.filter((x) => x.id !== p.id)])}>
+                  ★
+                </button>
+              )}
+              <button
+                type="button"
+                className="x"
+                aria-label={`Remove photo ${i + 1}`}
+                onClick={() => {
+                  URL.revokeObjectURL(p.url);
+                  onChange(photos.filter((x) => x.id !== p.id));
+                }}
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {sd && sort.ghostStyle && (
+        <div style={sort.ghostStyle} aria-hidden>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={p.url} alt={`Photo ${i + 1}`} draggable={false} />
-          <span className="n">
-            {i + 1}
-            {i === 0 ? ' · Cover' : ''}
-          </span>
-          {p.angle && (
-            <span className="ang">
-              {ANGLE_LABEL[p.angle] || p.angle}
-              {p.quality && p.quality <= 2 ? ' · blurry?' : ''}
-            </span>
-          )}
-          <span className="tb">
-            {i > 0 && (
-              <button type="button" onClick={() => move(i, i - 1)} aria-label={`Move photo ${i + 1} left`}>
-                ◀
-              </button>
-            )}
-            {i < n - 1 && (
-              <button type="button" onClick={() => move(i, i + 1)} aria-label={`Move photo ${i + 1} right`}>
-                ▶
-              </button>
-            )}
-          </span>
-          {i > 0 && (
-            <button type="button" className="c" title="Make cover" aria-label={`Make photo ${i + 1} the cover`} onClick={() => onChange([p, ...photos.filter((x) => x.id !== p.id)])}>
-              ★
-            </button>
-          )}
-          <button
-            type="button"
-            className="x"
-            aria-label={`Remove photo ${i + 1}`}
-            onClick={() => {
-              URL.revokeObjectURL(p.url);
-              onChange(photos.filter((x) => x.id !== p.id));
-            }}
-          >
-            ×
-          </button>
+          {sd.src && <img src={sd.src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
         </div>
-      ))}
-    </div>
+      )}
+    </>
   );
 }
 
@@ -285,6 +280,9 @@ export default function AiAddVehiclePage() {
   const [saving, setSaving] = useState('');
   const [fbVehicle, setFbVehicle] = useState<any>(null);
   const [savedDraft, setSavedDraft] = useState<string | null>(null);
+  /** photo id → its address on the server (uploaded once), and the photo list sent with the last save */
+  const uploadedRef = useRef<Map<number, string>>(new Map());
+  const sentImages = useRef<string[]>([]);
   // same VIN already in the inventory or sold: shown at once and saving is blocked (the API refuses it too)
   const [dup, setDup] = useState<VinDup | null>(null);
   // the full form: open as soon as the VIN is decoded or AI has read the video (or on request without a lookup)
@@ -911,15 +909,21 @@ export default function AiAddVehiclePage() {
     return body;
   };
 
+  /**
+   * Uploads the photos that are not on the server yet and returns every photo's address in the order shown
+   * (first = cover). Photos uploaded for a draft are not uploaded again, so reordering after "Save as draft" is kept.
+   */
   const uploadAll = async () => {
     const list = photosRef.current;
-    const urls: string[] = [];
-    for (let i = 0; i < list.length; i += 8) {
-      setSaving(`Uploading photos (${Math.min(i + 8, list.length)} of ${list.length})…`);
-      const files = list.slice(i, i + 8).map((p, k) => (p.file instanceof File ? p.file : new File([p.file], `photo-${i + k + 1}.jpg`, { type: 'image/jpeg' })));
-      urls.push(...(await uploadFiles(files)));
+    const todo = list.filter((p) => !uploadedRef.current.has(p.id));
+    for (let i = 0; i < todo.length; i += 8) {
+      setSaving(`Uploading photos (${Math.min(i + 8, todo.length)} of ${todo.length})…`);
+      const chunk = todo.slice(i, i + 8);
+      const files = chunk.map((p, k) => (p.file instanceof File ? p.file : new File([p.file], `photo-${i + k + 1}.jpg`, { type: 'image/jpeg' })));
+      const urls = await uploadFiles(files);
+      chunk.forEach((p, k) => urls[k] && uploadedRef.current.set(p.id, urls[k]));
     }
-    return urls;
+    return list.map((p) => uploadedRef.current.get(p.id)).filter((u): u is string => !!u);
   };
 
   const save = async (st: 'PUBLISHED' | 'DRAFT') => {
@@ -940,15 +944,22 @@ export default function AiAddVehiclePage() {
       return;
     }
     try {
-      let images: string[] = [];
+      // the photos in the order shown here (drag / ◀ ▶ / ★): the first one is the cover everywhere
+      let images: string[] = photosRef.current.length ? await uploadAll() : [];
       if (savedDraft) {
-        // a draft was saved already: update it instead of making a second copy
+        // a draft was saved already: update it instead of making a second copy. The server may have swapped a photo
+        // for its branded copy since then (same position): keep the server's copy of each photo, in the new order.
         setSaving('Saving…');
-        images = (await api(`/dealer/vehicles/${savedDraft}`)).images || [];
-      } else if (photosRef.current.length) images = await uploadAll();
+        const server: string[] = (await api(`/dealer/vehicles/${savedDraft}`)).images || [];
+        if (server.length === sentImages.current.length) {
+          const copy = new Map(sentImages.current.map((u, k) => [u, server[k]] as [string, string]));
+          images = images.map((u) => copy.get(u) || u);
+        }
+      }
       setSaving(st === 'PUBLISHED' ? 'Publishing…' : 'Saving draft…');
       const body = vehicleBody(st, images);
       const out = savedDraft ? await api(`/dealer/vehicles/${savedDraft}`, { method: 'PATCH', body }) : await api('/dealer/vehicles', { body });
+      sentImages.current = images;
       void brandRun(); // the main photo gets the dealer's branding bands (when photo branding is on)
       if (st === 'DRAFT') {
         setSavedDraft(out.id);

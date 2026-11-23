@@ -22,6 +22,8 @@
     if (/sedan/.test(b)) return ["Sedan", "sedan"];
     return [b ? b.charAt(0).toUpperCase() + b.slice(1) : "Car", "sedan"];
   }
+  /* home page featured vehicles: only vehicles with at least one real photo (the inventory list is unchanged) */
+  function paPhotoOk(u){if(u&&typeof u==="object")u=u.url||u.src||u.path||"";u=String(u==null?"":u).trim();if(!u||/^(null|undefined|#|about:blank)$/i.test(u)||/^data:/i.test(u))return false;return !/(^|[\/_.-])(placeholder|no[-_]?(image|photo|pic|img)s?|(image|photo)s?[-_]?(coming[-_]?soon|unavailable|not[-_]?available)|coming[-_]?soon|default[-_]?(car|vehicle|image|photo))([\/_.?-]|$)/i.test(u)}function paHasPhoto(v){var a=v&&v.images;if(typeof a==="string"){try{a=JSON.parse(a)}catch(e){a=a?[a]:[]}}return Array.isArray(a)&&a.some(paPhotoOk)}
   try {
     var x = new XMLHttpRequest(); x.open("GET", "inventory.json?_=" + Date.now(), false); x.send(null);
     if (x.status === 200) {
@@ -35,7 +37,7 @@
         var k = kind(v), imgs = arr(v.images), feats = arr(v.features), i = L.cars.length;
         var feat = v.featured === true || /^(true|1|yes)$/i.test(String(v.featured));
         L.cars.push({id: i, title: title, make: v.make || "", model: v.model || "", body: k[1], type: k[0], price: num(v.price), miles: num(v.mileage),
-          drive: drive(v.drivetrain), fuel: v.fuel || "Gasoline", trans: v.trans || "Automatic", color: hex(v.ext), feat: feat, img: imgs[0] || ""});
+          drive: drive(v.drivetrain), fuel: v.fuel || "Gasoline", trans: v.trans || "Automatic", color: hex(v.ext), feat: feat, img: imgs[0] || "", photo: imgs.filter(paPhotoOk)[0] || ""});
         L.ids[title] = v.id || "";
         var d = {};
         if (v.vin) d.vin = v.vin; if (v.stock) d.stock = v.stock; if (v.ext) d.ext = v.ext; if (v.int) d.int = v.int;
@@ -58,10 +60,10 @@
           ex: H(p.excerpt || text.slice(0, 160)), img: H(p.image || ""), body: BODIES[i % 3], color: PAINT[i % 4],
           b: text.split(/\n\s*\n/).map(function (x) { return H(x.trim()).replace(/\n/g, "<br>"); }).filter(Boolean)});
       });
-      var f = L.cars.filter(function (c) { return c.feat; });
-      if (!f.length) f = L.cars.slice(0, 8);
+      var f = L.cars.filter(function (c) { return c.feat && c.photo; });
+      if (!f.length) f = L.cars.filter(function (c) { return c.photo; }).slice(0, 8);
       L.feat = f.slice(0, 8).map(function (c) {
-        return {title: c.title, type: c.type, body: c.body, miles: fmt(c.miles), loc: (site.city_state || ""), price: "$" + fmt(c.price), color: c.color, featured: true, img: c.img};
+        return {title: c.title, type: c.type, body: c.body, miles: fmt(c.miles), loc: (site.city_state || ""), price: "$" + fmt(c.price), color: c.color, featured: true, img: c.photo};
       });
     }
   } catch (e) { L.cars = []; L.feat = []; L.posts = []; }

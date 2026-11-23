@@ -72,9 +72,20 @@ export const AQ_CSS = `
 .aq .th .x,.aq .th .c{position:absolute;top:6px;width:26px;height:26px;border-radius:50%;border:0;background:rgba(255,255,255,.95);cursor:pointer;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center}
 .aq .th .x{right:6px}
 .aq .th .c{right:36px}
-.aq .th{cursor:grab}
-.aq .th.drag{opacity:.4}
-.aq .th.over{outline:3px solid #2563EB;outline-offset:2px}
+.aq .th{cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.aq .th.cover{outline:2px solid #2563EB;outline-offset:2px}
+.aq .th.drag{opacity:.4;outline:2px dashed #94A3B8;outline-offset:2px}
+.aq .th.over{outline:3px solid #2563EB;outline-offset:3px}
+.aq .th.over::after{content:"";position:absolute;top:0;bottom:0;width:6px;background:#2563EB;z-index:2}
+.aq .th.over.before::after{left:0}
+.aq .th.over.after::after{right:0}
+.aq .th.slot::before{content:"";position:absolute;inset:0;background:rgba(37,99,235,.3);z-index:1}
+.aq .th.slot.over::before{background:rgba(37,99,235,.6)}
+.aq .th .slotx{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:4px;text-align:center;color:#fff;font-size:12px;font-weight:800;z-index:2;text-shadow:0 1px 2px rgba(0,0,0,.35);pointer-events:none}
+.aq .th img{pointer-events:none}
+.aq .th .n.cv{background:#1D4ED8;text-transform:uppercase;font-size:10px;letter-spacing:.02em;z-index:3}
+.aq .th .grip{position:absolute;left:6px;top:30px;width:28px;height:28px;border-radius:8px;background:rgba(15,23,42,.6);color:#fff;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;touch-action:none;cursor:grab;z-index:3}
+@media (hover:hover){.aq .th .grip{opacity:0;transition:opacity .15s}.aq .th:hover .grip{opacity:1}}
 .aq .th .ang{position:absolute;left:6px;bottom:6px;background:rgba(15,23,42,.78);color:#fff;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:999px;max-width:calc(100% - 70px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .aq .th .tb{position:absolute;right:6px;bottom:6px;display:flex;gap:4px}
 .aq .th .tb button{width:26px;height:26px;border-radius:50%;border:0;background:rgba(255,255,255,.95);cursor:pointer;font-size:11px}
