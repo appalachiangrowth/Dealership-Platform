@@ -1,10 +1,13 @@
 'use client';
 
 /**
- * Add a vehicle (the only way to add one). Two ways, chosen at the top:
- *  · Photos & VIN (default) — type or scan the VIN (looks itself up), upload photos (AI reads them when it is on).
- *    The full vehicle form is always open below, so a dealer can also simply fill it in by hand.
- *  · Walkaround Video — one video; AI takes the photos, VIN, mileage and spoken notes from it.
+ * Add a vehicle (the only way to add one). The "+ Add vehicle" popup (AddVehicleChooser) opens this page:
+ *  · Add Manually (?mode=manual, or /dealer/inventory/new) — no mode cards at all: the VIN box (with Scan) and a
+ *    Decode VIN button, the photo uploader and the full vehicle form. AI does not read the photos here.
+ *  · Add with AI (default) — two cards at the top:
+ *     · Photos & VIN — type or scan the VIN (looks itself up), upload photos (AI reads them when it is on).
+ *       The full vehicle form is always open below, so a dealer can also simply fill it in by hand.
+ *     · Walkaround Video — one video; AI takes the photos, VIN, mileage and spoken notes from it.
  * "Only you can answer these" (price, mileage, stock number, history) stays at the top. Every form value is tagged
  * VIN / AI / You / Needs you and can be changed; values the dealer changed are kept when AI finishes later. A VIN
  * decode, the photo reading and the video reading each end with a "please verify" popup. Publishing uploads the
@@ -117,11 +120,17 @@ type You = { price: string; condition: string; owners: string; accidents: string
 type Res = { v: Record<string, string>; src: Record<string, string>; ev: Record<string, string>; ok: Record<string, boolean> };
 type Note = { kind: 'ok' | 'bad' | 'warn' | 'info'; icon: string; html: React.ReactNode };
 type AiState = 'idle' | 'waiting' | 'running' | 'done' | 'error';
-/** photos = Photos & VIN (VIN + photos + the full form) · video = Walkaround Video */
-type Mode = 'photos' | 'video';
+/** manual = Add Manually (VIN + Decode VIN, photos, full form) · photos = Photos & VIN · video = Walkaround Video */
+type Mode = 'manual' | 'photos' | 'video';
+const MANUAL_HINT = 'Enter all 17 characters, then click Decode VIN.';
 const AUTO_HINT = 'Looks up automatically when all 17 characters are entered.';
 /** the VIN box with its Scan icon, phone layout and the "please verify" popup (on top of AQ_CSS) */
 const ENTRY_CSS = `
+/* Add Manually: VIN box + Decode VIN on one row; the "N fields filled" summary under it */
+.aq .vinrow{display:flex;gap:10px;align-items:stretch}
+.aq .vinrow .fld{flex:1 1 auto;min-width:0}
+.aq .vinrow .btn{min-height:44px}
+.aq .filled{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:10px;background:#E8F7EE;border:1px solid #BBE5CB;color:#14532D;font-size:13.5px}
 /* VIN box: one normal line, the Scan icon inside its right end (like "mi" in Mileage) */
 .aq .fld.vinfld{min-height:44px;height:44px}
 .aq .fld.vinfld input{padding-right:4px}
@@ -138,6 +147,8 @@ const ENTRY_CSS = `
 .aq .lr .lbl{font-size:12px;line-height:1.25}
 .aq .fld input,.aq .fld select{padding:0 10px}
 .aq .fld.vinfld input{padding:0 4px 0 10px;font-size:15px;letter-spacing:.02em}
+.aq .vinrow{gap:8px}
+.aq .vinrow .btn{padding:0 12px;font-size:14px}
 }
 @media (max-width:767px){
 .aq .top{padding:12px 16px;gap:10px}
@@ -272,6 +283,8 @@ export default function AiAddVehiclePage() {
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [mode, _setMode] = useState<Mode>('photos');
   const modeRef = useRef<Mode>(mode);
+  /** false until ?mode= has been read: the VIN / photo / mode parts wait for it, so the wrong layout never flashes */
+  const [modeReady, setModeReady] = useState(false);
 
   // VIN
   const [vin, setVin] = useState('');
@@ -376,12 +389,28 @@ export default function AiAddVehiclePage() {
       setVinHint({ text: 'A VIN never contains I, O or Q. These are usually 1 or 0.', color: '#B91C1C' });
       return;
     }
+    const manual = modeRef.current === 'manual';
     if (v.length < 17) {
-      setVinHint({ text: AUTO_HINT, color: '#526077' });
+      setVinHint({ text: manual ? MANUAL_HINT : AUTO_HINT, color: '#526077' });
       if (decodedRef.current) {
         setDecoded(null);
         setVinNotes([]);
       }
+      return;
+    }
+    if (manual) {
+      // Add Manually: looked up when the dealer clicks Decode VIN; a changed VIN drops the old record
+      if (decodedRef.current && decodedVin.current !== v) {
+        setDecoded(null);
+        setVinNotes([]);
+      }
+      setVinHint(
+        !vinOk(v)
+          ? { text: 'Check this VIN: the 9th character doesn’t match the rest, which usually means a typo. You can still decode it.', color: '#92400E' }
+          : decodedRef.current
+            ? { text: '', color: '#526077' }
+            : { text: 'Click Decode VIN to fill in the form below.', color: '#1D4ED8' },
+      );
       return;
     }
     if (!vinOk(v)) setVinHint({ text: 'Check this VIN: the 9th character doesn’t match the rest, which usually means a typo. Looking it up anyway…', color: '#92400E' });
@@ -418,9 +447,25 @@ export default function AiAddVehiclePage() {
     }
   };
 
-  /** "Scan VIN" camera scanner (Photos & VIN): a scanned VIN fills the VIN box, which looks itself up */
+  /** "Scan VIN" camera scanner: a scanned VIN fills the VIN box and is decoded (Photos & VIN looks itself up) */
   const [scanOpen, setScanOpen] = useState(false);
-  const onScanned = (v: string) => onVin(v);
+  const onScanned = (v: string) => {
+    onVin(v);
+    if (modeRef.current === 'manual' && !/[IOQ]/.test(v)) void lookupVin(v);
+  };
+  /** Add Manually: the Decode VIN button (and Enter in the VIN box) */
+  const decodeNow = () => {
+    const v = vinRef.current;
+    if (v.length !== 17) {
+      setVinHint({ text: `A VIN has 17 characters; this one has ${v.length}.`, color: '#B91C1C' });
+      return;
+    }
+    if (/[IOQ]/.test(v)) {
+      setVinHint({ text: 'A VIN never contains I, O or Q. These are usually 1 or 0.', color: '#B91C1C' });
+      return;
+    }
+    if (!vinBusy) void lookupVin(v);
+  };
   const scanBtn = (
     <button type="button" className="inscan" onClick={() => setScanOpen(true)} title="Scan VIN" aria-label="Scan VIN">
       <ScanLine aria-hidden="true" />
@@ -503,7 +548,7 @@ export default function AiAddVehiclePage() {
   }, [setPhotos]);
 
   useEffect(() => {
-    if (mode !== 'photos') return; // video: the photos come from the video
+    if (mode !== 'photos') return; // Add Manually: AI does not read the photos · video: they come from the video
     if (!decoded || !photos.length) {
       aiVer.current++;
       setAiState('idle');
@@ -542,13 +587,16 @@ export default function AiAddVehiclePage() {
     if (v.length < 17) setVinHint({ text: AUTO_HINT, color: '#526077' });
     else if (!decodedRef.current && !/[IOQ]/.test(v)) void lookupVin(v);
   };
-  // /dealer/inventory/ai?mode=video opens straight in Walkaround Video (Photos & VIN otherwise)
+  // ?mode=manual: Add Manually (no mode cards) · ?mode=video: Walkaround Video · otherwise Photos & VIN
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('mode') === 'video') {
-      modeRef.current = 'video';
-      _setMode('video');
-      setFormOpen(false);
+    const m = new URLSearchParams(window.location.search).get('mode');
+    if (m === 'manual' || m === 'video') {
+      modeRef.current = m;
+      _setMode(m);
+      if (m === 'video') setFormOpen(false);
+      else setVinHint({ text: MANUAL_HINT, color: '#526077' });
     }
+    setModeReady(true);
   }, []);
 
   /* ---------------- walkaround video ---------------- */
@@ -890,7 +938,7 @@ export default function AiAddVehiclePage() {
 
   // open the full form as soon as the VIN is decoded or AI has read the video
   useEffect(() => {
-    if (decoded || (mode === 'video' && vDone) || mode === 'photos') setFormOpen(true);
+    if (decoded || (mode === 'video' && vDone) || mode !== 'video') setFormOpen(true);
   }, [decoded, vDone, mode]);
   // and keep it filled in: new VIN / AI results and the "Only you" answers flow in (changed fields are kept)
   useEffect(() => {
@@ -1064,6 +1112,8 @@ export default function AiAddVehiclePage() {
   /* ---------------- decoded summary, save buttons, duplicate VIN ---------------- */
   /** fields filled in by the VIN record or AI (not by the dealer), in form order */
   const decodedKeys = SECTIONS.flatMap((sec) => sec[2].map((f) => f[0])).filter((k) => FILLED_BY[res.src[k]] && String(res.v[k] || '').trim());
+  /** Add Manually: what the VIN decode filled in (not what the dealer typed), listed under the VIN */
+  const vinKeys = decodedKeys.filter((k) => res.src[k] === 'vin');
   const emptyKeys = SECTIONS.flatMap((sec) => sec[2].map((f) => f[0])).filter((k) => !String(res.v[k] || '').trim());
   const aiBusy = aiState === 'running' || aiState === 'waiting';
 
@@ -1104,7 +1154,7 @@ export default function AiAddVehiclePage() {
   /* ================================ render ================================ */
   const aiBar = (() => {
     const n = photos.length;
-    if (status && !status.hasKey)
+    if (mode === 'manual' || (status && !status.hasKey))
       return n ? <div className="ai-bar" style={{ background: '#F1F5F9', color: '#475569' }}>📷 {n} photo{n > 1 ? 's' : ''}. The first one is the cover; drag, ◀ ▶ or ★ to change the order.</div> : null;
     if (mode === 'video') return n ? <div className="ai-bar" style={{ background: '#F1F5F9', color: '#475569' }}>🎥 {n} photos taken from your video and arranged in the best order. Drag, ◀ ▶ or ★ to change it.</div> : null;
     if (!n) return null;
@@ -1219,7 +1269,7 @@ export default function AiAddVehiclePage() {
 
   /** the photos card: step 2 of Photos & VIN, step 3 of the video (plain wording when AI is off: nothing reads them) */
   const photosCard = (n: number | string) => {
-    const manual = mode === 'photos' && !!status && !status.hasKey;
+    const manual = mode === 'manual' || (mode === 'photos' && !!status && !status.hasKey);
     return (
                 <div className={`card${mode === 'video' ? ' vmode' : ''}`}>
                   <div className="hd">
@@ -1302,21 +1352,26 @@ export default function AiAddVehiclePage() {
               </Link>
               <h1 style={{ marginTop: 4 }}>Add a vehicle</h1>
               <p>
-                Choose how: Photos &amp; VIN, or one Walkaround Video. The VIN and AI fill in the details; check and complete the form below.
+                {mode === 'manual'
+                  ? 'Decode the VIN to fill in the details, then check and complete the form below.'
+                  : 'Choose how: Photos & VIN, or one Walkaround Video. The VIN and AI fill in the details; check and complete the form below.'}
               </p>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-              {status && (
+              {status && modeReady && mode !== 'manual' && (
                 <span className={`chip ${status.hasKey ? 's-ok' : 's-miss'}`} style={{ fontSize: 12, padding: '4px 10px' }} title={status.model}>
                   {status.hasKey ? `✨ AI ready · ${status.model.split(' · ')[0]}` : 'AI is off'}
                 </span>
               )}
-              {formOpen && saveButtons}
+              {formOpen && modeReady && saveButtons}
             </div>
           </div>
           <div className="wrap">
             <div className="col">
-              {status && !status.hasKey && (
+              {/* until ?mode= is read nothing below is drawn: no flash of the AI cards before Add Manually */}
+              {modeReady && (
+                <>
+              {mode !== 'manual' && status && !status.hasKey && (
                 <NoteBox
                   n={{
                     kind: 'warn',
@@ -1331,7 +1386,8 @@ export default function AiAddVehiclePage() {
                 />
               )}
 
-              {/* Photos & VIN | Walkaround Video */}
+              {/* Add with AI: Photos & VIN | Walkaround Video (Add Manually has no mode cards) */}
+              {mode !== 'manual' && (
               <div className="modes" role="group" aria-label="How do you want to add this vehicle?">
                 <button type="button" className={`modeb${mode === 'photos' ? ' on' : ''}`} onClick={() => setMode('photos')}>
                   <span className="ic">📷</span>
@@ -1356,6 +1412,7 @@ export default function AiAddVehiclePage() {
                   </span>
                 </button>
               </div>
+              )}
 
               {/* VIDEO */}
               {mode === 'video' && (
@@ -1476,11 +1533,13 @@ export default function AiAddVehiclePage() {
                 <div className="hd">
                   {numMark(mode === 'video' ? 2 : 1, !!decoded)}
                   <div style={{ flex: 1 }}>
-                    <h2>{mode === 'video' ? 'VIN (found in your video)' : 'VIN'}</h2>
+                    <h2>{mode === 'video' ? 'VIN (found in your video)' : mode === 'manual' ? 'Decode the VIN' : 'VIN'}</h2>
                     <p>
                       {mode === 'video'
                         ? 'Filled in from the sticker in your video. Check it, or type it if it couldn’t be read.'
-                        : 'Type or scan it: we look it up in the official US vehicle database and most details fill in from this.'}
+                        : mode === 'manual'
+                          ? 'Type or scan the VIN and click Decode VIN. Year, make, model, trim, engine and more fill in the form below.'
+                          : 'Type or scan it: we look it up in the official US vehicle database and most details fill in from this.'}
                     </p>
                   </div>
                 </div>
@@ -1495,10 +1554,44 @@ export default function AiAddVehiclePage() {
                       </Tip>
                       {vinCount}
                     </div>
-                    <div className="fld vinfld">
-                      <input id="aq-vin" className="mono" maxLength={17} autoComplete="off" placeholder="17 characters" value={vin} onChange={(e) => onVin(e.target.value)} />
-                      {mode === 'photos' && scanBtn}
-                    </div>
+                    {mode === 'manual' ? (
+                      <div className="vinrow">
+                        <div className="fld vinfld">
+                          <input
+                            id="aq-vin"
+                            className="mono"
+                            maxLength={17}
+                            autoComplete="off"
+                            placeholder="17 characters"
+                            value={vin}
+                            onChange={(e) => onVin(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                decodeNow();
+                              }
+                            }}
+                          />
+                          {scanBtn}
+                        </div>
+                        <button type="button" className="btn p" onClick={decodeNow} disabled={vinBusy || vin.length !== 17}>
+                          {vinBusy ? (
+                            <>
+                              <span className="spin w" /> Decoding…
+                            </>
+                          ) : decoded ? (
+                            'Decode again'
+                          ) : (
+                            'Decode VIN'
+                          )}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="fld vinfld">
+                        <input id="aq-vin" className="mono" maxLength={17} autoComplete="off" placeholder="17 characters" value={vin} onChange={(e) => onVin(e.target.value)} />
+                        {mode === 'photos' && scanBtn}
+                      </div>
+                    )}
                     {vinHint.text && (
                       <span className="hint" style={{ color: vinHint.color }}>
                         {vinHint.text}
@@ -1514,14 +1607,26 @@ export default function AiAddVehiclePage() {
                   {vinNotes.map((n, i) => (
                     <NoteBox key={i} n={n} />
                   ))}
+                  {mode === 'manual' && decoded && !vinBusy && vinKeys.length > 0 && (
+                    <div className="filled" role="status" aria-live="polite">
+                      <span>
+                        ✓ <b>
+                          {vinKeys.length} field{vinKeys.length === 1 ? '' : 's'} filled
+                        </b>
+                        : {vinKeys.map((k) => LABEL[k]).join(', ')}
+                      </span>
+                      <span style={{ fontSize: 12.5 }}>Please check these in the form below — VIN decoding can miss or mistake trim-specific options.</span>
+                    </div>
+                  )}
                   {dup && dupNote}
                 </div>
               </div>
 
               {/* PHOTOS */}
-              {(mode === 'photos' || photos.length > 0) && photosCard(mode === 'video' ? 3 : 2)}
+              {mode !== 'video' || photos.length > 0 ? photosCard(mode === 'video' ? 3 : 2) : null}
 
-              {/* ONLY YOU */}
+              {/* ONLY YOU (Add Manually: these are in the form itself) */}
+              {mode !== 'manual' && (
               <div className="card">
                 <div className="hd">
                   {numMark(mode === 'video' ? (photos.length ? 4 : 3) : 3, Number(rawPrice(you.price)) > 0 && !!String(res.v.mileage || '').trim() && !!String(res.v.stock || '').trim())}
@@ -1622,6 +1727,7 @@ export default function AiAddVehiclePage() {
                   </div>
                 </div>
               </div>
+              )}
 
               {!formOpen && (
                 <div className="card" style={{ padding: '16px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
@@ -1640,6 +1746,7 @@ export default function AiAddVehiclePage() {
               {/* ===================== DECODED FIELDS + THE FULL FORM ===================== */}
               {formOpen && (
                 <>
+                  {mode !== 'manual' && (
                   <div className="card" id="aq-decoded">
                     <div className="hd">
                       <span className={`num${decodedKeys.length ? ' ok' : ''}`}>{decodedKeys.length ? '✓' : '•'}</span>
@@ -1676,7 +1783,8 @@ export default function AiAddVehiclePage() {
                       </div>
                     )}
                   </div>
-              {!ai && !aiBusy && status?.hasKey !== false && (aiState === 'error' || photos.length > 0) && (
+                  )}
+              {mode !== 'manual' && !ai && !aiBusy && status?.hasKey !== false && (aiState === 'error' || photos.length > 0) && (
                     <NoteBox n={{ kind: 'warn', icon: '⚠', html: <><b>AI didn’t read the photos</b>{aiErr ? ` (${aiErr})` : ''}. Colors, interior and mileage need to be filled in by you.</> }} />
                   )}
                   {!ai && !aiBusy && aiState !== 'error' && !photos.length && mode === 'photos' && (
@@ -1736,8 +1844,10 @@ export default function AiAddVehiclePage() {
                   </div>
                 </>
               )}
+                </>
+              )}
             </div>
-            {formOpen && (
+            {formOpen && modeReady && (
             <aside className="panel">
               <div className="card">
                 <div className="bd" style={{ gap: 10 }}>
