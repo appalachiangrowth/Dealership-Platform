@@ -63,8 +63,15 @@ export class ActivityPlatformController {
     return this.activity.overview(q);
   }
 
+  /** ?visitorId= limits the stream to one visitor (with ?tenantId= to one dealership) */
   @Get('feed')
-  feed(@Query() q: { tenantId?: string; eventType?: string; linked?: string; page?: string; pageSize?: string }) {
+  feed(@Query() q: { tenantId?: string; eventType?: string; linked?: string; visitorId?: string; page?: string; pageSize?: string }) {
     return this.activity.feed(q);
+  }
+
+  /** unique visitors for the Visitor filter: ?tenantId= (empty = every dealership) &q= search &limit= */
+  @Get('list')
+  list(@Query() q: { tenantId?: string; q?: string; limit?: string }) {
+    return this.activity.visitors(q);
   }
 }

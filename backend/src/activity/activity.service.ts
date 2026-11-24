@@ -205,9 +205,11 @@ export class ActivityService implements OnModuleInit, OnModuleDestroy {
 
   /* ───────────────────────── Platform Admin ───────────────────────── */
 
-  private feedWhere(q: { tenantId?: string; eventType?: string; linked?: string }) {
+  private feedWhere(q: { tenantId?: string; eventType?: string; linked?: string; visitorId?: string }) {
     const where: Prisma.VisitorActivityWhereInput = {};
     if (q.tenantId) where.tenantId = clean(q.tenantId, 40);
+    // one visitor's own stream (an unknown / malformed id matches nothing rather than everything)
+    if (q.visitorId !== undefined && q.visitorId !== '') where.visitorId = cleanVisitorId(q.visitorId) || '__none__';
     const et = clean(q.eventType, 32).toUpperCase();
     if ((EVENT_TYPES as readonly string[]).includes(et)) where.eventType = et;
     if (q.linked === 'lead') where.leadId = { not: null };
@@ -216,7 +218,7 @@ export class ActivityService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** GET /platform/visitors/feed — live activity stream across all dealerships */
-  async feed(q: { tenantId?: string; eventType?: string; linked?: string; page?: string; pageSize?: string }) {
+  async feed(q: { tenantId?: string; eventType?: string; linked?: string; visitorId?: string; page?: string; pageSize?: string }) {
     const page = Math.max(1, parseInt(q.page || '1', 10) || 1);
     const pageSize = Math.min(100, Math.max(5, parseInt(q.pageSize || '25', 10) || 25));
     const where = this.feedWhere(q);
@@ -236,6 +238,84 @@ export class ActivityService implements OnModuleInit, OnModuleDestroy {
       this.prisma.visitorActivity.count({ where }),
     ]);
     return { items, total, page, pageSize };
+  }
+
+  /**
+   * GET /platform/visitors/list — the unique visitors of one dealership (tenantId) or of every dealership, most recently
+   * active first, straight from VisitorActivity (not from the latest N events, so older visitors are never missed).
+   * Each visitor: dealership, event count, first / last seen, device and the inquiry (lead) it is linked to, if any.
+   * ?q= searches the visitor id and the linked lead's name / phone / email.
+   */
+  async visitors(q: { tenantId?: string; q?: string; limit?: string }) {
+    const tenantId = clean(q.tenantId, 40);
+    const limit = Math.min(1000, Math.max(10, parseInt(q.limit || '500', 10) || 500));
+    const term = clean(q.q, 80);
+    const like = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    const conds: Prisma.Sql[] = [];
+    if (tenantId) conds.push(Prisma.sql`a."tenantId" = ${tenantId}`);
+    if (term)
+      conds.push(Prisma.sql`(
+        a."visitorId" ILIKE ${like}
+        OR a."leadId" IN (SELECT l."id" FROM "Lead" l WHERE l."name" ILIKE ${like} OR l."phone" ILIKE ${like} OR l."email" ILIKE ${like})
+        OR (a."tenantId", a."visitorId") IN (
+          SELECT l."tenantId", l."visitorId" FROM "Lead" l
+          WHERE l."visitorId" IS NOT NULL AND (l."name" ILIKE ${like} OR l."phone" ILIKE ${like} OR l."email" ILIKE ${like})
+        )
+      )`);
+    const where = conds.length ? Prisma.sql`WHERE ${Prisma.join(conds, ' AND ')}` : Prisma.empty;
+
+    const [rows, totals] = await Promise.all([
+      this.prisma.$queryRaw<{ tenantId: string; visitorId: string; events: number; firstSeen: Date; lastSeen: Date; leadId: string | null; deviceType: string | null }[]>`
+        SELECT a."tenantId", a."visitorId",
+          COUNT(*)::int AS events,
+          MIN(a."createdAt") AS "firstSeen",
+          MAX(a."createdAt") AS "lastSeen",
+          (ARRAY_AGG(a."leadId" ORDER BY a."createdAt" DESC) FILTER (WHERE a."leadId" IS NOT NULL))[1] AS "leadId",
+          (ARRAY_AGG(a."deviceType" ORDER BY a."createdAt" DESC) FILTER (WHERE a."deviceType" IS NOT NULL))[1] AS "deviceType"
+        FROM "VisitorActivity" a
+        ${where}
+        GROUP BY a."tenantId", a."visitorId"
+        ORDER BY "lastSeen" DESC
+        LIMIT ${limit}`,
+      this.prisma.$queryRaw<{ total: number }[]>`
+        SELECT COUNT(*)::int AS total FROM (SELECT 1 FROM "VisitorActivity" a ${where} GROUP BY a."tenantId", a."visitorId") v`,
+    ]);
+
+    // leads: the one the events point to, else an inquiry that carries this visitor id
+    const leadIds = [...new Set(rows.map((r) => r.leadId).filter((x): x is string => !!x))];
+    const unlinked = rows.filter((r) => !r.leadId);
+    const [byId, byVisitor, tenants] = await Promise.all([
+      leadIds.length ? this.prisma.lead.findMany({ where: { id: { in: leadIds } }, select: { id: true, name: true, phone: true, email: true } }) : [],
+      unlinked.length
+        ? this.prisma.lead.findMany({
+            where: { visitorId: { in: [...new Set(unlinked.map((r) => r.visitorId))] }, tenantId: { in: [...new Set(unlinked.map((r) => r.tenantId))] } },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, name: true, phone: true, email: true, tenantId: true, visitorId: true },
+          })
+        : [],
+      this.prisma.tenant.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.tenantId))] } }, select: { id: true, name: true } }),
+    ]);
+    const leadById = new Map(byId.map((l) => [l.id, l]));
+    const leadByVisitor = new Map<string, (typeof byVisitor)[number]>();
+    for (const l of byVisitor) if (!leadByVisitor.has(`${l.tenantId}|${l.visitorId}`)) leadByVisitor.set(`${l.tenantId}|${l.visitorId}`, l);
+    const names = new Map(tenants.map((x) => [x.id, x.name]));
+
+    return {
+      total: totals[0]?.total ?? rows.length,
+      items: rows.map((r) => {
+        const l = (r.leadId && leadById.get(r.leadId)) || leadByVisitor.get(`${r.tenantId}|${r.visitorId}`) || null;
+        return {
+          tenantId: r.tenantId,
+          dealerName: names.get(r.tenantId) || r.tenantId,
+          visitorId: r.visitorId,
+          events: r.events,
+          firstSeen: r.firstSeen,
+          lastSeen: r.lastSeen,
+          deviceType: r.deviceType,
+          lead: l ? { id: l.id, name: l.name, phone: l.phone, email: l.email } : null,
+        };
+      }),
+    };
   }
 
   /** GET /platform/visitors/overview — platform-wide numbers, per-dealership comparison, top vehicles, latest events */

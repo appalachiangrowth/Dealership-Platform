@@ -5,8 +5,8 @@
  * (backend GET /platform/visitors/overview and /platform/visitors/feed; data from the websites' activity tracker).
  */
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { Activity, Car, Eye, Link2, MessageCircle, Phone, RefreshCw, Target, UserCheck, Users } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Activity, Car, Check, ChevronDown, Eye, Filter, Link2, MessageCircle, Phone, RefreshCw, Search, Target, UserCheck, Users, X } from 'lucide-react';
 import { useApi } from '@/lib/useApi';
 import { Badge, Card, Empty, ErrorBox, Loading, PageHeader, Pagination, Select, Stat, Table, Td, cx } from '@/components/ui';
 import { ago, dateTime, num } from '@/lib/format';
@@ -31,17 +31,180 @@ function detailOf(e: any) {
   return e.vehicleTitle || e.pagePath || '';
 }
 
+/** one website visitor (GET /platform/visitors/list) */
+type VisitorOpt = {
+  tenantId: string;
+  dealerName: string;
+  visitorId: string;
+  events?: number;
+  firstSeen?: string;
+  lastSeen?: string;
+  deviceType?: string | null;
+  lead: { id: string; name: string; phone?: string; email?: string } | null;
+};
+const shortId = (id: string) => `${id.slice(0, 12)}…`;
+const visitorLabel = (v: VisitorOpt) => (v.lead ? v.lead.name || v.lead.phone || v.lead.email || 'Lead' : `Anonymous (${shortId(v.visitorId)})`);
+
+/**
+ * Visitor filter: searchable, scrollable list of the unique visitors of the chosen dealership (or of every dealership),
+ * most recently active first. Search matches the visitor id and the linked lead's name / phone / email.
+ */
+function VisitorPicker({ dealer, value, onChange }: { dealer: string; value: VisitorOpt | null; onChange: (v: VisitorOpt | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [term, setTerm] = useState('');
+  const [q, setQ] = useState('');
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const id = setTimeout(() => setQ(term.trim()), 300);
+    return () => clearTimeout(id);
+  }, [term]);
+  // a new dealership = a new list, searched from scratch
+  useEffect(() => {
+    setTerm('');
+    setQ('');
+  }, [dealer]);
+  const list = useApi<{ total: number; items: VisitorOpt[] }>(
+    open ? `/platform/visitors/list?tenantId=${encodeURIComponent(dealer)}&q=${encodeURIComponent(q)}&limit=500` : null,
+    [open],
+  );
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => box.current && !box.current.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  const pick = (v: VisitorOpt | null) => {
+    onChange(v);
+    setOpen(false);
+  };
+  const items = list.data?.items || [];
+
+  return (
+    <div ref={box} className="relative">
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          className={cx(
+            'inline-flex h-[38px] w-60 items-center gap-2 border bg-white px-3 text-left text-sm shadow-sm',
+            value ? 'rounded-l-lg border-violet-300 text-violet-800 ring-1 ring-inset ring-violet-200' : 'rounded-lg border-slate-300 text-slate-700',
+          )}
+          title={value ? `${visitorLabel(value)} · ${value.visitorId}` : 'Filter the stream by visitor'}
+        >
+          <Users className="h-4 w-4 shrink-0 text-slate-400" />
+          <span className="min-w-0 flex-1 truncate">{value ? visitorLabel(value) : 'All visitors'}</span>
+          <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+        </button>
+        {value && (
+          <button
+            type="button"
+            onClick={() => pick(null)}
+            title="Clear — show all visitors"
+            aria-label="Clear visitor filter"
+            className="inline-flex h-[38px] items-center rounded-r-lg border border-l-0 border-violet-300 bg-violet-50 px-2 text-violet-700 hover:bg-violet-100"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 w-[24rem] max-w-[90vw] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+          <div className="border-b border-slate-100 p-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                autoFocus
+                value={term}
+                onChange={(e) => setTerm(e.target.value)}
+                placeholder="Search name, phone, email or visitor id…"
+                className="w-full rounded-lg border border-slate-300 py-2 pl-8 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+          </div>
+          <ul role="listbox" className="max-h-80 overflow-y-auto py-1">
+            <li>
+              <button type="button" role="option" aria-selected={!value} onClick={() => pick(null)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50">
+                <span className="flex-1 font-semibold text-slate-800">All visitors</span>
+                {!value && <Check className="h-4 w-4 text-blue-600" />}
+              </button>
+            </li>
+            {list.loading && !list.data ? (
+              <li className="px-3 py-4 text-center text-xs text-slate-500">Loading visitors…</li>
+            ) : list.error ? (
+              <li className="px-3 py-4 text-center text-xs text-red-600">{list.error}</li>
+            ) : !items.length ? (
+              <li className="px-3 py-4 text-center text-xs text-slate-500">{q ? 'No visitor matches this search.' : 'No visitors yet for this selection.'}</li>
+            ) : (
+              items.map((v) => {
+                const on = !!value && value.visitorId === v.visitorId && value.tenantId === v.tenantId;
+                return (
+                  <li key={`${v.tenantId}|${v.visitorId}`}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={on}
+                      onClick={() => pick(v)}
+                      className={cx('flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-slate-50', on && 'bg-violet-50')}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className={cx('truncate text-sm font-medium', v.lead ? 'text-violet-800' : 'text-slate-800')}>{visitorLabel(v)}</span>
+                          {v.lead && <span className="shrink-0 rounded bg-violet-100 px-1 text-[9px] font-bold uppercase text-violet-700">Lead</span>}
+                        </div>
+                        <div className="truncate text-xs text-slate-500">
+                          {!dealer && <>{v.dealerName} · </>}
+                          {num(v.events || 0)} events{v.lastSeen && <> · last seen {ago(v.lastSeen)}</>}
+                          {v.deviceType && <> · {v.deviceType}</>}
+                        </div>
+                        {v.lead && v.lead.phone && v.lead.name && <div className="truncate text-[11px] text-slate-400">{v.lead.phone}</div>}
+                      </div>
+                      {on && <Check className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />}
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+          {!!list.data && (
+            <div className="border-t border-slate-100 px-3 py-1.5 text-[11px] text-slate-500">
+              {list.data.total > items.length ? `Showing the ${num(items.length)} most recent of ${num(list.data.total)} visitors — search to find others.` : `${num(list.data.total)} visitor${list.data.total === 1 ? '' : 's'}`}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LiveStream({ tenantId, dealerships }: { tenantId: string; dealerships: { id: string; name: string }[] }) {
   const [dealer, setDealer] = useState(tenantId);
+  const [visitor, setVisitor] = useState<VisitorOpt | null>(null);
   const [eventType, setEventType] = useState('');
   const [linked, setLinked] = useState('');
   const [page, setPage] = useState(1);
   const [live, setLive] = useState(true);
   useEffect(() => {
     setDealer(tenantId);
+    setVisitor(null);
     setPage(1);
   }, [tenantId]);
-  const { data, loading, error, reload } = useApi(`/platform/visitors/feed?tenantId=${dealer}&eventType=${eventType}&linked=${linked}&page=${page}&pageSize=25`);
+  const chooseVisitor = (v: VisitorOpt | null) => {
+    setVisitor(v);
+    setPage(1);
+  };
+  // a chosen visitor belongs to one dealership — filter on both, also when "All dealers" is selected
+  const feedTenant = dealer || visitor?.tenantId || '';
+  const { data, loading, error, reload } = useApi(
+    `/platform/visitors/feed?tenantId=${encodeURIComponent(feedTenant)}&visitorId=${encodeURIComponent(visitor?.visitorId || '')}&eventType=${eventType}&linked=${linked}&page=${page}&pageSize=25`,
+  );
   useEffect(() => {
     if (!live || page !== 1) return;
     const t = setInterval(() => void reload(), 15000);
@@ -59,12 +222,13 @@ function LiveStream({ tenantId, dealerships }: { tenantId: string; dealerships: 
       }
       actions={
         <>
-          <Select value={dealer} onChange={(e) => { setDealer(e.target.value); setPage(1); }} className="w-48">
+          <Select value={dealer} onChange={(e) => { setDealer(e.target.value); setVisitor(null); setPage(1); }} className="w-48">
             <option value="">All dealers</option>
             {dealerships.map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
             ))}
           </Select>
+          <VisitorPicker dealer={dealer} value={visitor} onChange={chooseVisitor} />
           <Select value={eventType} onChange={(e) => { setEventType(e.target.value); setPage(1); }} className="w-44">
             <option value="">All event types</option>
             {EVENTS.map(([k, l]) => (
@@ -92,6 +256,20 @@ function LiveStream({ tenantId, dealerships }: { tenantId: string; dealerships: 
         <div className="p-4"><ErrorBox error={error} retry={reload} /></div>
       ) : (
         <>
+          {visitor && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-violet-100 bg-violet-50 px-5 py-2 text-sm text-violet-900">
+              <Filter className="h-4 w-4" />
+              <span className="min-w-0 flex-1">
+                Only <b>{visitorLabel(visitor)}</b>
+                <span className="text-violet-700"> · {visitor.dealerName}</span>
+                <span className="ml-1 font-mono text-[11px] text-violet-500">{visitor.visitorId}</span>
+                {data && <span className="text-violet-700"> · {num(data.total)} event{data.total === 1 ? '' : 's'}</span>}
+              </span>
+              <button type="button" onClick={() => chooseVisitor(null)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-violet-800 hover:bg-violet-100">
+                <X className="h-3.5 w-3.5" /> Clear
+              </button>
+            </div>
+          )}
           <Table head={['When', 'Dealership', 'Event', 'Detail', 'Visitor', 'Device / place']} empty={!data?.items.length && <Empty title="No activity yet" desc="Events appear here as soon as visitors browse the dealer websites." />}>
             {data?.items.map((e: any) => (
               <tr key={e.id} className="hover:bg-slate-50">
@@ -109,7 +287,18 @@ function LiveStream({ tenantId, dealerships }: { tenantId: string; dealerships: 
                   ) : (
                     <Badge color="slate">Anonymous</Badge>
                   )}
-                  <div className="mt-0.5 font-mono text-[10px] text-slate-400">{String(e.visitorId).slice(0, 16)}…</div>
+                  {visitor ? (
+                    <div className="mt-0.5 font-mono text-[10px] text-slate-400">{String(e.visitorId).slice(0, 16)}…</div>
+                  ) : (
+                    <button
+                      type="button"
+                      title="Show only this visitor's activity"
+                      onClick={() => chooseVisitor({ tenantId: e.tenantId, dealerName: e.tenant?.name || e.tenantId, visitorId: e.visitorId, lead: e.lead ? { id: e.lead.id, name: e.lead.name } : null })}
+                      className="mt-0.5 block font-mono text-[10px] text-slate-400 hover:text-violet-700 hover:underline"
+                    >
+                      {String(e.visitorId).slice(0, 16)}…
+                    </button>
+                  )}
                 </Td>
                 <Td className="text-xs text-slate-500">
                   {e.deviceType || '—'}
