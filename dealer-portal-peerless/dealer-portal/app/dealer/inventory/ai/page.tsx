@@ -969,6 +969,15 @@ export default function AiAddVehiclePage() {
     });
   };
 
+  /**
+   * Mileage and stock number in "Only you can answer these": the same values as in the form below (one value, shown in
+   * both places). What the dealer types there is theirs and is kept when AI finishes later.
+   */
+  const setOwn = (k: 'mileage' | 'stock', val: string) => {
+    setField(k, val);
+    setRes((R) => ({ ...R, src: { ...R.src, [k]: val.trim() ? 'you' : REQUIRED.includes(k) ? 'miss' : '' }, ev: { ...R.ev, [k]: '' } }));
+  };
+
   const missingReq = (() => {
     const m = REQUIRED.filter((k) => !String(res.v[k] || '').trim());
     if (res.v.vin && res.v.vin.length !== 17 && !m.includes('vin')) m.push('vin');
@@ -1637,10 +1646,10 @@ export default function AiAddVehiclePage() {
               {mode !== 'manual' && (
               <div className="card">
                 <div className="hd">
-                  {numMark(mode === 'video' ? (photos.length ? 4 : 3) : 3, Number(rawPrice(you.price)) > 0)}
+                  {numMark(mode === 'video' ? (photos.length ? 4 : 3) : 3, Number(rawPrice(you.price)) > 0 && !!String(res.v.mileage || '').trim() && !!String(res.v.stock || '').trim())}
                   <div style={{ flex: 1 }}>
                     <h2>Only you can answer these</h2>
-                    <p>Price and history are never filled in by AI.</p>
+                    <p>Price, stock number and history are never filled in by AI. If AI reads the mileage, check it here.</p>
                   </div>
                 </div>
                 <div className="bd">
@@ -1655,6 +1664,34 @@ export default function AiAddVehiclePage() {
                       <div className="fld">
                         <span className="pre">$</span>
                         <PriceInput id="aq-price" placeholder="e.g. 17,900" value={you.price} onChange={(raw) => setYou({ ...you, price: raw })} />
+                      </div>
+                    </div>
+                    <div className="f">
+                      <div className="lr">
+                        <label className="lbl" htmlFor="aq-mileage">
+                          Mileage <span className="req">*</span>
+                        </label>
+                        <Tip label="Mileage">The odometer reading in miles (total miles, not the trip meter).</Tip>
+                      </div>
+                      <div className="fld">
+                        <PriceInput id="aq-mileage" inputMode="numeric" placeholder="e.g. 42,500" value={res.v.mileage || ''} onChange={(raw) => setOwn('mileage', raw.replace(/[^0-9]/g, ''))} />
+                        <span className="suf">mi</span>
+                      </div>
+                      {(res.src.mileage === 'ai' || res.src.mileage === 'unsure') && !!res.v.mileage && (
+                        <span className="hint" style={{ color: '#5B3FD6' }}>
+                          ✨ Read by AI from the dashboard in your {mode === 'video' ? 'video' : 'photos'}. Please check it.
+                        </span>
+                      )}
+                    </div>
+                    <div className="f">
+                      <div className="lr">
+                        <label className="lbl" htmlFor="aq-stock">
+                          Stock number <span className="req">*</span>
+                        </label>
+                        <Tip label="Stock number">Your own stock number for this vehicle. It is never created automatically.</Tip>
+                      </div>
+                      <div className="fld">
+                        <input id="aq-stock" autoComplete="off" placeholder="e.g. BM-1042" value={res.v.stock || ''} onChange={(e) => setOwn('stock', e.target.value)} />
                       </div>
                     </div>
                     <div className="f">
