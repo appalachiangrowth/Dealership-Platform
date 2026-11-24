@@ -91,15 +91,40 @@ export function faviconResponse(raw: unknown, url: URL): Response {
 }
 
 /**
- * /inventory.json passes through here: an article written in the rich text editor carries its HTML in
- * `contentHtml` (cleaned again here, whatever the backend sent) next to the plain-text `content` the designs use.
+ * "Certified pre-owned" is not offered on the websites. The backend may still send it (`certified: "Yes"` from older
+ * records, or imported fields such as certified_pre_owned / cpo): those fields are removed before any design sees the
+ * vehicle — some designs list every field of a vehicle on its page — so no design shows a Certified row, badge or
+ * filter. A condition such as "Certified Pre-Owned" shows as "Used", and a feature or deal badge that only says
+ * "Certified" / "CPO" is left out.
+ */
+const CPO_KEY = /^(is_?)?(certified|cpo)(_?pre_?owned)?$/i;
+const CPO_TEXT = /^\s*(manufacturer\s+)?(certified(\s+pre[\s-]?owned)?(\s+vehicle)?|c\.?p\.?o\.?)\s*$/i;
+const itemText = (x: unknown) => (x && typeof x === 'object' ? String((x as Record<string, unknown>).label ?? (x as Record<string, unknown>).name ?? '') : String(x ?? ''));
+
+export function hideCertified<T extends Record<string, unknown>>(v: T): T {
+  if (!v || typeof v !== 'object') return v;
+  const o = v as Record<string, unknown>;
+  for (const k of Object.keys(o)) if (CPO_KEY.test(k)) delete o[k];
+  if (typeof o.condition === 'string' && /certified|\bcpo\b/i.test(o.condition)) o.condition = 'Used';
+  for (const k of ['features', 'safety', 'safetyFeatures', 'options', 'equipment']) {
+    if (Array.isArray(o[k])) o[k] = (o[k] as unknown[]).filter((x) => !CPO_TEXT.test(itemText(x)));
+  }
+  for (const k of ['deal', 'dealLabel', 'badge']) if (typeof o[k] === 'string' && CPO_TEXT.test(o[k] as string)) o[k] = '';
+  return v;
+}
+
+/**
+ * /inventory.json passes through here: certified / CPO details are removed from every vehicle (hideCertified), and an
+ * article written in the rich text editor carries its HTML in `contentHtml` (cleaned again here, whatever the backend
+ * sent) next to the plain-text `content` the designs use.
  */
 export function cleanInventoryPosts(json: string): string {
-  if (!json.includes('contentHtml')) return json;
   try {
-    const data = JSON.parse(json) as { posts?: Record<string, unknown>[] };
+    const data = JSON.parse(json) as { vehicles?: Record<string, unknown>[]; posts?: Record<string, unknown>[] };
+    if (!data || typeof data !== 'object') return json;
+    if (Array.isArray(data.vehicles)) data.vehicles.forEach(hideCertified);
     for (const p of data.posts || []) {
-      if (!p || typeof p !== 'object') continue;
+      if (!p || typeof p !== 'object' || !('contentHtml' in p)) continue;
       const html = String(p.contentHtml || '');
       p.contentHtml = html && isRichHtml(html) ? sanitizeRichHtml(html) : '';
     }

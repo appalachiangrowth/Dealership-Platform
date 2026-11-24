@@ -18,7 +18,7 @@ import { outsideScripts, rewriteHashLinks, runtimeScript, spaConf, spaHashForKey
 import { allOn, blockedPaths, featureCss, featureOfPage, flagsOf, hideFeatures, hrefBlocked, markRoot, offText, themeFeatures } from '@/lib/features';
 import { injectNav, renderCustomPage, type ChromeOpts, type CustomPage, type FooterCol, type NavItem } from '@/lib/custom-pages';
 import { rel, siteTokens } from '@/lib/tokens';
-import { applyFavicon, applyMediaMeta, cleanInventoryPosts, faviconResponse, richPostRuntime } from '@/lib/site-extras';
+import { applyFavicon, applyMediaMeta, cleanInventoryPosts, faviconResponse, hideCertified, richPostRuntime } from '@/lib/site-extras';
 import { activityTrackerScript } from '@/lib/activity-tracker';
 import { existsSync, statSync } from 'fs';
 import { readFile } from 'fs/promises';
@@ -467,7 +467,7 @@ async function customPage(req: Request, url: URL, host: string, slug: string, se
   let vehicles: Record<string, unknown>[] = [];
   if ((data.page.sections || []).some((s) => s && s.type === 'inventory')) {
     const inv = await backend('/public/inventory.json', host);
-    if (inv.ok) vehicles = ((await inv.json()) as { vehicles?: Record<string, unknown>[] }).vehicles || [];
+    if (inv.ok) vehicles = (((await inv.json()) as { vehicles?: Record<string, unknown>[] }).vehicles || []).map(hideCertified); // no Certified / CPO anywhere
   }
   let html = applyMediaMeta(applyFavicon(renderCustomPage(ctx, theme, data.page, originOf(req), { vehicles, navPages: navItems(ctx), chrome: chromeOf(ctx), themePreview, preview: data.preview }), ctx.settings?.faviconUrl), ctx.mediaMeta);
   if (!data.preview && !themePreview) html = await finishHtml(html, ctx, theme, host, originOf(req), seoOpts);
