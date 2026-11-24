@@ -22,7 +22,9 @@ import { FbPostModal } from '@/components/fb/FbPostModal';
 import { AQ_CSS } from '@/components/ai/aqStyles';
 import { usePhotoSort } from '@/lib/use-photo-sort';
 import { api, mediaUrl } from '@/lib/api';
-import { BODY_STYLES, checkVin, normBodyStyle, normVin, VinDup } from '@/lib/vin-check';
+import { BODY_STYLES, DRIVETRAINS, checkVin, normBodyStyle, normDrive, normVin, VinDup } from '@/lib/vin-check';
+import { PriceInput, rawPrice } from '@/components/PriceInput';
+import { useMobileFormFocus } from '@/lib/use-mobile-form';
 import { brandRun } from '@/lib/branding';
 import {
   aiApi, AiStatus, ANGLE_LABEL, ANGLE_ORDER, arrangePhotos, bigFrame, extractAudio, extractFrames, mergeVideo, nextPhotoId, Photo, shrink, Vid, vinOk,
@@ -33,11 +35,10 @@ const OPT: Record<string, string[]> = {
   vtype: ['Car', 'Truck', 'SUV', 'Van', 'Motorcycle'],
   body: BODY_STYLES,
   condition: ['Used', 'New'],
-  cpo: ['No', 'Yes'],
   ext: ['Black', 'White', 'Silver', 'Gray', 'Blue', 'Red', 'Green', 'Brown', 'Beige', 'Gold', 'Orange', 'Yellow', 'Purple'],
   int: ['Black', 'Gray', 'Beige', 'Brown', 'White', 'Red', 'Blue', 'Other'],
   trans: ['Automatic', 'Manual', 'CVT', 'Dual-Clutch'],
-  drive: ['Front-Wheel Drive', 'Rear-Wheel Drive', 'All-Wheel Drive', 'Four-Wheel Drive'],
+  drive: DRIVETRAINS,
   fuel: ['Gasoline', 'Diesel', 'Hybrid', 'Plug-in Hybrid', 'Electric', 'Biodiesel'],
   itype: ['Cloth', 'Leather', 'Leatherette', 'Suede', 'Vinyl'],
 };
@@ -60,12 +61,11 @@ const SECTIONS: [string, string, FieldDef[]][] = [
     ['vin', 'VIN', 1, 'The 17-character Vehicle Identification Number.', '', '', 'wide'],
     ['stock', 'Stock number', 1, 'Your own stock number for this vehicle. Type it in; it is never created automatically.'],
     ['condition', 'Condition', 0, 'New or used.'],
-    ['cpo', 'Certified pre-owned', 0, 'Yes only if it passed a manufacturer certification programme.'],
     ['badge', 'Deal badge', 0, 'A short highlight on the listing, e.g. "One owner". Under 30 characters.', '', '', 'wide'],
   ]],
   ['Specifications', 'Engine, colors, drivetrain and history.', [
     ['ext', 'Exterior color', 1, 'The main paint color, read by AI from the photos.'],
-    ['int', 'Interior color', 1, 'The main cabin color, read by AI from the photos.'],
+    ['int', 'Interior color', 1, 'The main cabin color. Choose it yourself: it is never filled in by the VIN or AI.'],
     ['trans', 'Transmission', 1, 'How the vehicle changes gear.'],
     ['drive', 'Drivetrain', 0, 'Which wheels are powered.'],
     ['fuel', 'Fuel type', 0, 'What the vehicle runs on.'],
@@ -76,7 +76,7 @@ const SECTIONS: [string, string, FieldDef[]][] = [
     ['tank', 'Tank size', 0, 'Fuel tank size in US gallons. Optional.', '', 'gal'],
     ['doors', 'Doors', 0, 'Number of passenger doors.'],
     ['seats', 'Seats', 0, 'How many people it carries.'],
-    ['owners', 'Previous owners', 1, 'How many people owned the vehicle before. Check the vehicle history report. Never filled in by AI.'],
+    ['owners', 'Previous owners', 0, 'Optional. How many people owned the vehicle before. Check the vehicle history report. Never filled in by AI.'],
     ['accidents', 'Accidents reported', 0, 'The number of accidents on the vehicle history report. Optional; never filled in by AI.'],
   ]],
   ['Description & features', 'What makes this vehicle worth a visit.', [
@@ -112,7 +112,7 @@ type Decoded = {
   safety: string[];
   checkDigitOk: boolean;
 };
-type You = { price: string; condition: string; cpo: string; owners: string; accidents: string; notes: string };
+type You = { price: string; condition: string; owners: string; accidents: string; notes: string };
 type Res = { v: Record<string, string>; src: Record<string, string>; ev: Record<string, string>; ok: Record<string, boolean> };
 type Note = { kind: 'ok' | 'bad' | 'warn' | 'info'; icon: string; html: React.ReactNode };
 type AiState = 'idle' | 'waiting' | 'running' | 'done' | 'error';
@@ -137,9 +137,21 @@ const ENTRY_CSS = `
 .aq .filled{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:10px;background:#E8F7EE;border:1px solid #BBE5CB;color:#14532D;font-size:13.5px}
 .aq .verify p{margin:0;line-height:1.6;color:#334155}
 @media (max-width:640px){.aq .entry{grid-template-columns:1fr}}
+/* phones: one field per row so labels and values never clip; a compact page title */
+@media (max-width:640px){
+.aq .grid{grid-template-columns:minmax(0,1fr);gap:14px}
+.aq .vinrow .btn{flex:1 1 100%}
+}
+@media (max-width:767px){
+.aq .top{padding:12px 16px;gap:10px}
+.aq .top h1{font-size:20px}
+.aq .top p{display:none}
+.aq .f,.aq .card{scroll-margin-top:12px}
+.aq .modal{align-items:flex-end;padding:12px}
+}
 `;
 /** form fields that are the answers of "Only you can answer these" (kept in step both ways) */
-const YOU_KEYS: Record<string, keyof You> = { price: 'price', condition: 'condition', cpo: 'cpo', owners: 'owners', accidents: 'accidents' };
+const YOU_KEYS: Record<string, keyof You> = { price: 'price', condition: 'condition', owners: 'owners', accidents: 'accidents' };
 /** where a value came from, for the "decoded" summary */
 const FILLED_BY: Record<string, string> = { vin: 'VIN', ai: 'AI', unsure: 'AI' };
 
@@ -256,6 +268,9 @@ export default function AiAddVehiclePage() {
   const toast = useToast();
   const { tenant } = useTenant();
   const dealer = tenant?.name || 'our dealership';
+  // phones: the field being typed in is scrolled into the middle of the space above the keyboard
+  const rootRef = useRef<HTMLDivElement>(null);
+  useMobileFormFocus(rootRef);
 
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [mode, _setMode] = useState<Mode>('manual');
@@ -273,8 +288,13 @@ export default function AiAddVehiclePage() {
   /** the VIN the current decoded record belongs to */
   const decodedVin = useRef('');
   const [vinNotes, setVinNotes] = useState<Note[]>([]);
-  /** Add Manually: "please verify the decoded details" popup, shown when a VIN decode finishes */
-  const [verifyOpen, setVerifyOpen] = useState(false);
+  /**
+   * "Please verify" popup: shown when a VIN decode (Add Manually and Add with AI), the AI photo reading or the
+   * walkaround video reading finishes. Dismissed with "Understood".
+   */
+  const [verify, setVerify] = useState<null | 'vin' | 'photos' | 'video'>(null);
+  const verifyOpen = verify !== null;
+  const setVerifyOpen = (open: boolean) => setVerify(open ? 'vin' : null);
 
   // photos
   const [photos, _setPhotos] = useState<Photo[]>([]);
@@ -301,7 +321,7 @@ export default function AiAddVehiclePage() {
   const [vDrop, setVDrop] = useState(false);
 
   // only you
-  const [you, setYou] = useState<You>({ price: '', condition: 'Used', cpo: 'No', owners: '', accidents: '', notes: '' });
+  const [you, setYou] = useState<You>({ price: '', condition: 'Used', owners: '', accidents: '', notes: '' });
   const youRef = useRef(you);
   youRef.current = you;
 
@@ -407,7 +427,8 @@ export default function AiAddVehiclePage() {
       setVinHint({ text: '', color: '#526077' });
       decodedVin.current = v;
       setDecoded(d);
-      if (modeRef.current === 'manual') setVerifyOpen(true);
+      // the video's own popup comes when AI has finished reading it (videoAfterVin)
+      if (modeRef.current !== 'video') setVerify('vin');
       if (modeRef.current === 'video') await videoAfterVin(d);
     } catch (e) {
       if (vinRef.current === v) setVinNotes([{ kind: 'bad', icon: '⚠', html: (e as Error).message }]);
@@ -497,6 +518,7 @@ export default function AiAddVehiclePage() {
       setAiMs(Math.round(performance.now() - t0));
       setAiState('done');
       lastRun.current = key;
+      setVerify('photos');
     } catch (e) {
       if (ver !== aiVer.current) return;
       setAiState('error');
@@ -759,6 +781,7 @@ export default function AiAddVehiclePage() {
       } else {
         vstep('vin', 'err', 'VIN not readable in the video. Please type it below.');
         setAiState('done');
+        setVerify('video');
         setTimeout(() => {
           const el = document.getElementById('aq-vin');
           el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -789,7 +812,7 @@ export default function AiAddVehiclePage() {
     setAiState('running');
     const facts = {
       dealership: dealer, Year: f.year, Make: f.make, Model: f.model, Trim: f.trim, 'Body style': f.body, Engine: f.engine, Drivetrain: f.drive, 'Fuel type': f.fuel,
-      'Exterior color': a.exterior_color?.value, 'Interior color': a.interior_color?.value, 'Interior material': a.interior_material?.value,
+      'Exterior color': a.exterior_color?.value, 'Interior material': a.interior_material?.value,
       Transmission: f.trans || a.transmission?.value || '',
       Features: (a.features || []).filter((x: any) => x.confidence !== 'low').map((x: any) => x.name),
     };
@@ -800,6 +823,7 @@ export default function AiAddVehiclePage() {
       setAi({ ...aiRef.current, description: '' });
     }
     setAiState('done');
+    setVerify('video');
   };
 
   /* ---------------- the full form (opens by itself) ---------------- */
@@ -824,6 +848,7 @@ export default function AiAddVehiclePage() {
     };
     (['year', 'make', 'model', 'trim', 'vtype', 'body', 'engine', 'hp', 'fuel', 'drive', 'trans', 'doors', 'seats'] as const).forEach((k) => set(k, f[k], 'vin'));
     if (R.v.body) R.v.body = normBodyStyle(R.v.body);
+    if (R.v.drive) R.v.drive = normDrive(R.v.drive);
     ['trim', 'trans', 'body'].forEach((k) => {
       if (!R.v[k]) R.ev[k] = d ? 'Not in the VIN record. Please choose it.' : 'Please choose it.';
     });
@@ -832,16 +857,14 @@ export default function AiAddVehiclePage() {
     R.v.stock = '';
     R.src.stock = 'miss';
     R.ev.stock = 'Enter your own stock number.';
-    set('price', String(y.price || '').replace(/[^0-9.]/g, ''), 'you');
+    set('price', rawPrice(y.price), 'you');
     set('condition', y.condition, 'you');
-    set('cpo', y.cpo, 'you');
     set('owners', y.owners, 'you');
     set('accidents', y.accidents, 'you');
     ['fee', 'msrp', 'badge', 'mpg', 'tank'].forEach((k) => set(k, '', ''));
     const vinSafety = d?.safety || [];
     if (a) {
       aiSet('ext', a.exterior_color);
-      aiSet('int', a.interior_color);
       aiSet('itype', a.interior_material);
       if (!R.v.trans && a.transmission?.value) aiSet('trans', a.transmission); // the VIN record often leaves it out
       aiSet('mileage', a.odometer_miles, (v) => String(v).replace(/[^0-9]/g, ''));
@@ -860,7 +883,7 @@ export default function AiAddVehiclePage() {
         a.description ? `Written from the VIN record and the photos${y.notes ? ', plus your notes' : ''}.` : 'Please write a short description.',
       );
     } else {
-      ['ext', 'int', 'itype', 'mileage'].forEach((k) => {
+      ['ext', 'itype', 'mileage'].forEach((k) => {
         R.v[k] = '';
         R.src[k] = REQUIRED.includes(k) ? 'miss' : '';
         R.ev[k] = modeRef.current === 'manual' ? 'Please enter it.' : 'No AI reading. Please enter it.';
@@ -869,6 +892,10 @@ export default function AiAddVehiclePage() {
       set('safety', vinSafety.join('\n'), vinSafety.length ? 'vin' : '');
       set('description', y.notes || '', y.notes ? 'you' : 'miss', y.notes ? '' : 'Please write a short description.');
     }
+    // interior color: never from the VIN record, photos or video — always the dealer's own choice
+    R.v.int = '';
+    R.src.int = 'miss';
+    R.ev.int = 'Choose the interior color yourself. It is never filled in automatically.';
     // AI's "Photo 3" refers to the order sent; show the number the photo has now
     if (modeRef.current !== 'video' && sentIds.current.length)
       Object.keys(R.ev).forEach((k) => {
@@ -959,7 +986,7 @@ export default function AiAddVehiclePage() {
   const rewriteDesc = async () => {
     setRewriting(true);
     const facts: Record<string, unknown> = { dealership: dealer };
-    ['year', 'make', 'model', 'trim', 'body', 'engine', 'fuel', 'drive', 'trans', 'ext', 'int', 'itype', 'condition', 'cpo', 'owners', 'accidents'].forEach((k) => {
+    ['year', 'make', 'model', 'trim', 'body', 'engine', 'fuel', 'drive', 'trans', 'ext', 'int', 'itype', 'condition', 'owners', 'accidents'].forEach((k) => {
       if (res.v[k]) facts[LABEL[k]] = res.v[k];
     });
     facts.Features = lines(res.v.options);
@@ -982,8 +1009,8 @@ export default function AiAddVehiclePage() {
     const body: Record<string, unknown> = {
       status: st,
       year: v.year ? Number(v.year) : null,
-      make: v.make, model: v.model, trim: v.trim, vehicleType: v.vtype, bodyStyle: v.body, condition: v.condition || 'Used', certified: v.cpo === 'Yes',
-      price: v.price, processingFee: v.fee, msrp: v.msrp, mileage: v.mileage, vin: String(v.vin || '').toUpperCase().trim(), stockNumber: v.stock, dealLabel: v.badge,
+      make: v.make, model: v.model, trim: v.trim, vehicleType: v.vtype, bodyStyle: v.body, condition: v.condition || 'Used',
+      price: rawPrice(v.price), processingFee: v.fee, msrp: v.msrp, mileage: v.mileage, vin: String(v.vin || '').toUpperCase().trim(), stockNumber: v.stock, dealLabel: v.badge,
       exteriorColor: v.ext, interiorColor: v.int, transmission: v.trans, drivetrain: v.drive, fuelType: v.fuel, engine: v.engine, horsepower: v.hp,
       mpg: v.mpg, fuelTank: v.tank, doors: v.doors, seats: v.seats, owners: v.owners, accidents: v.accidents,
       description: v.description, features: feats, safetyFeatures: lines(v.safety),
@@ -1066,6 +1093,14 @@ export default function AiAddVehiclePage() {
   /** Add Manually: the fields the VIN decode filled in (not the ones the dealer typed), for the summary + popup */
   const vinKeys = decodedKeys.filter((k) => res.src[k] === 'vin');
   const vinList = vinKeys.map((k) => LABEL[k]).join(', ');
+  /** the "please verify" popup lists what was filled in for the dealer: by the VIN (Add Manually) or VIN + AI */
+  const popKeys = mode === 'manual' ? vinKeys : decodedKeys;
+  const popWhat =
+    verify === 'photos'
+      ? `AI read ${photos.length} photo${photos.length === 1 ? '' : 's'}`
+      : verify === 'video'
+        ? 'AI read your walkaround video'
+        : `VIN ${vin} decoded`;
   const emptyKeys = SECTIONS.flatMap((sec) => sec[2].map((f) => f[0])).filter((k) => !String(res.v[k] || '').trim());
   const aiBusy = aiState === 'running' || aiState === 'waiting';
 
@@ -1163,6 +1198,7 @@ export default function AiAddVehiclePage() {
           ))}
         </select>
       );
+    else if (k === 'price') input = <PriceInput id="r-price" value={val} onChange={(raw) => setField('price', raw)} placeholder="e.g. 35,000" />;
     else if (kind === 'area') input = <textarea id={`r-${k}`} value={val} onChange={(e) => setField(k, e.target.value)} style={k === 'description' ? undefined : { minHeight: 90 }} />;
     else
       input = (
@@ -1292,7 +1328,7 @@ export default function AiAddVehiclePage() {
   );
 
   return (
-    <div className="aq">
+    <div className="aq" ref={rootRef}>
       <style dangerouslySetInnerHTML={{ __html: AQ_CSS + ENTRY_CSS }} />
 
       <section>
@@ -1598,7 +1634,7 @@ export default function AiAddVehiclePage() {
               {mode !== 'manual' && (
               <div className="card">
                 <div className="hd">
-                  {numMark(mode === 'video' ? (photos.length ? 4 : 3) : 3, Number(String(you.price).replace(/,/g, '')) > 0 && !!you.owners.trim())}
+                  {numMark(mode === 'video' ? (photos.length ? 4 : 3) : 3, Number(rawPrice(you.price)) > 0)}
                   <div style={{ flex: 1 }}>
                     <h2>Only you can answer these</h2>
                     <p>Price and history are never filled in by AI.</p>
@@ -1615,7 +1651,7 @@ export default function AiAddVehiclePage() {
                       </div>
                       <div className="fld">
                         <span className="pre">$</span>
-                        <input id="aq-price" inputMode="decimal" placeholder="e.g. 17900" value={you.price} onChange={(e) => setYou({ ...you, price: e.target.value })} />
+                        <PriceInput id="aq-price" placeholder="e.g. 17,900" value={you.price} onChange={(raw) => setYou({ ...you, price: raw })} />
                       </div>
                     </div>
                     <div className="f">
@@ -1633,21 +1669,8 @@ export default function AiAddVehiclePage() {
                     </div>
                     <div className="f">
                       <div className="lr">
-                        <span className="lbl">Certified pre-owned</span>
-                        <Tip label="Certified pre-owned">Choose Yes only if the vehicle passed a manufacturer’s certified pre-owned inspection programme.</Tip>
-                      </div>
-                      <div className="seg">
-                        {['No', 'Yes'].map((x) => (
-                          <button key={x} type="button" className={`segb${you.cpo === x ? ' on' : ''}`} onClick={() => setYou({ ...you, cpo: x })}>
-                            {x}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="f">
-                      <div className="lr">
                         <label className="lbl" htmlFor="aq-owners">
-                          Previous owners <span className="req">*</span>
+                          Previous owners <span className="hint" style={{ fontWeight: 500 }}>(optional)</span>
                         </label>
                         <Tip label="Previous owners">How many people owned the vehicle before. Check the vehicle history report.</Tip>
                       </div>
@@ -1885,9 +1908,9 @@ export default function AiAddVehiclePage() {
             <div className="hd">
               <span style={{ fontSize: 24, lineHeight: 1 }}>⚠️</span>
               <div style={{ flex: 1 }}>
-                <h2 id="aq-verify-h">Please verify the decoded details</h2>
+                <h2 id="aq-verify-h">Please verify the {verify === 'vin' ? 'decoded' : 'auto-filled'} details</h2>
                 <p>
-                  VIN {vin} · {vinKeys.length} field{vinKeys.length === 1 ? '' : 's'} auto-filled
+                  {popWhat} · {popKeys.length} field{popKeys.length === 1 ? '' : 's'} auto-filled
                 </p>
               </div>
             </div>
@@ -1895,7 +1918,8 @@ export default function AiAddVehiclePage() {
               <p id="aq-verify-d">
                 Automated / AI VIN decoding can occasionally make mistakes or miss trim-specific options. Please double-check all auto-filled fields below before saving the vehicle.
               </p>
-              {vinKeys.length > 0 && <p style={{ fontSize: 13, color: '#526077' }}>Auto-filled: {vinList}.</p>}
+              {popKeys.length > 0 && <p style={{ fontSize: 13, color: '#526077' }}>Auto-filled: {popKeys.map((k) => LABEL[k]).join(', ')}.</p>}
+              <p style={{ fontSize: 13, color: '#526077' }}>Interior color is never filled in automatically: choose it yourself.</p>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button type="button" className="btn p" autoFocus onClick={() => setVerifyOpen(false)}>
                   Understood

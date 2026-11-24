@@ -3,14 +3,16 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, ArrowLeft, Check, ChevronDown, CheckCircle2, Copy, Globe, Info, Rss, Sparkles, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, ChevronDown, CheckCircle2, Copy, ExternalLink, FileText, Globe, Info, MoreHorizontal, Rss, Sparkles, Trash2 } from 'lucide-react';
 import { api, mediaUrl, siteUrl } from '@/lib/api';
 import { MP_FIELDS, mpMissing } from '@/lib/marketplace';
 import { autoDescription } from '@/lib/vehicle-description';
 import { FacebookIcon } from '@/lib/facebook';
 import { FbPostModal } from './fb/FbPostModal';
 import { brandRun } from '@/lib/branding';
-import { BODY_STYLES, checkVin, normBodyStyle, normVin, VinDup } from '@/lib/vin-check';
+import { BODY_STYLES, DRIVETRAINS, checkVin, normBodyStyle, normDrive, normVin, VinDup } from '@/lib/vin-check';
+import { useMobileFormFocus } from '@/lib/use-mobile-form';
+import { PriceInput, rawPrice } from './PriceInput';
 import { useToast } from './toast';
 import { useTenant } from './DealerShell';
 import { ImageUploader } from './ImageUploader';
@@ -25,7 +27,6 @@ import {
   CYLINDERS,
   INTERIOR_TYPES,
   TRANSMISSIONS,
-  DRIVES,
   FUEL_TYPES,
   getModelsForMake,
 } from '@/lib/vehicle-options';
@@ -45,7 +46,6 @@ export const EMPTY_VEHICLE: Vehicle = {
 
 const TYPES = ['Car', 'Truck', 'SUV'];
 const BODY = BODY_STYLES;
-const DRIVE = ['Front-Wheel Drive', 'Rear-Wheel Drive', 'Four-Wheel Drive', 'All-Wheel Drive'];
 const FUEL = ['Gasoline', 'Diesel', 'Biodiesel', 'Hybrid', 'Electric'];
 const STATUS_TXT: Record<string, string> = { PUBLISHED: 'for sale', DRAFT: 'draft', SOLD: 'sold' };
 const SERVER_ONLY = ['id', 'tenantId', 'createdAt', 'updatedAt', 'soldAt', 'legacyId', 'cargurus'];
@@ -167,7 +167,7 @@ function Sec({
   }, [forceOpen]);
   const shown = !collapsible || open;
   return (
-    <section id={id} className={cx(CARD, 'scroll-mt-28')}>
+    <section id={id} className={cx(CARD, 'scroll-mt-20 md:scroll-mt-28')}>
       <div className={cx('flex flex-wrap items-center gap-3 px-5 py-4', shown && 'border-b border-[#E5E9F0]')}>
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#EAF1FF] text-[13px] font-bold text-[#1D4ED8]">{num}</span>
         <div className="flex min-w-[200px] flex-1 flex-col">
@@ -197,7 +197,8 @@ function Sec({
 
 export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusField?: string }) {
   const isNew = !initial.id;
-  const [v, setV] = useState<Vehicle>(() => ({ ...initial, bodyStyle: normBodyStyle(initial.bodyStyle) }));
+  // older values show (and save) in today's form: "Pickup Truck" → Truck, FWD / 2WD / 4x4 → Front-Wheel Drive …
+  const [v, setV] = useState<Vehicle>(() => ({ ...initial, bodyStyle: normBodyStyle(initial.bodyStyle), drivetrain: normDrive(initial.drivetrain) }));
   const [featText, setFeatText] = useState((initial.features || []).join('\n'));
   const [safeText, setSafeText] = useState((initial.safetyFeatures || []).join('\n'));
   // the description writes itself from the details while the dealer has not typed in it (empty description)
@@ -224,6 +225,24 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   const { tenant } = useTenant();
   const formRef = useRef<HTMLFormElement>(null);
   const status0: string = initial.status || 'PUBLISHED';
+  // phones: while a field is typed in, the sticky header scrolls away and the field is centred above the keyboard
+  const typing = useMobileFormFocus(formRef);
+  // phones: Delete / Duplicate / Save as draft / status live in the ••• menu of the slim header
+  const [more, setMore] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!more) return;
+    const away = (e: MouseEvent | TouchEvent) => moreRef.current && !moreRef.current.contains(e.target as Node) && setMore(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setMore(false);
+    document.addEventListener('mousedown', away);
+    document.addEventListener('touchstart', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', away);
+      document.removeEventListener('touchstart', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [more]);
 
   const set = (k: string, val: unknown) => {
     setDirty(true);
@@ -321,6 +340,8 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
       features: lines(featText),
       safetyFeatures: lines(safeText),
       vin: String(v.vin || '').toUpperCase().trim(),
+      // the price box shows 35,000; the API gets 35000
+      price: rawPrice(v.price),
       // CarGurus is decided for the whole inventory in Business details (no per-vehicle switch)
       syndicateCargurus: true,
       syndicateFacebook: platforms.includes('marketplace'),
@@ -486,7 +507,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   ) => {
     const err = filled(k) ? problem(k) : '';
     return (
-      <div key={k} data-f={k} className={cx('flex min-w-0 scroll-mt-28 flex-col gap-1 sm:gap-1.5', o.full ? 'col-span-full' : o.wide && 'col-span-2')}>
+      <div key={k} data-f={k} className={cx('flex min-w-0 scroll-mt-20 flex-col gap-1 sm:gap-1.5 md:scroll-mt-28', o.full ? 'col-span-full' : o.wide && 'sm:col-span-2')}>
         <div className="flex min-h-6 items-center gap-0.5">
           <label htmlFor={`in-${k}`} className="min-w-0 truncate text-xs font-semibold text-[#1E293B] sm:text-[13px]">
             {label}
@@ -544,8 +565,8 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   const area = (value: string, onChange: (t: string) => void, props: React.TextareaHTMLAttributes<HTMLTextAreaElement> = {}) => (
     <textarea value={value} onChange={(e) => onChange(e.target.value)} className={cx(CTRL, 'min-h-[120px] resize-y py-2.5 leading-normal')} {...props} />
   );
-  // 2 fields per row on phones too (wide / full fields take the whole row); more columns as the screen grows
-  const GRID = 'grid grid-cols-2 gap-x-2.5 gap-y-3.5 sm:gap-x-4 sm:gap-y-[18px] sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]';
+  // one field per row on phones (labels and values never clip); more columns as the screen grows
+  const GRID = 'grid grid-cols-1 gap-y-3.5 sm:gap-x-4 sm:gap-y-[18px] sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]';
   const vinLen = String(v.vin || '').trim().length;
 
   const publishLabel = !isNew && status0 === 'PUBLISHED' ? 'Save changes' : 'Publish vehicle';
@@ -554,9 +575,84 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
 
   return (
     <form ref={formRef} onSubmit={(e) => e.preventDefault()} className="pb-12" autoComplete="off">
-      {/* ===== page header ===== */}
-      <header className="sticky top-0 z-20 -mx-4 -mt-6 mb-6 border-b border-[#E5E9F0] bg-white px-4 py-[18px] sm:-mx-7 sm:-mt-7 sm:px-7">
-        <div className="flex max-w-[1240px] flex-wrap items-center gap-4">
+      {/* ===== page header =====
+          phones (< 768 px): one slim sticky bar — back, title, Save and a ••• menu with the other actions; it scrolls
+          away while a field is typed in so the field keeps the space above the keyboard.
+          tablets / desktops: the full header. */}
+      <header
+        className={cx(
+          'sticky top-0 z-20 -mx-4 -mt-6 mb-4 border-b border-[#E5E9F0] bg-white px-3 sm:-mx-7 sm:-mt-7 sm:px-7 md:mb-6',
+          typing && 'max-md:static',
+        )}
+      >
+        <div className="relative flex h-[54px] items-center gap-1.5 md:hidden" ref={moreRef}>
+          <Link href="/dealer/inventory" aria-label="Back to inventory" className="-ml-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[#1D4ED8] hover:bg-[#F1F5F9]">
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+          <div className="min-w-0 flex-1 leading-tight">
+            <div className="truncate text-[15px] font-bold text-[#0F172A]">{isNew ? 'Add a vehicle' : nameOf(initial) || 'Untitled vehicle'}</div>
+            <div className={cx('truncate text-[11px] font-semibold', left === 0 ? 'text-[#15803D]' : 'text-[#526077]')}>
+              {!isNew && <>{STATUS_TXT[status0]} · </>}
+              {left === 0 ? '✓ Ready' : `${left} required left`}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[#2563EB] px-3.5 text-sm font-semibold text-white transition hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:bg-[#C7D2E3] disabled:text-[#334155]"
+            disabled={!canPublish || !!saving}
+            onClick={doPublish}
+            title={!canPublish ? 'Fill in every detail marked * first' : publishLabel}
+          >
+            {saving === 'PUBLISHED' ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Check className="h-4 w-4" />}
+            {!isNew && status0 === 'PUBLISHED' ? 'Save' : 'Publish'}
+          </button>
+          <button
+            type="button"
+            aria-label="More actions"
+            aria-haspopup="menu"
+            aria-expanded={more}
+            onClick={() => setMore(!more)}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
+          >
+            <MoreHorizontal className="h-5 w-5" />
+          </button>
+          {more && (
+            <div role="menu" className="absolute right-0 top-[50px] z-30 w-60 overflow-hidden rounded-xl border border-[#E5E9F0] bg-white py-1 text-sm shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
+              <div className="border-b border-[#EEF1F6] px-3.5 py-2 text-xs text-[#526077]">
+                {isNew ? 'New vehicle' : <>Status: <b className="text-[#0F172A]">{STATUS_TXT[status0]}</b></>}
+                <div className={cx('mt-0.5 font-semibold', left === 0 ? 'text-[#15803D]' : 'text-[#526077]')}>
+                  {left === 0 ? '✓ Everything needed is filled in' : `${left} required detail${left === 1 ? '' : 's'} left before you can publish`}
+                </div>
+              </div>
+              {!isNew && status0 === 'PUBLISHED' && tenant && (
+                <a
+                  role="menuitem"
+                  className="flex items-center gap-2.5 px-3.5 py-2.5 text-[#0F172A] hover:bg-[#F8FAFC]"
+                  href={siteUrl(tenant, `index.html#/vehicle/${encodeURIComponent(initial.legacyId || initial.id)}`)}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => setMore(false)}
+                >
+                  <ExternalLink className="h-4 w-4 text-[#64748B]" /> View on website
+                </a>
+              )}
+              <button role="menuitem" type="button" disabled={!!saving} onClick={() => (setMore(false), doDraft())} className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[#0F172A] hover:bg-[#F8FAFC] disabled:opacity-50">
+                <FileText className="h-4 w-4 text-[#64748B]" /> {!isNew && status0 === 'SOLD' ? 'Keep as sold' : 'Save as draft'}
+              </button>
+              {!isNew && (
+                <>
+                  <button role="menuitem" type="button" disabled={!!saving} onClick={() => (setMore(false), void duplicate())} className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[#0F172A] hover:bg-[#F8FAFC] disabled:opacity-50">
+                    <Copy className="h-4 w-4 text-[#64748B]" /> Duplicate
+                  </button>
+                  <button role="menuitem" type="button" onClick={() => (setMore(false), setDel(true))} className="flex w-full items-center gap-2.5 border-t border-[#EEF1F6] px-3.5 py-2.5 text-left font-semibold text-[#B91C1C] hover:bg-red-50">
+                    <Trash2 className="h-4 w-4" /> Delete vehicle
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="hidden max-w-[1240px] flex-wrap items-center gap-4 py-[18px] md:flex">
           <div className="flex min-w-[280px] flex-1 flex-col gap-1">
             <Link href="/dealer/inventory" className="inline-flex items-center gap-1 self-start text-[13px] font-semibold text-[#1D4ED8] hover:underline">
               <ArrowLeft className="h-3.5 w-3.5" /> Back to inventory
@@ -669,7 +765,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
             desc="The first photo is the cover. Use the arrows to change the order."
             chip={photoN ? { text: `✓ ${photoN} photo${photoN === 1 ? '' : 's'}`, tone: 'ok' } : { text: 'At least 1 needed', tone: isReq('images') ? 'todo' : 'opt' }}
           >
-            <div data-f="images" className={cx('scroll-mt-28 rounded-xl transition', hot === 'images' && 'ring-2 ring-amber-400 ring-offset-4')}>
+            <div data-f="images" className={cx('scroll-mt-20 rounded-xl md:scroll-mt-28 transition', hot === 'images' && 'ring-2 ring-amber-400 ring-offset-4')}>
               <ImageUploader studio value={v.images} onChange={(imgs) => set('images', imgs)} />
             </div>
             {problem('images') && photoN > 0 && <p className="mt-2 text-xs font-medium text-[#B91C1C]">{problem('images')}</p>}
@@ -688,7 +784,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
 
           <Sec id="sec-price" num={3} title="Price & identification" desc="What it costs and how you and buyers identify it." chip={chipFor('Price & ID')}>
             <div className={GRID}>
-              {field('price', 'Price', inp('price', { type: 'number', min: 0, placeholder: '0', inputMode: 'decimal' }), { prefix: '$' })}
+              {field('price', 'Price', <PriceInput id="in-price" name="price" value={v.price} onChange={(raw) => set('price', raw)} placeholder="e.g. 35,000" className={CTRL} />, { prefix: '$' })}
               {field('processingFee', 'Processing fee', inp('processingFee', { type: 'number', min: 0, placeholder: 'e.g. 499', inputMode: 'decimal' }), { prefix: '$' })}
               {field('msrp', 'MSRP', inp('msrp', { type: 'number', min: 0, placeholder: 'Optional', inputMode: 'decimal' }), { prefix: '$' })}
               {field('mileage', 'Mileage', inp('mileage', { type: 'number', min: 0, placeholder: 'e.g. 42500', inputMode: 'numeric' }), { suffix: 'mi' })}
@@ -698,14 +794,6 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
               })}
               {field('stockNumber', 'Stock number', inp('stockNumber', { placeholder: 'e.g. BM-1042' }))}
               {field('condition', 'Condition', sel('condition', VEHICLE_CONDITIONS.length ? VEHICLE_CONDITIONS : ['Used', 'New', 'Rebuilt', 'Salvage'], 'Select condition'))}
-              {field(
-                'certified',
-                'Certified pre-owned',
-                <select id="in-certified" value={v.certified ? 'Yes' : 'No'} onChange={(e) => set('certified', e.target.value === 'Yes')} className={cx(CTRL, 'cursor-pointer')}>
-                  <option>No</option>
-                  <option>Yes</option>
-                </select>,
-              )}
               {field('dealLabel', 'Deal badge', inp('dealLabel', { placeholder: 'e.g. $1,500 below market' }), { wide: true })}
             </div>
           </Sec>
@@ -715,7 +803,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
               {field('exteriorColor', 'Exterior color', dl('exteriorColor', 'ext-colors-list', EXTERIOR_COLORS, { placeholder: 'e.g. Silver' }))}
               {field('interiorColor', 'Interior color', dl('interiorColor', 'int-colors-list', INTERIOR_COLORS, { placeholder: 'e.g. Black' }))}
               {field('transmission', 'Transmission', dl('transmission', 'transmissions-list', TRANSMISSIONS, { placeholder: 'e.g. Automatic' }))}
-              {field('drivetrain', 'Drivetrain', sel('drivetrain', DRIVES.length ? DRIVES : DRIVE, 'Select drivetrain'))}
+              {field('drivetrain', 'Drivetrain', sel('drivetrain', DRIVETRAINS, 'Select drivetrain'))}
               {field('fuelType', 'Fuel type', sel('fuelType', FUEL_TYPES.length ? FUEL_TYPES : FUEL, 'Select fuel type'))}
               {field('engine', 'Engine', inp('engine', { placeholder: 'e.g. 3.5L V6' }))}
               {field('horsepower', 'Horsepower', inp('horsepower', { placeholder: 'e.g. 300', inputMode: 'numeric' }), { suffix: 'hp' })}

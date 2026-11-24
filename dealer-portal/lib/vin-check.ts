@@ -34,3 +34,19 @@ export const normBodyStyle = (v: unknown) => {
   const s = String(v ?? '').trim();
   return /^pick[\s-]?up(\s+truck)?$/i.test(s) ? 'Truck' : s;
 };
+
+/** drivetrains offered in the Add and Edit forms (the VIN decoder and AI use the same names) */
+export const DRIVETRAINS = ['Front-Wheel Drive', 'Rear-Wheel Drive', 'All-Wheel Drive', 'Four-Wheel Drive', 'Two-Wheel Drive'];
+
+/** short / older drivetrain values (FWD, 2WD, 4x4 …) show and save as one of DRIVETRAINS; anything else stays as it is */
+export const normDrive = (v: unknown) => {
+  const s = String(v ?? '').trim();
+  const x = s.toLowerCase();
+  if (!x) return '';
+  if (/^(awd|all[\s-]?wheel( drive)?)$/.test(x)) return 'All-Wheel Drive';
+  if (/^(4wd|4x4|4-?wheel( drive)?|four[\s-]?wheel( drive)?)$/.test(x)) return 'Four-Wheel Drive';
+  if (/^(fwd|front[\s-]?wheel( drive)?)$/.test(x)) return 'Front-Wheel Drive';
+  if (/^(rwd|rear[\s-]?wheel( drive)?)$/.test(x)) return 'Rear-Wheel Drive';
+  if (/^(2wd|4x2|2-?wheel( drive)?|two[\s-]?wheel( drive)?( \(2wd\))?)$/.test(x)) return 'Two-Wheel Drive';
+  return s;
+};
