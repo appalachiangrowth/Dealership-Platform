@@ -134,19 +134,30 @@ const ENTRY_CSS = `
 .aq .entryb.ai.on .ic{background:#5B3FD6}
 .aq .entryb b{display:block;font-size:15px}
 .aq .entryb .hint{display:block}
-.aq .vinrow{display:flex;gap:10px;flex-wrap:wrap}
-.aq .vinin{display:flex;gap:8px;flex:1 1 260px;min-width:0}
-.aq .vinin .fld{flex:1;min-width:0}
-.aq .btn.scan{padding:0 12px;gap:6px;color:#1D4ED8;border-color:#BFDBFE;background:#F5F9FF}
-.aq .btn.scan:hover{background:#EAF2FF}
-.aq .btn.scan svg{width:18px;height:18px}
+.aq .vinrow{display:flex;gap:10px;align-items:stretch}
+.aq .vinrow .fld{flex:1 1 auto;min-width:0}
+.aq .vinrow .btn{min-height:44px}
+/* VIN box: one normal line, the Scan icon inside its right end (like "mi" in Mileage) */
+.aq .fld.vinfld{min-height:44px;height:44px}
+.aq .fld.vinfld input{padding-right:4px}
+.aq .inscan{display:flex;align-items:center;justify-content:center;flex:0 0 44px;width:44px;border:0;border-left:1px solid #E2E8F0;background:transparent;color:#1D4ED8;cursor:pointer}
+.aq .inscan:hover{background:#EFF6FF}
+.aq .inscan:focus-visible{outline:2px solid #2563EB;outline-offset:-2px}
+.aq .inscan svg{width:20px;height:20px}
 .aq .filled{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:10px;background:#E8F7EE;border:1px solid #BBE5CB;color:#14532D;font-size:13.5px}
 .aq .verify p{margin:0;line-height:1.6;color:#334155}
 @media (max-width:640px){.aq .entry{grid-template-columns:1fr}}
-/* phones: one field per row so labels and values never clip; a compact page title */
+/* phones: two fields per row (AQ_CSS), wide controls on their own row; labels, (i) and badges kept compact */
 @media (max-width:640px){
-.aq .grid{grid-template-columns:minmax(0,1fr);gap:14px}
-.aq .vinrow>.btn{flex:1 1 100%}
+.aq .grid{gap:14px 10px}
+.aq .f.mfull{grid-column:1/-1}
+.aq .lbl .opt{display:none}
+.aq .lr{column-gap:3px;row-gap:2px}
+.aq .lr .lbl{font-size:12px;line-height:1.25}
+.aq .fld input,.aq .fld select{padding:0 10px}
+.aq .fld.vinfld input{padding:0 4px 0 10px;font-size:15px;letter-spacing:.02em}
+.aq .vinrow{gap:8px}
+.aq .vinrow .btn{padding:0 12px;font-size:14px}
 }
 @media (max-width:767px){
 .aq .top{padding:12px 16px;gap:10px}
@@ -451,9 +462,8 @@ export default function AiAddVehiclePage() {
     if (modeRef.current === 'manual' && !/[IOQ]/.test(v)) void lookupVin(v);
   };
   const scanBtn = (
-    <button type="button" className="btn scan" onClick={() => setScanOpen(true)} title="Scan the VIN with the camera" aria-label="Scan the VIN with the camera">
+    <button type="button" className="inscan" onClick={() => setScanOpen(true)} title="Scan VIN" aria-label="Scan VIN">
       <ScanLine aria-hidden="true" />
-      Scan
     </button>
   );
 
@@ -1594,8 +1604,7 @@ export default function AiAddVehiclePage() {
                     </div>
                     {mode === 'manual' ? (
                       <div className="vinrow">
-                        <div className="vinin">
-                        <div className="fld">
+                        <div className="fld vinfld">
                           <input
                             id="aq-vin"
                             className="mono"
@@ -1612,8 +1621,7 @@ export default function AiAddVehiclePage() {
                               }
                             }}
                           />
-                        </div>
-                        {scanBtn}
+                          {scanBtn}
                         </div>
                         <button type="button" className="btn p" onClick={decodeNow} disabled={vinBusy || vin.length !== 17}>
                           {vinBusy ? (
@@ -1628,10 +1636,8 @@ export default function AiAddVehiclePage() {
                         </button>
                       </div>
                     ) : (
-                      <div className="vinin">
-                        <div className="fld">
-                          <input id="aq-vin" className="mono" maxLength={17} autoComplete="off" placeholder="17 characters" value={vin} onChange={(e) => onVin(e.target.value)} />
-                        </div>
+                      <div className="fld vinfld">
+                        <input id="aq-vin" className="mono" maxLength={17} autoComplete="off" placeholder="17 characters" value={vin} onChange={(e) => onVin(e.target.value)} />
                         {mode === 'photos' && scanBtn}
                       </div>
                     )}
@@ -1709,7 +1715,7 @@ export default function AiAddVehiclePage() {
                         </span>
                       )}
                     </div>
-                    <div className="f">
+                    <div className="f mfull">
                       <div className="lr">
                         <label className="lbl" htmlFor="aq-stock">
                           Stock number <span className="req">*</span>
@@ -1720,7 +1726,7 @@ export default function AiAddVehiclePage() {
                         <input id="aq-stock" autoComplete="off" placeholder="e.g. BM-1042" value={res.v.stock || ''} onChange={(e) => setOwn('stock', e.target.value)} />
                       </div>
                     </div>
-                    <div className="f">
+                    <div className="f mfull">
                       <div className="lr">
                         <span className="lbl">Condition</span>
                         <Tip label="Condition">Whether the vehicle is new or used. Controls which search filter it appears under.</Tip>
@@ -1736,7 +1742,7 @@ export default function AiAddVehiclePage() {
                     <div className="f">
                       <div className="lr">
                         <label className="lbl" htmlFor="aq-owners">
-                          Previous owners <span className="hint" style={{ fontWeight: 500 }}>(optional)</span>
+                          Previous owners <span className="hint opt" style={{ fontWeight: 500 }}>(optional)</span>
                         </label>
                         <Tip label="Previous owners">How many people owned the vehicle before. Check the vehicle history report.</Tip>
                       </div>
@@ -1747,7 +1753,7 @@ export default function AiAddVehiclePage() {
                     <div className="f">
                       <div className="lr">
                         <label className="lbl" htmlFor="aq-acc">
-                          Accidents reported <span className="hint" style={{ fontWeight: 500 }}>(optional)</span>
+                          Accidents reported <span className="hint opt" style={{ fontWeight: 500 }}>(optional)</span>
                         </label>
                         <Tip label="Accidents reported">The number of accidents on the vehicle history report. Being honest here builds buyer trust.</Tip>
                       </div>
