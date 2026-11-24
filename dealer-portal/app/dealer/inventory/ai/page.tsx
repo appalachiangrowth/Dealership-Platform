@@ -25,6 +25,8 @@ import { api, mediaUrl } from '@/lib/api';
 import { BODY_STYLES, DRIVETRAINS, checkVin, normBodyStyle, normDrive, normVin, VinDup } from '@/lib/vin-check';
 import { PriceInput, rawPrice } from '@/components/PriceInput';
 import { useMobileFormFocus } from '@/lib/use-mobile-form';
+import { VinScannerModal } from '@/components/VinScannerModal';
+import { ScanLine } from 'lucide-react';
 import { brandRun } from '@/lib/branding';
 import {
   aiApi, AiStatus, ANGLE_LABEL, ANGLE_ORDER, arrangePhotos, bigFrame, extractAudio, extractFrames, mergeVideo, nextPhotoId, Photo, shrink, Vid, vinOk,
@@ -133,14 +135,18 @@ const ENTRY_CSS = `
 .aq .entryb b{display:block;font-size:15px}
 .aq .entryb .hint{display:block}
 .aq .vinrow{display:flex;gap:10px;flex-wrap:wrap}
-.aq .vinrow .fld{flex:1 1 260px}
+.aq .vinin{display:flex;gap:8px;flex:1 1 260px;min-width:0}
+.aq .vinin .fld{flex:1;min-width:0}
+.aq .btn.scan{padding:0 12px;gap:6px;color:#1D4ED8;border-color:#BFDBFE;background:#F5F9FF}
+.aq .btn.scan:hover{background:#EAF2FF}
+.aq .btn.scan svg{width:18px;height:18px}
 .aq .filled{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:10px;background:#E8F7EE;border:1px solid #BBE5CB;color:#14532D;font-size:13.5px}
 .aq .verify p{margin:0;line-height:1.6;color:#334155}
 @media (max-width:640px){.aq .entry{grid-template-columns:1fr}}
 /* phones: one field per row so labels and values never clip; a compact page title */
 @media (max-width:640px){
 .aq .grid{grid-template-columns:minmax(0,1fr);gap:14px}
-.aq .vinrow .btn{flex:1 1 100%}
+.aq .vinrow>.btn{flex:1 1 100%}
 }
 @media (max-width:767px){
 .aq .top{padding:12px 16px;gap:10px}
@@ -436,6 +442,20 @@ export default function AiAddVehiclePage() {
       setVinBusy(false);
     }
   };
+
+  /** "Scan VIN" camera scanner (Add Manually and Photos & VIN) */
+  const [scanOpen, setScanOpen] = useState(false);
+  /** a scanned VIN: fills the VIN box and decodes it (Photos & VIN looks itself up as soon as 17 characters are in) */
+  const onScanned = (v: string) => {
+    onVin(v);
+    if (modeRef.current === 'manual' && !/[IOQ]/.test(v)) void lookupVin(v);
+  };
+  const scanBtn = (
+    <button type="button" className="btn scan" onClick={() => setScanOpen(true)} title="Scan the VIN with the camera" aria-label="Scan the VIN with the camera">
+      <ScanLine aria-hidden="true" />
+      Scan
+    </button>
+  );
 
   /** Add Manually: the Decode VIN button (and Enter in the VIN box) */
   const decodeNow = () => {
@@ -1574,6 +1594,7 @@ export default function AiAddVehiclePage() {
                     </div>
                     {mode === 'manual' ? (
                       <div className="vinrow">
+                        <div className="vinin">
                         <div className="fld">
                           <input
                             id="aq-vin"
@@ -1592,6 +1613,8 @@ export default function AiAddVehiclePage() {
                             }}
                           />
                         </div>
+                        {scanBtn}
+                        </div>
                         <button type="button" className="btn p" onClick={decodeNow} disabled={vinBusy || vin.length !== 17}>
                           {vinBusy ? (
                             <>
@@ -1605,8 +1628,11 @@ export default function AiAddVehiclePage() {
                         </button>
                       </div>
                     ) : (
-                      <div className="fld">
-                        <input id="aq-vin" className="mono" maxLength={17} autoComplete="off" placeholder="17 characters" value={vin} onChange={(e) => onVin(e.target.value)} />
+                      <div className="vinin">
+                        <div className="fld">
+                          <input id="aq-vin" className="mono" maxLength={17} autoComplete="off" placeholder="17 characters" value={vin} onChange={(e) => onVin(e.target.value)} />
+                        </div>
+                        {mode === 'photos' && scanBtn}
                       </div>
                     )}
                     {vinHint.text && (
@@ -1934,6 +1960,8 @@ export default function AiAddVehiclePage() {
             )}
           </div>
         </section>
+
+      <VinScannerModal open={scanOpen} onClose={() => setScanOpen(false)} onVin={onScanned} aiOn={!!status?.hasKey} />
 
       {verifyOpen && (
         <div

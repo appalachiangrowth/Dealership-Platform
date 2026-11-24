@@ -91,7 +91,14 @@ export function mapNhtsa(r: Rec) {
   const turbo = pick(r, 'Turbo') === 'Yes';
   const cylTxt = cyl ? (['6', '8', '10', '12'].includes(cyl) && /v/i.test(pick(r, 'EngineConfiguration')) ? ` V${cyl}` : ` ${cyl}-cylinder`) : '';
   const engine = disp ? `${Number(disp).toFixed(1)}L${cylTxt}${turbo ? ' Turbo' : ''}` : '';
-  const trim = [pick(r, 'Trim'), pick(r, 'Trim2')].filter(Boolean).join(' ').trim() || pick(r, 'Series');
+  // trim: only NHTSA's own Trim / Trim2 — never "Series" (chassis / model codes such as "1500", "JK", "3 Series"),
+  // and never just the model name again ("F-150" / "F-150"); nothing found = empty, for the dealer to fill in
+  const model = pick(r, 'Model');
+  const same = (a: string, b: string) => a.toLowerCase().replace(/[\s-]+/g, '') === b.toLowerCase().replace(/[\s-]+/g, '');
+  const trim = [pick(r, 'Trim'), pick(r, 'Trim2')]
+    .filter((x) => x && !(model && same(x, model)))
+    .join(' ')
+    .trim();
   const codes = (pick(r, 'ErrorCode') || '0').split(',').map((c) => c.trim());
   const clean = codes.every((c) => c === '0');
   const hp = pick(r, 'EngineHP');
@@ -99,7 +106,7 @@ export function mapNhtsa(r: Rec) {
     fields: {
       year: pick(r, 'ModelYear'),
       make: niceMake(pick(r, 'Make')),
-      model: pick(r, 'Model'),
+      model,
       trim,
       body: mapBody(pick(r, 'BodyClass')),
       vtype: mapType(pick(r, 'VehicleType')),
