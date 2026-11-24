@@ -1,16 +1,14 @@
 'use client';
 
 /**
- * Add a vehicle (the only way to add one). Two entry options at the top:
- *  · Add Manually  — VIN + "Decode VIN" at the top; the full form is open right below it. Decoding fills in every
- *                    matching field, lists them ("11 fields filled: Year, Make …") and asks the dealer to verify them.
- *                    Photos are uploaded in the form; AI does not read them in this mode.
- *  · Add with AI   — Photos & VIN: type / scan the VIN (looks itself up) and upload photos; AI reads the photos.
- *                    Walkaround Video: one video; AI takes the photos, VIN, mileage and spoken notes from it.
- * "Only you can answer these" (price and history, never filled in by AI) stays at the top. As soon as the VIN is
- * decoded or AI has read the photos / video, the decoded fields are listed and the full vehicle form opens below,
- * already filled in: every value is tagged VIN / AI / You / Needs you and can be changed. Values the dealer changed
- * are kept when AI finishes later. Publishing uploads the photos, saves the vehicle and offers Facebook.
+ * Add a vehicle (the only way to add one). Two ways, chosen at the top:
+ *  · Photos & VIN (default) — type or scan the VIN (looks itself up), upload photos (AI reads them when it is on).
+ *    The full vehicle form is always open below, so a dealer can also simply fill it in by hand.
+ *  · Walkaround Video — one video; AI takes the photos, VIN, mileage and spoken notes from it.
+ * "Only you can answer these" (price, mileage, stock number, history) stays at the top. Every form value is tagged
+ * VIN / AI / You / Needs you and can be changed; values the dealer changed are kept when AI finishes later. A VIN
+ * decode, the photo reading and the video reading each end with a "please verify" popup. Publishing uploads the
+ * photos, saves the vehicle and offers Facebook.
  */
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -26,6 +24,7 @@ import { BODY_STYLES, DRIVETRAINS, checkVin, normBodyStyle, normDrive, normVin, 
 import { PriceInput, rawPrice } from '@/components/PriceInput';
 import { useMobileFormFocus } from '@/lib/use-mobile-form';
 import { VinScannerModal } from '@/components/VinScannerModal';
+import { VerifyDecodedModal } from '@/components/VerifyDecodedModal';
 import { ScanLine } from 'lucide-react';
 import { brandRun } from '@/lib/branding';
 import {
@@ -118,25 +117,11 @@ type You = { price: string; condition: string; owners: string; accidents: string
 type Res = { v: Record<string, string>; src: Record<string, string>; ev: Record<string, string>; ok: Record<string, boolean> };
 type Note = { kind: 'ok' | 'bad' | 'warn' | 'info'; icon: string; html: React.ReactNode };
 type AiState = 'idle' | 'waiting' | 'running' | 'done' | 'error';
-/** manual = VIN decode + full form · photos / video = the two "Add with AI" ways */
-type Mode = 'manual' | 'photos' | 'video';
-const isMode = (m: string | null): m is Mode => m === 'manual' || m === 'photos' || m === 'video';
-const MANUAL_HINT = 'Enter all 17 characters, then click Decode VIN.';
+/** photos = Photos & VIN (VIN + photos + the full form) · video = Walkaround Video */
+type Mode = 'photos' | 'video';
 const AUTO_HINT = 'Looks up automatically when all 17 characters are entered.';
-/** the two entry options + the "please verify" popup (on top of AQ_CSS) */
+/** the VIN box with its Scan icon, phone layout and the "please verify" popup (on top of AQ_CSS) */
 const ENTRY_CSS = `
-.aq .entry{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:6px;border-radius:14px;background:#EEF1F6}
-.aq .entryb{display:flex;align-items:center;gap:12px;text-align:left;padding:12px 16px;border-radius:10px;border:0;background:transparent;cursor:pointer;color:#334155}
-.aq .entryb:hover{background:rgba(255,255,255,.6)}
-.aq .entryb.on{background:#fff;color:#0F172A;box-shadow:0 1px 3px rgba(15,23,42,.14)}
-.aq .entryb .ic{display:flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:10px;background:#E2E8F0;font-size:19px;flex-shrink:0}
-.aq .entryb.on .ic{background:#2563EB;color:#fff}
-.aq .entryb.ai.on .ic{background:#5B3FD6}
-.aq .entryb b{display:block;font-size:15px}
-.aq .entryb .hint{display:block}
-.aq .vinrow{display:flex;gap:10px;align-items:stretch}
-.aq .vinrow .fld{flex:1 1 auto;min-width:0}
-.aq .vinrow .btn{min-height:44px}
 /* VIN box: one normal line, the Scan icon inside its right end (like "mi" in Mileage) */
 .aq .fld.vinfld{min-height:44px;height:44px}
 .aq .fld.vinfld input{padding-right:4px}
@@ -144,9 +129,6 @@ const ENTRY_CSS = `
 .aq .inscan:hover{background:#EFF6FF}
 .aq .inscan:focus-visible{outline:2px solid #2563EB;outline-offset:-2px}
 .aq .inscan svg{width:20px;height:20px}
-.aq .filled{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:10px;background:#E8F7EE;border:1px solid #BBE5CB;color:#14532D;font-size:13.5px}
-.aq .verify p{margin:0;line-height:1.6;color:#334155}
-@media (max-width:640px){.aq .entry{grid-template-columns:1fr}}
 /* phones: two fields per row (AQ_CSS), wide controls on their own row; labels, (i) and badges kept compact */
 @media (max-width:640px){
 .aq .grid{gap:14px 10px}
@@ -156,8 +138,6 @@ const ENTRY_CSS = `
 .aq .lr .lbl{font-size:12px;line-height:1.25}
 .aq .fld input,.aq .fld select{padding:0 10px}
 .aq .fld.vinfld input{padding:0 4px 0 10px;font-size:15px;letter-spacing:.02em}
-.aq .vinrow{gap:8px}
-.aq .vinrow .btn{padding:0 12px;font-size:14px}
 }
 @media (max-width:767px){
 .aq .top{padding:12px 16px;gap:10px}
@@ -290,15 +270,13 @@ export default function AiAddVehiclePage() {
   useMobileFormFocus(rootRef);
 
   const [status, setStatus] = useState<AiStatus | null>(null);
-  const [mode, _setMode] = useState<Mode>('manual');
+  const [mode, _setMode] = useState<Mode>('photos');
   const modeRef = useRef<Mode>(mode);
-  /** the AI way used last, for the "Add with AI" tab */
-  const lastAi = useRef<'photos' | 'video'>('photos');
 
   // VIN
   const [vin, setVin] = useState('');
   const vinRef = useRef('');
-  const [vinHint, setVinHint] = useState<{ text: string; color: string }>({ text: MANUAL_HINT, color: '#526077' });
+  const [vinHint, setVinHint] = useState<{ text: string; color: string }>({ text: AUTO_HINT, color: '#526077' });
   const [vinBusy, setVinBusy] = useState(false);
   const [decoded, _setDecoded] = useState<Decoded | null>(null);
   const decodedRef = useRef<Decoded | null>(null);
@@ -306,12 +284,14 @@ export default function AiAddVehiclePage() {
   const decodedVin = useRef('');
   const [vinNotes, setVinNotes] = useState<Note[]>([]);
   /**
-   * "Please verify" popup: shown when a VIN decode (Add Manually and Add with AI), the AI photo reading or the
-   * walkaround video reading finishes. Dismissed with "Understood".
+   * "Please verify" popup: shown when a VIN decode, the AI photo reading or the walkaround video reading finishes.
+   * Dismissed with "Understood".
    */
   const [verify, setVerify] = useState<null | 'vin' | 'photos' | 'video'>(null);
   const verifyOpen = verify !== null;
   const setVerifyOpen = (open: boolean) => setVerify(open ? 'vin' : null);
+  /** Cancel and Understood both just close it: the filled-in values stay */
+  const closeVerify = useCallback(() => setVerify(null), []);
 
   // photos
   const [photos, _setPhotos] = useState<Photo[]>([]);
@@ -353,7 +333,7 @@ export default function AiAddVehiclePage() {
   const sentImages = useRef<string[]>([]);
   // same VIN already in the inventory or sold: shown at once and saving is blocked (the API refuses it too)
   const [dup, setDup] = useState<VinDup | null>(null);
-  // the full form: always open in Add Manually (the default); in the AI ways as soon as the VIN is decoded or AI has
+  // the full form: always open in Photos & VIN (the default); with a video as soon as the VIN is decoded or AI has
   // read the video (or on request without a lookup)
   const [formOpen, setFormOpen] = useState(true);
   // fields the dealer changed in the form: kept when the VIN / AI values arrive later
@@ -396,28 +376,12 @@ export default function AiAddVehiclePage() {
       setVinHint({ text: 'A VIN never contains I, O or Q. These are usually 1 or 0.', color: '#B91C1C' });
       return;
     }
-    const manual = modeRef.current === 'manual';
     if (v.length < 17) {
-      setVinHint({ text: manual ? MANUAL_HINT : AUTO_HINT, color: '#526077' });
+      setVinHint({ text: AUTO_HINT, color: '#526077' });
       if (decodedRef.current) {
         setDecoded(null);
         setVinNotes([]);
       }
-      return;
-    }
-    if (manual) {
-      // Add Manually: looked up when the dealer clicks Decode VIN; a changed VIN drops the old record
-      if (decodedRef.current && decodedVin.current !== v) {
-        setDecoded(null);
-        setVinNotes([]);
-      }
-      setVinHint(
-        !vinOk(v)
-          ? { text: 'Check this VIN: the 9th character doesn’t match the rest, which usually means a typo. You can still decode it.', color: '#92400E' }
-          : decodedRef.current
-            ? { text: '', color: '#526077' }
-            : { text: 'Click Decode VIN to fill in the form below.', color: '#1D4ED8' },
-      );
       return;
     }
     if (!vinOk(v)) setVinHint({ text: 'Check this VIN: the 9th character doesn’t match the rest, which usually means a typo. Looking it up anyway…', color: '#92400E' });
@@ -454,32 +418,14 @@ export default function AiAddVehiclePage() {
     }
   };
 
-  /** "Scan VIN" camera scanner (Add Manually and Photos & VIN) */
+  /** "Scan VIN" camera scanner (Photos & VIN): a scanned VIN fills the VIN box, which looks itself up */
   const [scanOpen, setScanOpen] = useState(false);
-  /** a scanned VIN: fills the VIN box and decodes it (Photos & VIN looks itself up as soon as 17 characters are in) */
-  const onScanned = (v: string) => {
-    onVin(v);
-    if (modeRef.current === 'manual' && !/[IOQ]/.test(v)) void lookupVin(v);
-  };
+  const onScanned = (v: string) => onVin(v);
   const scanBtn = (
     <button type="button" className="inscan" onClick={() => setScanOpen(true)} title="Scan VIN" aria-label="Scan VIN">
       <ScanLine aria-hidden="true" />
     </button>
   );
-
-  /** Add Manually: the Decode VIN button (and Enter in the VIN box) */
-  const decodeNow = () => {
-    const v = vinRef.current;
-    if (v.length !== 17) {
-      setVinHint({ text: `A VIN has 17 characters; this one has ${v.length}.`, color: '#B91C1C' });
-      return;
-    }
-    if (/[IOQ]/.test(v)) {
-      setVinHint({ text: 'A VIN never contains I, O or Q. These are usually 1 or 0.', color: '#B91C1C' });
-      return;
-    }
-    if (!vinBusy) void lookupVin(v);
-  };
 
   /* ---------------- photos + AI (starts by itself) ---------------- */
   /**
@@ -557,7 +503,7 @@ export default function AiAddVehiclePage() {
   }, [setPhotos]);
 
   useEffect(() => {
-    if (mode !== 'photos') return; // Add Manually: photos are not read by AI · video: photos come from the video
+    if (mode !== 'photos') return; // video: the photos come from the video
     if (!decoded || !photos.length) {
       aiVer.current++;
       setAiState('idle');
@@ -575,18 +521,13 @@ export default function AiAddVehiclePage() {
   /* ---------------- mode ---------------- */
   const setMode = (m: Mode) => {
     if (mode === m) return;
-    // photos the dealer uploaded (and what they typed) stay when switching between Add Manually and Photos & VIN;
-    // a walkaround video brings its own photos
-    const keep = m !== 'video' && mode !== 'video';
+    // a walkaround video brings its own photos: the photos (and edits) of the other way are dropped
     modeRef.current = m;
     _setMode(m);
-    if (m !== 'manual') lastAi.current = m;
     aiVer.current++;
-    if (!keep) {
-      photosRef.current.forEach((p) => URL.revokeObjectURL(p.url));
-      setPhotos([]);
-      touched.current.clear();
-    }
+    photosRef.current.forEach((p) => URL.revokeObjectURL(p.url));
+    setPhotos([]);
+    touched.current.clear();
     setAi(null);
     setAiState('idle');
     setAiErr('');
@@ -595,29 +536,20 @@ export default function AiAddVehiclePage() {
     setVDone(false);
     lastRun.current = '';
     setVerifyOpen(false);
-    setFormOpen(m === 'manual' || !!decodedRef.current);
+    // Photos & VIN: the full form is always open (fill it in by hand, or let the VIN / photos fill it)
+    setFormOpen(m === 'photos' || !!decodedRef.current);
     const v = vinRef.current;
-    if (v.length < 17) setVinHint({ text: m === 'manual' ? MANUAL_HINT : AUTO_HINT, color: '#526077' });
-    else if (m !== 'manual' && !decodedRef.current && !/[IOQ]/.test(v)) void lookupVin(v); // the AI ways look up by themselves
+    if (v.length < 17) setVinHint({ text: AUTO_HINT, color: '#526077' });
+    else if (!decodedRef.current && !/[IOQ]/.test(v)) void lookupVin(v);
   };
-  // the "Add a vehicle" chooser opens this page with ?mode=manual, ?mode=photos or ?mode=video (Add Manually by default)
+  // /dealer/inventory/ai?mode=video opens straight in Walkaround Video (Photos & VIN otherwise)
   useEffect(() => {
-    const m = new URLSearchParams(window.location.search).get('mode');
-    if (isMode(m) && m !== 'manual') {
-      modeRef.current = m;
-      lastAi.current = m;
-      _setMode(m);
+    if (new URLSearchParams(window.location.search).get('mode') === 'video') {
+      modeRef.current = 'video';
+      _setMode('video');
       setFormOpen(false);
-      setVinHint({ text: AUTO_HINT, color: '#526077' });
     }
   }, []);
-  // the "please verify" popup closes with Escape
-  useEffect(() => {
-    if (!verifyOpen) return;
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && setVerifyOpen(false);
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, [verifyOpen]);
 
   /* ---------------- walkaround video ---------------- */
   const vstep = (key: string, st: string, text?: string) => setVsteps((s) => ({ ...s, [key]: { st, text: text ?? s[key]?.text } }));
@@ -915,7 +847,7 @@ export default function AiAddVehiclePage() {
       ['ext', 'mileage'].forEach((k) => {
         R.v[k] = '';
         R.src[k] = REQUIRED.includes(k) ? 'miss' : '';
-        R.ev[k] = modeRef.current === 'manual' ? 'Please enter it.' : 'No AI reading. Please enter it.';
+        R.ev[k] = 'No AI reading. Please enter it.';
       });
       set('options', '', '');
       set('safety', vinSafety.join('\n'), vinSafety.length ? 'vin' : '');
@@ -958,7 +890,7 @@ export default function AiAddVehiclePage() {
 
   // open the full form as soon as the VIN is decoded or AI has read the video
   useEffect(() => {
-    if (decoded || (mode === 'video' && vDone) || mode === 'manual') setFormOpen(true);
+    if (decoded || (mode === 'video' && vDone) || mode === 'photos') setFormOpen(true);
   }, [decoded, vDone, mode]);
   // and keep it filled in: new VIN / AI results and the "Only you" answers flow in (changed fields are kept)
   useEffect(() => {
@@ -1132,17 +1064,6 @@ export default function AiAddVehiclePage() {
   /* ---------------- decoded summary, save buttons, duplicate VIN ---------------- */
   /** fields filled in by the VIN record or AI (not by the dealer), in form order */
   const decodedKeys = SECTIONS.flatMap((sec) => sec[2].map((f) => f[0])).filter((k) => FILLED_BY[res.src[k]] && String(res.v[k] || '').trim());
-  /** Add Manually: the fields the VIN decode filled in (not the ones the dealer typed), for the summary + popup */
-  const vinKeys = decodedKeys.filter((k) => res.src[k] === 'vin');
-  const vinList = vinKeys.map((k) => LABEL[k]).join(', ');
-  /** the "please verify" popup lists what was filled in for the dealer: by the VIN (Add Manually) or VIN + AI */
-  const popKeys = mode === 'manual' ? vinKeys : decodedKeys;
-  const popWhat =
-    verify === 'photos'
-      ? `AI read ${photos.length} photo${photos.length === 1 ? '' : 's'}`
-      : verify === 'video'
-        ? 'AI read your walkaround video'
-        : `VIN ${vin} decoded`;
   const emptyKeys = SECTIONS.flatMap((sec) => sec[2].map((f) => f[0])).filter((k) => !String(res.v[k] || '').trim());
   const aiBusy = aiState === 'running' || aiState === 'waiting';
 
@@ -1183,7 +1104,7 @@ export default function AiAddVehiclePage() {
   /* ================================ render ================================ */
   const aiBar = (() => {
     const n = photos.length;
-    if (mode === 'manual')
+    if (status && !status.hasKey)
       return n ? <div className="ai-bar" style={{ background: '#F1F5F9', color: '#475569' }}>📷 {n} photo{n > 1 ? 's' : ''}. The first one is the cover; drag, ◀ ▶ or ★ to change the order.</div> : null;
     if (mode === 'video') return n ? <div className="ai-bar" style={{ background: '#F1F5F9', color: '#475569' }}>🎥 {n} photos taken from your video and arranged in the best order. Drag, ◀ ▶ or ★ to change it.</div> : null;
     if (!n) return null;
@@ -1296,9 +1217,9 @@ export default function AiAddVehiclePage() {
     );
   };
 
-  /** the photos card: step 2 of Photos & VIN, step 3 of the video, the last part of the Add Manually form */
+  /** the photos card: step 2 of Photos & VIN, step 3 of the video (plain wording when AI is off: nothing reads them) */
   const photosCard = (n: number | string) => {
-    const manual = mode === 'manual';
+    const manual = mode === 'photos' && !!status && !status.hasKey;
     return (
                 <div className={`card${mode === 'video' ? ' vmode' : ''}`}>
                   <div className="hd">
@@ -1381,13 +1302,11 @@ export default function AiAddVehiclePage() {
               </Link>
               <h1 style={{ marginTop: 4 }}>Add a vehicle</h1>
               <p>
-                {mode === 'manual'
-                  ? 'Decode the VIN to fill in the details, then check and complete the form below.'
-                  : 'Choose how: Photos & VIN, or one Walkaround Video. AI fills in the details and the full form opens below for you to check.'}
+                Choose how: Photos &amp; VIN, or one Walkaround Video. The VIN and AI fill in the details; check and complete the form below.
               </p>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-              {status && mode !== 'manual' && (
+              {status && (
                 <span className={`chip ${status.hasKey ? 's-ok' : 's-miss'}`} style={{ fontSize: 12, padding: '4px 10px' }} title={status.model}>
                   {status.hasKey ? `✨ AI ready · ${status.model.split(' · ')[0]}` : 'AI is off'}
                 </span>
@@ -1397,52 +1316,29 @@ export default function AiAddVehiclePage() {
           </div>
           <div className="wrap">
             <div className="col">
-              {/* ENTRY: Add Manually | Add with AI */}
-              <div className="entry" role="tablist" aria-label="How do you want to add this vehicle?">
-                <button type="button" role="tab" aria-selected={mode === 'manual'} className={`entryb${mode === 'manual' ? ' on' : ''}`} onClick={() => setMode('manual')}>
-                  <span className="ic">✍️</span>
-                  <span>
-                    <b>Add Manually</b>
-                    <span className="hint">Decode the VIN, then fill in the full form</span>
-                  </span>
-                </button>
-                <button type="button" role="tab" aria-selected={mode !== 'manual'} className={`entryb ai${mode !== 'manual' ? ' on' : ''}`} onClick={() => setMode(lastAi.current)}>
-                  <span className="ic">✨</span>
-                  <span>
-                    <b>Add with AI</b>
-                    <span className="hint">Vehicle photos or a walkaround video</span>
-                  </span>
-                </button>
-              </div>
-
-              {mode !== 'manual' && status && !status.hasKey && (
+              {status && !status.hasKey && (
                 <NoteBox
                   n={{
                     kind: 'warn',
                     icon: '⚠',
                     html: (
                       <>
-                        <b>AI isn’t switched on for this portal yet.</b> The VIN lookup still works, but photos and videos can’t be read. Ask your platform admin to add the AI key (GEMINI_API_KEY) to the
-                        server, or{' '}
-                        <button type="button" className="link" onClick={() => setMode('manual')}>
-                          add it manually
-                        </button>
-                        .
+                        <b>AI isn’t switched on for this portal yet.</b> The VIN lookup still works and you can fill in the form below yourself, but photos and videos can’t be read.
+                        Ask your platform admin to add the AI key (GEMINI_API_KEY) to the server.
                       </>
                     ),
                   }}
                 />
               )}
 
-              {/* AI: Photos & VIN | Walkaround Video */}
-              {mode !== 'manual' && (
-              <div className="modes" role="group" aria-label="How should AI read the vehicle?">
+              {/* Photos & VIN | Walkaround Video */}
+              <div className="modes" role="group" aria-label="How do you want to add this vehicle?">
                 <button type="button" className={`modeb${mode === 'photos' ? ' on' : ''}`} onClick={() => setMode('photos')}>
                   <span className="ic">📷</span>
                   <span>
                     <b style={{ fontSize: 15 }}>Photos &amp; VIN</b>
                     <br />
-                    <span className="hint">Step 1: type the VIN. Step 2: upload your photos. AI reads them.</span>
+                    <span className="hint">Type or scan the VIN, add your photos, check the form below.</span>
                   </span>
                 </button>
                 <button
@@ -1460,7 +1356,6 @@ export default function AiAddVehiclePage() {
                   </span>
                 </button>
               </div>
-              )}
 
               {/* VIDEO */}
               {mode === 'video' && (
@@ -1581,13 +1476,11 @@ export default function AiAddVehiclePage() {
                 <div className="hd">
                   {numMark(mode === 'video' ? 2 : 1, !!decoded)}
                   <div style={{ flex: 1 }}>
-                    <h2>{mode === 'video' ? 'VIN (found in your video)' : mode === 'manual' ? 'Decode the VIN' : 'VIN'}</h2>
+                    <h2>{mode === 'video' ? 'VIN (found in your video)' : 'VIN'}</h2>
                     <p>
                       {mode === 'video'
                         ? 'Filled in from the sticker in your video. Check it, or type it if it couldn’t be read.'
-                        : mode === 'manual'
-                          ? 'Enter the VIN and click Decode VIN. Year, make, model, trim, engine and more fill in the form below.'
-                          : 'We look it up in the official US vehicle database. Most details fill in from this.'}
+                        : 'Type or scan it: we look it up in the official US vehicle database and most details fill in from this.'}
                     </p>
                   </div>
                 </div>
@@ -1602,45 +1495,10 @@ export default function AiAddVehiclePage() {
                       </Tip>
                       {vinCount}
                     </div>
-                    {mode === 'manual' ? (
-                      <div className="vinrow">
-                        <div className="fld vinfld">
-                          <input
-                            id="aq-vin"
-                            className="mono"
-                            maxLength={17}
-                            autoComplete="off"
-                            autoFocus
-                            placeholder="17 characters"
-                            value={vin}
-                            onChange={(e) => onVin(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                decodeNow();
-                              }
-                            }}
-                          />
-                          {scanBtn}
-                        </div>
-                        <button type="button" className="btn p" onClick={decodeNow} disabled={vinBusy || vin.length !== 17}>
-                          {vinBusy ? (
-                            <>
-                              <span className="spin w" /> Decoding…
-                            </>
-                          ) : decoded ? (
-                            'Decode again'
-                          ) : (
-                            'Decode VIN'
-                          )}
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="fld vinfld">
-                        <input id="aq-vin" className="mono" maxLength={17} autoComplete="off" placeholder="17 characters" value={vin} onChange={(e) => onVin(e.target.value)} />
-                        {mode === 'photos' && scanBtn}
-                      </div>
-                    )}
+                    <div className="fld vinfld">
+                      <input id="aq-vin" className="mono" maxLength={17} autoComplete="off" placeholder="17 characters" value={vin} onChange={(e) => onVin(e.target.value)} />
+                      {mode === 'photos' && scanBtn}
+                    </div>
                     {vinHint.text && (
                       <span className="hint" style={{ color: vinHint.color }}>
                         {vinHint.text}
@@ -1656,26 +1514,14 @@ export default function AiAddVehiclePage() {
                   {vinNotes.map((n, i) => (
                     <NoteBox key={i} n={n} />
                   ))}
-                  {mode === 'manual' && decoded && !vinBusy && vinKeys.length > 0 && (
-                    <div className="filled" role="status" aria-live="polite">
-                      <span>
-                        ✓ <b>
-                          {vinKeys.length} field{vinKeys.length === 1 ? '' : 's'} filled
-                        </b>
-                        : {vinList}
-                      </span>
-                      <span style={{ fontSize: 12.5 }}>Please check these in the form below — VIN decoding can miss or mistake trim-specific options.</span>
-                    </div>
-                  )}
                   {dup && dupNote}
                 </div>
               </div>
 
-              {/* PHOTOS (Add Manually: at the end of the form) */}
-              {mode !== 'manual' && (mode === 'photos' || photos.length > 0) && photosCard(mode === 'video' ? 3 : 2)}
+              {/* PHOTOS */}
+              {(mode === 'photos' || photos.length > 0) && photosCard(mode === 'video' ? 3 : 2)}
 
-              {/* ONLY YOU (Add Manually: these are in the form itself) */}
-              {mode !== 'manual' && (
+              {/* ONLY YOU */}
               <div className="card">
                 <div className="hd">
                   {numMark(mode === 'video' ? (photos.length ? 4 : 3) : 3, Number(rawPrice(you.price)) > 0 && !!String(res.v.mileage || '').trim() && !!String(res.v.stock || '').trim())}
@@ -1776,7 +1622,6 @@ export default function AiAddVehiclePage() {
                   </div>
                 </div>
               </div>
-              )}
 
               {!formOpen && (
                 <div className="card" style={{ padding: '16px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
@@ -1795,7 +1640,6 @@ export default function AiAddVehiclePage() {
               {/* ===================== DECODED FIELDS + THE FULL FORM ===================== */}
               {formOpen && (
                 <>
-                  {mode !== 'manual' && (
                   <div className="card" id="aq-decoded">
                     <div className="hd">
                       <span className={`num${decodedKeys.length ? ' ok' : ''}`}>{decodedKeys.length ? '✓' : '•'}</span>
@@ -1832,8 +1676,7 @@ export default function AiAddVehiclePage() {
                       </div>
                     )}
                   </div>
-                  )}
-              {mode !== 'manual' && !ai && !aiBusy && (aiState === 'error' || photos.length > 0) && (
+              {!ai && !aiBusy && status?.hasKey !== false && (aiState === 'error' || photos.length > 0) && (
                     <NoteBox n={{ kind: 'warn', icon: '⚠', html: <><b>AI didn’t read the photos</b>{aiErr ? ` (${aiErr})` : ''}. Colors, interior and mileage need to be filled in by you.</> }} />
                   )}
                   {!ai && !aiBusy && aiState !== 'error' && !photos.length && mode === 'photos' && (
@@ -1884,7 +1727,6 @@ export default function AiAddVehiclePage() {
                   </div>
                 );
               })}
-                  {mode === 'manual' && photosCard(String.fromCharCode(65 + SECTIONS.length))}
                   <div className="card" style={{ padding: '16px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
                     <div style={{ flex: '1 1 260px', display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <b>{dup ? dup.message : savedDraft ? 'Saved as a draft' : missingReq.length ? `${missingReq.length} detail${missingReq.length > 1 ? 's' : ''} still empty` : 'Ready to publish'}</b>
@@ -1969,40 +1811,7 @@ export default function AiAddVehiclePage() {
 
       <VinScannerModal open={scanOpen} onClose={() => setScanOpen(false)} onVin={onScanned} aiOn={!!status?.hasKey} />
 
-      {verifyOpen && (
-        <div
-          className="modal verify"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="aq-verify-h"
-          aria-describedby="aq-verify-d"
-          onClick={(e) => e.target === e.currentTarget && setVerifyOpen(false)}
-        >
-          <div className="card">
-            <div className="hd">
-              <span style={{ fontSize: 24, lineHeight: 1 }}>⚠️</span>
-              <div style={{ flex: 1 }}>
-                <h2 id="aq-verify-h">Please verify the {verify === 'vin' ? 'decoded' : 'auto-filled'} details</h2>
-                <p>
-                  {popWhat} · {popKeys.length} field{popKeys.length === 1 ? '' : 's'} auto-filled
-                </p>
-              </div>
-            </div>
-            <div className="bd">
-              <p id="aq-verify-d">
-                Automated / AI VIN decoding can occasionally make mistakes or miss trim-specific options. Please double-check all auto-filled fields below before saving the vehicle.
-              </p>
-              {popKeys.length > 0 && <p style={{ fontSize: 13, color: '#526077' }}>Auto-filled: {popKeys.map((k) => LABEL[k]).join(', ')}.</p>}
-              <p style={{ fontSize: 13, color: '#526077' }}>Interior color and interior material are never filled in automatically: choose them yourself.</p>
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button type="button" className="btn p" autoFocus onClick={() => setVerifyOpen(false)}>
-                  Understood
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <VerifyDecodedModal open={verifyOpen} kind={verify} onCancel={closeVerify} onUnderstood={closeVerify} />
 
       <FbPostModal
         vehicle={fbVehicle}
