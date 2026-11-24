@@ -71,7 +71,7 @@ const SECTIONS: [string, string, FieldDef[]][] = [
     ['fuel', 'Fuel type', 0, 'What the vehicle runs on.'],
     ['engine', 'Engine', 0, 'Engine size and layout, e.g. 3.5L V6.'],
     ['hp', 'Horsepower', 0, 'Engine power output.', '', 'hp'],
-    ['itype', 'Interior material', 0, 'What the seats are made of, read by AI from the photos. Added to the features list.'],
+    ['itype', 'Interior material', 0, 'What the seats are made of (cloth, leather …). Choose it yourself: it is never filled in by the VIN or AI. Added to the features list.'],
     ['mpg', 'Fuel economy', 0, 'Miles per gallon, city / highway. Optional.'],
     ['tank', 'Tank size', 0, 'Fuel tank size in US gallons. Optional.', '', 'gal'],
     ['doors', 'Doors', 0, 'Number of passenger doors.'],
@@ -812,7 +812,7 @@ export default function AiAddVehiclePage() {
     setAiState('running');
     const facts = {
       dealership: dealer, Year: f.year, Make: f.make, Model: f.model, Trim: f.trim, 'Body style': f.body, Engine: f.engine, Drivetrain: f.drive, 'Fuel type': f.fuel,
-      'Exterior color': a.exterior_color?.value, 'Interior material': a.interior_material?.value,
+      'Exterior color': a.exterior_color?.value,
       Transmission: f.trans || a.transmission?.value || '',
       Features: (a.features || []).filter((x: any) => x.confidence !== 'low').map((x: any) => x.name),
     };
@@ -865,7 +865,6 @@ export default function AiAddVehiclePage() {
     const vinSafety = d?.safety || [];
     if (a) {
       aiSet('ext', a.exterior_color);
-      aiSet('itype', a.interior_material);
       if (!R.v.trans && a.transmission?.value) aiSet('trans', a.transmission); // the VIN record often leaves it out
       aiSet('mileage', a.odometer_miles, (v) => String(v).replace(/[^0-9]/g, ''));
       const feats = (a.features || []).filter((x: any) => x.confidence !== 'low').map((x: any) => x.name);
@@ -883,7 +882,7 @@ export default function AiAddVehiclePage() {
         a.description ? `Written from the VIN record and the photos${y.notes ? ', plus your notes' : ''}.` : 'Please write a short description.',
       );
     } else {
-      ['ext', 'itype', 'mileage'].forEach((k) => {
+      ['ext', 'mileage'].forEach((k) => {
         R.v[k] = '';
         R.src[k] = REQUIRED.includes(k) ? 'miss' : '';
         R.ev[k] = modeRef.current === 'manual' ? 'Please enter it.' : 'No AI reading. Please enter it.';
@@ -892,10 +891,14 @@ export default function AiAddVehiclePage() {
       set('safety', vinSafety.join('\n'), vinSafety.length ? 'vin' : '');
       set('description', y.notes || '', y.notes ? 'you' : 'miss', y.notes ? '' : 'Please write a short description.');
     }
-    // interior color: never from the VIN record, photos or video — always the dealer's own choice
+    // interior color and interior material (cloth, leather …): never from the VIN record, photos or video —
+    // always the dealer's own choice
     R.v.int = '';
     R.src.int = 'miss';
     R.ev.int = 'Choose the interior color yourself. It is never filled in automatically.';
+    R.v.itype = '';
+    R.src.itype = '';
+    R.ev.itype = 'Choose the interior material yourself. It is never filled in automatically.';
     // AI's "Photo 3" refers to the order sent; show the number the photo has now
     if (modeRef.current !== 'video' && sentIds.current.length)
       Object.keys(R.ev).forEach((k) => {
@@ -1919,7 +1922,7 @@ export default function AiAddVehiclePage() {
                 Automated / AI VIN decoding can occasionally make mistakes or miss trim-specific options. Please double-check all auto-filled fields below before saving the vehicle.
               </p>
               {popKeys.length > 0 && <p style={{ fontSize: 13, color: '#526077' }}>Auto-filled: {popKeys.map((k) => LABEL[k]).join(', ')}.</p>}
-              <p style={{ fontSize: 13, color: '#526077' }}>Interior color is never filled in automatically: choose it yourself.</p>
+              <p style={{ fontSize: 13, color: '#526077' }}>Interior color and interior material are never filled in automatically: choose them yourself.</p>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button type="button" className="btn p" autoFocus onClick={() => setVerifyOpen(false)}>
                   Understood

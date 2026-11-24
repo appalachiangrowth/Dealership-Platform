@@ -139,7 +139,7 @@ RULES
 - transmission: Automatic only if a P-R-N-D gear selector, dial or buttons is clearly visible; Manual only if an H-pattern gear stick (clutch pedal) is visible; otherwise null.
 - Not visible or unsure → value null. Null is a good answer.
 - Colours: closest plain name from the allowed list. Silver vs gray or black vs dark blue unclear → confidence medium/low.
-- Do NOT report the interior colour: the dealer always chooses it. (interior_material is still wanted.)
+- Do NOT report the interior colour or the seat / interior material (cloth, leather …), not even as a feature: the dealer always chooses them.
 - odometer_miles: only if the odometer number is sharp; miles only (km display → null). Digits only.
 - vin_in_photo: only if readable.
 - vehicle_matches_vin.status: mismatch only if badges/shape clearly show another make or model.
@@ -150,7 +150,7 @@ RULES
 - description: 60-100 words, friendly and professional, plain text, using ONLY the VIN record and what you saw. No price, VIN, mileage, owners, accidents, warranty or financing. End with an invitation to visit or contact the dealership.`;
 
 export const FAST_SHAPE =
-  '{"vehicle_matches_vin":{"status":"match|mismatch|unsure","note":""},"exterior_color":{"value":"Black|White|Silver|Gray|Blue|Red|Green|Brown|Beige|Gold|Orange|Yellow|Purple|null","confidence":"high|medium|low","evidence":""},"interior_material":{"value":"Cloth|Leather|Leatherette|Suede|Vinyl|null","confidence":"","evidence":""},"transmission":{"value":"Automatic|Manual|null","confidence":"","evidence":""},"odometer_miles":{"value":"integer or null","confidence":"","evidence":""},"vin_in_photo":{"value":"string or null","confidence":"","evidence":""},"features":[{"name":"","confidence":"","evidence":""}],"safety_features":[{"name":"","confidence":"","evidence":""}],"visible_condition_notes":[{"note":"","evidence":""}],"photos":[{"n":1,"angle":"front_left|front|front_right|left|right|rear_left|rear|rear_right|wheel|interior_front|dashboard|odometer|console|front_seats|rear_seats|trunk|engine|detail|damage|vin_label|document|other","quality":5}],"best_cover_photo":"integer or null","description":""}';
+  '{"vehicle_matches_vin":{"status":"match|mismatch|unsure","note":""},"exterior_color":{"value":"Black|White|Silver|Gray|Blue|Red|Green|Brown|Beige|Gold|Orange|Yellow|Purple|null","confidence":"high|medium|low","evidence":""},"transmission":{"value":"Automatic|Manual|null","confidence":"","evidence":""},"odometer_miles":{"value":"integer or null","confidence":"","evidence":""},"vin_in_photo":{"value":"string or null","confidence":"","evidence":""},"features":[{"name":"","confidence":"","evidence":""}],"safety_features":[{"name":"","confidence":"","evidence":""}],"visible_condition_notes":[{"note":"","evidence":""}],"photos":[{"n":1,"angle":"front_left|front|front_right|left|right|rear_left|rear|rear_right|wheel|interior_front|dashboard|odometer|console|front_seats|rear_seats|trunk|engine|detail|damage|vin_label|document|other","quality":5}],"best_cover_photo":"integer or null","description":""}';
 
 export const VIDEO_RULES = `These are still frames from a car dealer's walkaround video of ONE vehicle, plus (if given) the audio of the dealer talking while filming. Accuracy beats completeness.
 - transmission: Automatic only if a P-R-N-D gear selector, dial or buttons is clearly visible; Manual only if an H-pattern gear stick (clutch pedal) is visible; otherwise null.
@@ -160,7 +160,7 @@ RULES
 - odometer_miles: only if the odometer number is sharp; miles only. Digits only.
 - seen_vehicle: make and model from badges/shape, e.g. "Buick Lucerne", or null.
 - Colours: closest plain name from the allowed list; ambiguous lighting → confidence medium/low.
-- Do NOT report the interior colour: the dealer always chooses it. (interior_material is still wanted.)
+- Do NOT report the interior colour or the seat / interior material (cloth, leather …), not even as a feature: the dealer always chooses them.
 - frames: one entry for EVERY frame: n = frame number, angle = what it mainly shows (front_left = front three-quarter from driver side, front_right = from passenger side, left/right = side profile, rear_left/rear_right = rear three-quarter, interior_front = view into the front cabin, console = centre screen/console, vin_label = VIN sticker or plate, document = paperwork), quality 1-5 (5 = sharp, well lit, whole subject in frame; 1 = blurry or cut off).
 - vin_frames: frame numbers where a VIN sticker/plate is visible (even if too small to read). odometer_frames: frame numbers where the instrument cluster/odometer is visible.
 - spoken_notes: short, clean bullet notes of what the dealer SAID that a buyer should know (e.g. "New tyres", "One owner"). Only things actually said. No filler. [] if nothing useful.
@@ -168,7 +168,7 @@ RULES
 - evidence: at most 6 words, start with the frame number, e.g. "Frame 7: odometer".`;
 
 export const VIDEO_SHAPE =
-  '{"vin_in_video":{"value":"string or null","confidence":"high|medium|low","evidence":""},"seen_vehicle":"string or null","exterior_color":{"value":"Black|White|Silver|Gray|Blue|Red|Green|Brown|Beige|Gold|Orange|Yellow|Purple|null","confidence":"","evidence":""},"interior_material":{"value":"Cloth|Leather|Leatherette|Suede|Vinyl|null","confidence":"","evidence":""},"transmission":{"value":"Automatic|Manual|null","confidence":"","evidence":""},"odometer_miles":{"value":"integer or null","confidence":"","evidence":""},"features":[{"name":"","confidence":"","evidence":""}],"safety_features":[{"name":"","confidence":"","evidence":""}],"visible_condition_notes":[{"note":"","evidence":""}],"frames":[{"n":1,"angle":"front_left|front|front_right|left|right|rear_left|rear|rear_right|wheel|interior_front|dashboard|odometer|console|front_seats|rear_seats|trunk|engine|detail|damage|vin_label|document|other","quality":5}],"vin_frames":[],"odometer_frames":[],"spoken_notes":[]}';
+  '{"vin_in_video":{"value":"string or null","confidence":"high|medium|low","evidence":""},"seen_vehicle":"string or null","exterior_color":{"value":"Black|White|Silver|Gray|Blue|Red|Green|Brown|Beige|Gold|Orange|Yellow|Purple|null","confidence":"","evidence":""},"transmission":{"value":"Automatic|Manual|null","confidence":"","evidence":""},"odometer_miles":{"value":"integer or null","confidence":"","evidence":""},"features":[{"name":"","confidence":"","evidence":""}],"safety_features":[{"name":"","confidence":"","evidence":""}],"visible_condition_notes":[{"note":"","evidence":""}],"frames":[{"n":1,"angle":"front_left|front|front_right|left|right|rear_left|rear|rear_right|wheel|interior_front|dashboard|odometer|console|front_seats|rear_seats|trunk|engine|detail|damage|vin_label|document|other","quality":5}],"vin_frames":[],"odometer_frames":[],"spoken_notes":[]}';
 
 export const CLOSEUP_PROMPT = `Read these close-ups from a car walkaround video very carefully.
 - VIN: the 17-character Vehicle Identification Number on a sticker or plate (it never contains I, O or Q; confusable: 0/D, 1/7, 5/S, 8/B, 2/Z). Copy it character by character. If unsure about a character, give up to 3 full alternatives in candidates.
@@ -178,7 +178,6 @@ Unreadable → null. Reply with ONLY this JSON:
 
 /* ---------- clean-up ---------- */
 const EXT = ['Black', 'White', 'Silver', 'Gray', 'Blue', 'Red', 'Green', 'Brown', 'Beige', 'Gold', 'Orange', 'Yellow', 'Purple'];
-const MAT = ['Cloth', 'Leather', 'Leatherette', 'Suede', 'Vinyl'];
 const CONF = ['high', 'medium', 'low'];
 const ANGLES = ['front_left', 'front', 'front_right', 'left', 'right', 'rear_left', 'rear', 'rear_right', 'wheel', 'interior_front', 'dashboard', 'odometer', 'console', 'front_seats', 'rear_seats', 'trunk', 'engine', 'detail', 'damage', 'vin_label', 'document', 'other'];
 
@@ -216,9 +215,9 @@ export function normalize(f: any) {
   return {
     vehicle_matches_vin: { status: ['match', 'mismatch', 'unsure'].includes(m.status) ? m.status : 'unsure', note: String(m.note ?? '') },
     exterior_color: fix(f.exterior_color, EXT),
-    // never read by AI (the dealer chooses it); kept in the reply, always empty, for older portal versions
+    // never read by AI (the dealer chooses them); kept in the reply, always empty, for older portal versions
     interior_color: { value: null, confidence: 'low', evidence: 'Not read by AI: choose the interior color yourself.' },
-    interior_material: fix(f.interior_material, MAT),
+    interior_material: { value: null, confidence: 'low', evidence: 'Not read by AI: choose the interior material yourself.' },
     transmission: fix(f.transmission, ['Automatic', 'Manual']),
     odometer_miles: odo,
     vin_in_photo: fix(f.vin_in_photo),
