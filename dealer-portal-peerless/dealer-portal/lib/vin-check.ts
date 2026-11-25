@@ -50,3 +50,24 @@ export const normDrive = (v: unknown) => {
   if (/^(2wd|4x2|2-?wheel( drive)?|two[\s-]?wheel( drive)?( \(2wd\))?)$/.test(x)) return 'Two-Wheel Drive';
   return s;
 };
+
+/* ---------------- duplicate stock number (published vehicles; trimmed, case-insensitive) ---------------- */
+export type StockDup = { message: string; vehicle: { id: string; name: string; status: string } };
+
+export const stockInUse = (stock: string, name: string) =>
+  `Stock number ${stock} is already in use by ${name || 'another vehicle'}. Please enter a unique stock number before publishing.`;
+
+/** null = the stock number is free (or the check could not run; the API checks again when publishing) */
+export async function checkStock(stock: string, exceptId?: string): Promise<StockDup | null> {
+  const s = String(stock ?? '').trim();
+  if (!s) return null;
+  try {
+    const r = await api<{ stock: string; status: 'none' | 'active'; vehicle: { id: string; name: string; status: string } | null }>(
+      `/dealer/vehicles/stock-check?stock=${encodeURIComponent(s)}${exceptId ? `&id=${encodeURIComponent(exceptId)}` : ''}`,
+    );
+    if (r.status !== 'active' || !r.vehicle) return null;
+    return { message: stockInUse(s, r.vehicle.name), vehicle: r.vehicle };
+  } catch {
+    return null;
+  }
+}

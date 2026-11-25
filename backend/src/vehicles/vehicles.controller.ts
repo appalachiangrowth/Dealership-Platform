@@ -46,6 +46,12 @@ export class VehiclesController {
     return this.vehicles.vinCheck(t, vin, id || undefined);
   }
 
+  /** duplicate stock number check for the Add / Edit vehicle forms: ?stock=<stock>&id=<vehicle being edited> → none | active */
+  @Get('stock-check')
+  stockCheck(@TenantId() t: string, @Query('stock') stock = '', @Query('id') id = '') {
+    return this.vehicles.stockCheck(t, stock, id || undefined);
+  }
+
   @Get(':id')
   get(@TenantId() t: string, @Param('id') id: string) {
     return this.vehicles.get(t, id);

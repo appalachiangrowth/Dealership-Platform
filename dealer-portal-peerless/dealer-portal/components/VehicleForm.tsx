@@ -4,20 +4,21 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, Check, ChevronDown, CheckCircle2, Copy, ExternalLink, FileText, Globe, Info, MoreHorizontal, Rss, Sparkles, Trash2 } from 'lucide-react';
-import { api, mediaUrl, siteUrl } from '@/lib/api';
+import { api, siteUrl } from '@/lib/api';
 import { MP_FIELDS, mpMissing } from '@/lib/marketplace';
 import { autoDescription } from '@/lib/vehicle-description';
 import { FacebookIcon } from '@/lib/facebook';
 import { FbPostModal } from './fb/FbPostModal';
 import { brandRun } from '@/lib/branding';
-import { BODY_STYLES, DRIVETRAINS, checkVin, normBodyStyle, normDrive, normVin, VinDup } from '@/lib/vin-check';
+import { BODY_STYLES, DRIVETRAINS, checkVin, normBodyStyle, normDrive, normVin, VinDup, checkStock, stockInUse, StockDup } from '@/lib/vin-check';
+import { trimOptions } from '@/lib/trims';
 import { useMobileFormFocus } from '@/lib/use-mobile-form';
 import { PriceInput, rawPrice } from './PriceInput';
 import { useToast } from './toast';
 import { useTenant } from './DealerShell';
 import { ImageUploader } from './ImageUploader';
 import { Button, Modal, cx } from './ui';
-import { money, vehicleName } from '@/lib/format';
+import { vehicleName } from '@/lib/format';
 import {
   VEHICLE_MAKES,
   VEHICLE_TYPES,
@@ -159,7 +160,7 @@ function Tip({ text, label }: { text?: string; label: string }) {
 function Sec({
   id, num, title, desc, chip, collapsible, startOpen = true, forceOpen, children,
 }: {
-  id: string; num: number; title: React.ReactNode; desc: string; chip: { text: string; tone: 'ok' | 'todo' | 'opt' }; collapsible?: boolean; startOpen?: boolean; forceOpen?: boolean; children: React.ReactNode;
+  id: string; num: number; title: React.ReactNode; desc?: string; chip: { text: string; tone: 'ok' | 'todo' | 'opt' }; collapsible?: boolean; startOpen?: boolean; forceOpen?: boolean; children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(startOpen);
   useEffect(() => {
@@ -172,7 +173,7 @@ function Sec({
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#EAF1FF] text-[13px] font-bold text-[#1D4ED8]">{num}</span>
         <div className="flex min-w-[200px] flex-1 flex-col">
           <h2 className="m-0 flex items-center gap-1 text-base font-bold text-[#0F172A]">{title}</h2>
-          <span className="text-[13px] text-[#526077]">{desc}</span>
+          {desc ? <span className="text-[13px] text-[#526077]">{desc}</span> : null}
         </div>
         <span
           className={cx(
@@ -306,15 +307,28 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
     };
   }, [v.vin, v.id, isNew, initial.vin]);
 
-  const dup = useMemo(() => {
-    const others = all.filter((x) => x.id !== v.id);
-    const stock = String(v.stockNumber || '').trim().toLowerCase();
-    if (stock) {
-      const a = others.find((x) => String(x.stockNumber || '').trim().toLowerCase() === stock);
-      if (a) return { v: a, by: `stock number ${v.stockNumber}`, field: 'stockNumber' };
+  /** another published vehicle already has this stock number (trimmed, case-insensitive): publishing is blocked */
+  const stockNow = String(v.stockNumber || '').trim();
+  const [stockSrv, setStockSrv] = useState<StockDup | null>(null);
+  useEffect(() => {
+    if (!stockNow) {
+      setStockSrv(null);
+      return;
     }
-    return null;
-  }, [all, v.id, v.stockNumber]);
+    let live = true;
+    const t = setTimeout(() => void checkStock(stockNow, v.id).then((r) => live && setStockSrv(r)), 350);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [stockNow, v.id]);
+  const stockDup = useMemo<StockDup | null>(() => {
+    const s = stockNow.toLowerCase();
+    if (!s) return null;
+    const a = all.find((x) => x.id !== v.id && x.status === 'PUBLISHED' && String(x.stockNumber || '').trim().toLowerCase() === s);
+    if (a) return { message: stockInUse(stockNow, nameOf(a)), vehicle: { id: a.id as string, name: nameOf(a), status: a.status } };
+    return stockSrv;
+  }, [all, v.id, stockNow, stockSrv]);
 
   /** Scroll to a field and highlight it (CarGurus checklist, "Fix" links). */
   const goField = useCallback((name: string) => {
@@ -372,7 +386,16 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
       if (f) goField(f);
       return;
     }
-    if (dup && !window.confirm(`This vehicle is already in your inventory: ${nameOf(dup.v)} has the same ${dup.by}. Save it as a second vehicle anyway? (Better: open the existing one and update it.)`)) return;
+    // a published vehicle needs a stock number of its own (drafts may share one)
+    if (status === 'PUBLISHED' && stockNow) {
+      const taken = stockDup || (await checkStock(stockNow, v.id));
+      if (taken) {
+        setStockSrv(taken);
+        toast.error(taken.message);
+        goField('stockNumber');
+        return;
+      }
+    }
     setSaving(status);
     try {
       const body = bodyFor(status);
@@ -387,7 +410,12 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
       }
       router.push('/dealer/inventory');
     } catch (e) {
-      toast.error((e as Error).message);
+      const m = (e as Error).message;
+      if (/^Stock number .* is already in use/.test(m)) {
+        setStockSrv({ message: m, vehicle: { id: '', name: '', status: 'PUBLISHED' } });
+        goField('stockNumber');
+      }
+      toast.error(m);
     } finally {
       setSaving('');
     }
@@ -470,7 +498,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
     const r = reqList.filter((x) => x[2] === sec);
     if (!r.length) return { text: 'Optional', tone: 'opt' };
     const d = r.filter(([k]) => !problem(k)).length;
-    return d === r.length ? { text: '✓ Complete', tone: 'ok' } : { text: `${d} of ${r.length} required`, tone: 'todo' };
+    return d === r.length ? { text: '✓ Complete', tone: 'ok' } : { text: `${r.length - d} Required`, tone: 'todo' };
   };
   const photoN = (v.images || []).length;
   // both can be off: the vehicle is then published on the website only
@@ -489,12 +517,17 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
           Open it
         </Link>
       </span>
-    ) : k === dup?.field && (
-      <span className="text-xs font-semibold text-[#B45309]">
-        Already in your inventory: <b>{nameOf(dup.v)}</b> ·{' '}
-        <Link className="underline" href={`/dealer/inventory/${dup.v.id}`}>
-          Open it
-        </Link>
+    ) : k === 'stockNumber' && stockDup && (
+      <span className="text-xs font-semibold text-[#B91C1C]" role="alert">
+        {stockDup.message}
+        {stockDup.vehicle.id && (
+          <>
+            {' '}
+            <Link className="underline" href={`/dealer/inventory/${stockDup.vehicle.id}`}>
+              Open it
+            </Link>
+          </>
+        )}
       </span>
     );
 
@@ -599,9 +632,9 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
           <button
             type="button"
             className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[#2563EB] px-3.5 text-sm font-semibold text-white transition hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:bg-[#C7D2E3] disabled:text-[#334155]"
-            disabled={!canPublish || !!saving}
+            disabled={!canPublish || !!saving || !!stockDup}
             onClick={doPublish}
-            title={!canPublish ? 'Fill in every detail marked * first' : publishLabel}
+            title={stockDup ? stockDup.message : !canPublish ? 'Fill in every detail marked * first' : publishLabel}
           >
             {saving === 'PUBLISHED' ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Check className="h-4 w-4" />}
             {!isNew && status0 === 'PUBLISHED' ? 'Save' : 'Publish'}
@@ -621,7 +654,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
               <div className="border-b border-[#EEF1F6] px-3.5 py-2 text-xs text-[#526077]">
                 {isNew ? 'New vehicle' : <>Status: <b className="text-[#0F172A]">{STATUS_TXT[status0]}</b></>}
                 <div className={cx('mt-0.5 font-semibold', left === 0 ? 'text-[#15803D]' : 'text-[#526077]')}>
-                  {left === 0 ? '✓ Everything needed is filled in' : `${left} required detail${left === 1 ? '' : 's'} left before you can publish`}
+                  {left === 0 ? '✓ Everything needed is filled in' : `${left} Field${left === 1 ? '' : 's'} remaining`}
                 </div>
               </div>
               {!isNew && status0 === 'PUBLISHED' && tenant && (
@@ -696,16 +729,16 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
               <button
                 type="button"
                 className={BTN_P}
-                disabled={!canPublish || !!saving}
+                disabled={!canPublish || !!saving || !!stockDup}
                 onClick={doPublish}
-                title={!canPublish ? 'Fill in every detail marked * first' : undefined}
+                title={stockDup ? stockDup.message : !canPublish ? 'Fill in every detail marked * first' : undefined}
               >
                 {saving === 'PUBLISHED' ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Check className="h-4 w-4" />}
                 {publishLabel}
               </button>
             </div>
             <span className={cx('text-xs font-semibold', left === 0 ? 'text-[#15803D]' : 'text-[#526077]')}>
-              {left === 0 ? '✓ Everything needed is filled in' : `${left} required detail${left === 1 ? '' : 's'} left before you can publish`}
+              {left === 0 ? '✓ Everything needed is filled in' : `${left} Field${left === 1 ? '' : 's'} remaining`}
             </span>
           </div>
         </div>
@@ -726,26 +759,15 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
         </div>
       )}
 
-      {/* already in the inventory */}
-      {dup && (
-        <div className="mb-5 flex max-w-[1240px] flex-wrap items-center gap-4 rounded-[14px] border border-amber-300 bg-amber-50 p-4">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-400 font-bold text-amber-950">!</span>
-          <div className="min-w-0 flex-1 text-sm text-amber-950">
-            <b className="block">This vehicle is already in your inventory</b>
-            Same {dup.by} as <b>{nameOf(dup.v)}</b> ({STATUS_TXT[dup.v.status]}
-            {dup.v.price ? ` · ${money(dup.v.price)}` : ''}). Open it to update it instead of adding it twice.
+      {/* same stock number as another published vehicle: cannot be published */}
+      {stockDup && (
+        <div className="mb-5 flex max-w-[1240px] flex-wrap items-center gap-4 rounded-[14px] border border-red-300 bg-red-50 p-4" role="alert">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-500 font-bold text-white">!</span>
+          <div className="min-w-0 flex-1 text-sm text-red-900">
+            <b className="block">{stockDup.message}</b>
           </div>
-          {dup.v.images?.[0] && <img src={mediaUrl(dup.v.images[0])} alt="" className="h-12 w-20 rounded-md object-cover" />}
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => {
-              if (dirty && !window.confirm('Leave this form without saving?')) return;
-              setDirty(false);
-              router.push(`/dealer/inventory/${dup.v.id}`);
-            }}
-          >
-            Open existing vehicle
+          <Button type="button" size="sm" variant="ghost" onClick={() => goField('stockNumber')}>
+            Fix the stock number
           </Button>
         </div>
       )}
@@ -771,20 +793,20 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
             {problem('images') && photoN > 0 && <p className="mt-2 text-xs font-medium text-[#B91C1C]">{problem('images')}</p>}
           </Sec>
 
-          <Sec id="sec-basics" num={2} title="The basics" desc="What the vehicle is. Buyers search by these first." chip={chipFor('Basics')}>
+          <Sec id="sec-basics" num={2} title="The basics" desc="Confirm your vehicle details." chip={chipFor('Basics')}>
             <div className={GRID}>
               {field('year', 'Year', inp('year', { type: 'number', min: 1900, placeholder: 'e.g. 2021', inputMode: 'numeric' }))}
               {field('make', 'Make', dl('make', 'makes-list', VEHICLE_MAKES, { placeholder: 'e.g. Toyota' }))}
               {field('model', 'Model', dl('model', 'models-list', availableModels, { placeholder: v.make ? `Models for ${v.make}…` : 'e.g. Corolla' }))}
-              {field('trim', 'Trim', inp('trim', { placeholder: 'e.g. XLT SuperCrew' }))}
+              {field('trim', 'Trim', dl('trim', 'trims-list', trimOptions(v.make, v.model), { placeholder: 'e.g. XLT', autoComplete: 'off' }))}
               {field('vehicleType', 'Vehicle type', dl('vehicleType', 'vehicle-types-list', VEHICLE_TYPES, { placeholder: 'e.g. Car, SUV, Truck' }))}
               {field('bodyStyle', 'Body style', sel('bodyStyle', BODY, 'Select body style'))}
             </div>
           </Sec>
 
-          <Sec id="sec-price" num={3} title="Price & identification" desc="What it costs and how you and buyers identify it." chip={chipFor('Price & ID')}>
+          <Sec id="sec-price" num={3} title="Pricing & Details" chip={chipFor('Price & ID')}>
             <div className={GRID}>
-              {field('price', 'Price', <PriceInput id="in-price" name="price" value={v.price} onChange={(raw) => set('price', raw)} placeholder="e.g. 35,000" className={CTRL} />, { prefix: '$' })}
+              {field('price', 'Price', <PriceInput id="in-price" name="price" value={v.price} onChange={(raw) => set('price', raw)} placeholder="" className={CTRL} />, { prefix: '$' })}
               {field('processingFee', 'Processing fee', inp('processingFee', { type: 'number', min: 0, placeholder: 'e.g. 499', inputMode: 'decimal' }), { prefix: '$' })}
               {field('msrp', 'MSRP', inp('msrp', { type: 'number', min: 0, placeholder: 'Optional', inputMode: 'decimal' }), { prefix: '$' })}
               {field('mileage', 'Mileage', inp('mileage', { type: 'number', min: 0, placeholder: 'e.g. 42500', inputMode: 'numeric' }), { suffix: 'mi' })}
@@ -798,7 +820,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
             </div>
           </Sec>
 
-          <Sec id="sec-specs" num={4} title="Specifications" desc="Engine, colors, drivetrain and history." chip={chipFor('Specs')} collapsible forceOpen={!!hot}>
+          <Sec id="sec-specs" num={4} title="Specifications" chip={chipFor('Specs')} collapsible forceOpen={!!hot}>
             <div className={GRID}>
               {field('exteriorColor', 'Exterior color', dl('exteriorColor', 'ext-colors-list', EXTERIOR_COLORS, { placeholder: 'e.g. Silver' }))}
               {field('interiorColor', 'Interior color', dl('interiorColor', 'int-colors-list', INTERIOR_COLORS, { placeholder: 'e.g. Black' }))}
@@ -815,10 +837,23 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
               {field('seats', 'Seats', inp('seats', { type: 'number', min: 0, placeholder: 'e.g. 5' }))}
               {field('owners', 'Previous owners', inp('owners', { type: 'number', min: 0, placeholder: 'e.g. 1' }))}
               {field('accidents', 'Accidents reported', inp('accidents', { type: 'number', min: 0, placeholder: 'e.g. 0' }))}
+              {field(
+                'features',
+                'Installed Options',
+                area(
+                  featText,
+                  (t) => {
+                    setDirty(true);
+                    setFeatText(t);
+                  },
+                  { id: 'in-features', rows: 6, placeholder: 'Heated seats\nApple CarPlay\nSunroof' },
+                ),
+                { full: true, after: <span className="text-xs text-[#526077]">One per line.</span> },
+              )}
             </div>
           </Sec>
 
-          <Sec id="sec-desc" num={5} title="Description & installed options" desc="What makes this vehicle worth a visit." chip={chipFor('Description')}>
+          <Sec id="sec-desc" num={5} title="Description" desc="Describe this vehicle." chip={chipFor('Description')}>
             <div className={GRID}>
               {field(
                 'description',
@@ -859,40 +894,14 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
                   ),
                 },
               )}
-              {field(
-                'features',
-                'Installed options',
-                area(
-                  featText,
-                  (t) => {
-                    setDirty(true);
-                    setFeatText(t);
-                  },
-                  { id: 'in-features', rows: 6, placeholder: 'Heated seats\nApple CarPlay\nSunroof' },
-                ),
-                { wide: true, after: <span className="text-xs text-[#526077]">One per line.</span> },
-              )}
-              {field(
-                'safetyFeatures',
-                'Installed options — safety',
-                area(
-                  safeText,
-                  (t) => {
-                    setDirty(true);
-                    setSafeText(t);
-                  },
-                  { id: 'in-safetyFeatures', rows: 6, placeholder: 'Blind-spot monitoring\nBackup camera' },
-                ),
-                { wide: true, after: <span className="text-xs text-[#526077]">One per line.</span> },
-              )}
             </div>
           </Sec>
 
           <Sec
             id="sec-seo"
             num={6}
-            title="Google search & web address"
-            desc="Optional. We fill these in automatically if you leave them empty."
+            title="Online search & Web address"
+            desc="Auto-Populated. Edit as needed."
             chip={{ text: 'Optional', tone: 'opt' }}
             collapsible
             startOpen={false}
@@ -940,7 +949,9 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
 
             {left > 0 && (
               <div className="border-t border-[#E5E9F0] px-3 py-3.5">
-                <span className="block px-2 pb-2 text-xs font-semibold uppercase tracking-[0.06em] text-[#526077]">Still needed</span>
+                <span className="block px-2 pb-2 text-xs font-semibold uppercase tracking-[0.06em] text-[#526077]">
+                  {left} required field{left === 1 ? '' : 's'} remaining
+                </span>
                 <div className="flex max-h-[300px] flex-col gap-0.5 overflow-y-auto">
                   {stillNeeded.map(([k, label, section]) => (
                     <button key={k} type="button" onClick={() => goField(k)} title={problem(k)} className="flex items-center gap-2.5 rounded-lg p-2 text-left hover:bg-[#F1F5F9]">

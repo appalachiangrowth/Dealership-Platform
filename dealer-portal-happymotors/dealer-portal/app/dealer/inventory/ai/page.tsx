@@ -23,7 +23,8 @@ import { FbPostModal } from '@/components/fb/FbPostModal';
 import { AQ_CSS } from '@/components/ai/aqStyles';
 import { usePhotoSort } from '@/lib/use-photo-sort';
 import { api, mediaUrl } from '@/lib/api';
-import { BODY_STYLES, DRIVETRAINS, checkVin, normBodyStyle, normDrive, normVin, VinDup } from '@/lib/vin-check';
+import { BODY_STYLES, DRIVETRAINS, checkStock, checkVin, normBodyStyle, normDrive, normVin, StockDup, VinDup } from '@/lib/vin-check';
+import { trimOptions } from '@/lib/trims';
 import { PriceInput, rawPrice } from '@/components/PriceInput';
 import { useMobileFormFocus } from '@/lib/use-mobile-form';
 import { VinScannerModal } from '@/components/VinScannerModal';
@@ -49,7 +50,7 @@ const OPT: Record<string, string[]> = {
 // [key, label, required, tip, prefix, suffix, size, kind]
 type FieldDef = [string, string, 0 | 1, string, string?, string?, string?, string?];
 const SECTIONS: [string, string, FieldDef[]][] = [
-  ['The basics', 'What the vehicle is. Buyers search by these first.', [
+  ['The basics', 'Confirm your vehicle details.', [
     ['year', 'Year', 1, 'The model year, as 4 digits.'],
     ['make', 'Make', 1, 'The manufacturer, e.g. Toyota or Ford.'],
     ['model', 'Model', 1, 'The model name, e.g. Corolla or F-150.'],
@@ -57,7 +58,7 @@ const SECTIONS: [string, string, FieldDef[]][] = [
     ['vtype', 'Vehicle type', 0, 'The general category; decides which section of your website lists it.'],
     ['body', 'Body style', 1, 'The shape: sedan, SUV, pickup and so on. Facebook Marketplace needs it.'],
   ]],
-  ['Price & identification', 'What it costs and how it is identified.', [
+  ['Pricing & Details', '', [
     ['price', 'Price', 1, 'The selling price buyers see, in US dollars.', '$'],
     ['fee', 'Processing fee', 0, 'Any documentation fee added at sale. Leave empty if none.', '$'],
     ['msrp', 'MSRP', 0, 'The original manufacturer price when new. Optional.', '$'],
@@ -67,7 +68,7 @@ const SECTIONS: [string, string, FieldDef[]][] = [
     ['condition', 'Condition', 0, 'New or used.'],
     ['badge', 'Deal badge', 0, 'A short highlight on the listing, e.g. "One owner". Under 30 characters.', '', '', 'wide'],
   ]],
-  ['Specifications', 'Engine, colors, drivetrain and history.', [
+  ['Specifications', '', [
     ['ext', 'Exterior color', 1, 'The main paint color, read by AI from the photos.'],
     ['int', 'Interior color', 1, 'The main cabin color. Choose it yourself: it is never filled in by the VIN or AI.'],
     ['trans', 'Transmission', 1, 'How the vehicle changes gear.'],
@@ -82,13 +83,12 @@ const SECTIONS: [string, string, FieldDef[]][] = [
     ['seats', 'Seats', 0, 'How many people it carries.'],
     ['owners', 'Previous owners', 0, 'Optional. How many people owned the vehicle before. Check the vehicle history report. Never filled in by AI.'],
     ['accidents', 'Accidents reported', 0, 'The number of accidents on the vehicle history report. Optional; never filled in by AI.'],
+    ['options', 'Installed Options', 0, 'Options and features installed on this vehicle, one per line. Shown in the features list on your website.', '', '', 'full', 'area'],
   ]],
-  ['Description & features', 'What makes this vehicle worth a visit.', [
+  ['Description', 'Describe this vehicle.', [
     ['description', 'Description', 1, 'Written by AI from the VIN record and what it saw in the photos. Edit it freely.', '', '', 'full', 'area'],
-    ['options', 'Features', 0, 'Features seen in the photos, one per line.', '', '', 'wide', 'area'],
-    ['safety', 'Safety features', 0, 'From the official VIN record and the photos, one per line.', '', '', 'wide', 'area'],
   ]],
-  ['Google search & web address', 'Filled automatically. Change only if you want to.', [
+  ['Online search & Web address', 'Auto-Populated. Edit as needed.', [
     ['seoTitle', 'Search title', 0, 'The title shown in Google results and the browser tab.', '', '', 'wide'],
     ['slug', 'Web address', 0, 'The end of this vehicle’s web address.', '', '', 'wide'],
   ]],
@@ -101,9 +101,6 @@ SECTIONS.forEach((s) =>
     if (f[2]) REQUIRED.push(f[0]);
   }),
 );
-const SRC_CHIP: Record<string, [string, string]> = {
-  vin: ['s-vin', 'VIN'], ai: ['s-ai', '✨ AI'], unsure: ['s-unsure', '✨ AI unsure'], you: ['s-you', 'You'], auto: ['s-auto', 'Auto'], miss: ['s-miss', 'Needs you'],
-};
 const VSTEPS: [string, string][] = [
   ['read', 'Opening the video'], ['frames', 'Looking through your video'], ['audio', 'Listening to what you said'], ['ai', 'AI is reading the video'],
   ['close', 'Reading the VIN and mileage up close'], ['photos', 'Choosing the best photos'], ['vin', 'Looking up the VIN'],
@@ -130,6 +127,7 @@ const ENTRY_CSS = `
 .aq .vinrow{display:flex;gap:10px;align-items:stretch}
 .aq .vinrow .fld{flex:1 1 auto;min-width:0}
 .aq .vinrow .btn{min-height:44px}
+.aq .filled-line{font-size:13.5px;font-weight:600;color:#15803D;padding:2px 2px 0}
 .aq .filled{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:10px;background:#E8F7EE;border:1px solid #BBE5CB;color:#14532D;font-size:13.5px}
 /* VIN box: one normal line, the Scan icon inside its right end (like "mi" in Mileage) */
 .aq .fld.vinfld{min-height:44px;height:44px}
@@ -346,6 +344,8 @@ export default function AiAddVehiclePage() {
   const sentImages = useRef<string[]>([]);
   // same VIN already in the inventory or sold: shown at once and saving is blocked (the API refuses it too)
   const [dup, setDup] = useState<VinDup | null>(null);
+  /** another published vehicle already uses this stock number: publishing is blocked */
+  const [stockDup, setStockDup] = useState<StockDup | null>(null);
   // the full form: always open in Photos & VIN (the default); with a video as soon as the VIN is decoded or AI has
   // read the video (or on request without a lookup)
   const [formOpen, setFormOpen] = useState(true);
@@ -960,6 +960,20 @@ export default function AiAddVehiclePage() {
       clearTimeout(t);
     };
   }, [formVin, savedDraft]);
+  // duplicate stock number (trimmed, case-insensitive) among the published vehicles: checked while typing
+  const stockNow = String(res.v.stock || '').trim();
+  useEffect(() => {
+    if (!stockNow) {
+      setStockDup(null);
+      return;
+    }
+    let live = true;
+    const t = setTimeout(() => void checkStock(stockNow, savedDraft || undefined).then((r) => live && setStockDup(r)), 300);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [stockNow, savedDraft]);
 
   /* ---------------- results page ---------------- */
   const setField = (k: string, val: string) => {
@@ -1076,6 +1090,16 @@ export default function AiAddVehiclePage() {
       goField('vin');
       return;
     }
+    // duplicate stock number: a published vehicle needs a stock number of its own (drafts may share one)
+    if (st === 'PUBLISHED' && stockNow) {
+      const taken = stockDup || (await checkStock(stockNow, savedDraft || undefined));
+      if (taken) {
+        setStockDup(taken);
+        toast.error(taken.message);
+        goField('stock');
+        return;
+      }
+    }
     try {
       // the photos in the order shown here (drag / ◀ ▶ / ★): the first one is the cover everywhere
       let images: string[] = photosRef.current.length ? await uploadAll() : [];
@@ -1103,7 +1127,12 @@ export default function AiAddVehiclePage() {
       if (tenant?.features?.facebook === false) router.push('/dealer/inventory');
       else setFbVehicle({ ...body, ...out });
     } catch (e) {
-      toast.error((e as Error).message);
+      const msg = (e as Error).message;
+      if (/^Stock number .* is already in use/.test(msg)) {
+        setStockDup({ message: msg, vehicle: { id: '', name: '', status: 'PUBLISHED' } });
+        goField('stock');
+      }
+      toast.error(msg);
     } finally {
       setSaving('');
     }
@@ -1122,7 +1151,7 @@ export default function AiAddVehiclePage() {
       <button type="button" className="btn" disabled={!!saving || !!dup} onClick={() => void save('DRAFT')}>
         {savedDraft ? 'Update draft' : 'Save as draft'}
       </button>
-      <button type="button" className="btn p" disabled={!!saving || !!dup} title={dup ? dup.message : undefined} onClick={() => void save('PUBLISHED')}>
+      <button type="button" className="btn p" disabled={!!saving || !!dup || !!stockDup} title={dup ? dup.message : stockDup ? stockDup.message : undefined} onClick={() => void save('PUBLISHED')}>
         {saving ? (
           <>
             <span className="spin w" /> {saving}
@@ -1211,7 +1240,18 @@ export default function AiAddVehiclePage() {
           ))}
         </select>
       );
-    else if (k === 'price') input = <PriceInput id="r-price" value={val} onChange={(raw) => setField('price', raw)} placeholder="e.g. 35,000" />;
+    else if (k === 'price') input = <PriceInput id="r-price" value={val} onChange={(raw) => setField('price', raw)} placeholder="" />;
+    else if (k === 'trim')
+      input = (
+        <>
+          <input id="r-trim" list="r-trim-list" autoComplete="off" value={val} onChange={(e) => setField('trim', e.target.value)} />
+          <datalist id="r-trim-list">
+            {trimOptions(res.v.make, res.v.model).map((o) => (
+              <option key={o} value={o} />
+            ))}
+          </datalist>
+        </>
+      );
     else if (kind === 'area') input = <textarea id={`r-${k}`} value={val} onChange={(e) => setField(k, e.target.value)} style={k === 'description' ? undefined : { minHeight: 90 }} />;
     else
       input = (
@@ -1224,7 +1264,6 @@ export default function AiAddVehiclePage() {
           inputMode={pre === '$' || suf ? 'decimal' : undefined}
         />
       );
-    const ev = res.ev[k] && (s === 'unsure' || s === 'miss' || k === 'safety') && !(s === 'unsure' && res.ok[k]);
     return (
       <div className={`f${size ? ` ${size}` : ''}`} id={`f-${k}`} key={k}>
         <div className="lr">
@@ -1232,16 +1271,15 @@ export default function AiAddVehiclePage() {
             {label} {req ? <span className="req">*</span> : null}
           </label>
           <Tip label={label}>{tip}</Tip>
-          <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, alignItems: 'center' }}>{s && SRC_CHIP[s] && <span className={`chip ${SRC_CHIP[s][0]}`}>{SRC_CHIP[s][1]}</span>}</span>
         </div>
         <div className={cls}>
           {pre ? <span className="pre">{pre}</span> : null}
           {input}
           {suf ? <span className="suf">{suf}</span> : null}
         </div>
-        {ev && (
-          <span className="ev" style={s === 'miss' ? { color: '#B91C1C' } : undefined}>
-            {res.ev[k]}
+        {k === 'stock' && stockDup && (
+          <span className="ev" style={{ color: '#B91C1C', fontWeight: 600 }} role="alert">
+            {stockDup.message}
           </span>
         )}
         {k === 'vin' && dup && (
@@ -1272,27 +1310,25 @@ export default function AiAddVehiclePage() {
     const manual = mode === 'manual' || (mode === 'photos' && !!status && !status.hasKey);
     return (
                 <div className={`card${mode === 'video' ? ' vmode' : ''}`}>
+                  {!manual && (
                   <div className="hd">
                     {numMark(n, photos.length > 0)}
                     <div style={{ flex: 1 }}>
                       <h2>{mode === 'video' ? 'Photos from your video' : 'Photos'}</h2>
-                      <p>{manual ? 'Upload the vehicle photos. The first one is the cover on your website and in listings.' : 'AI reads colors, interior, features and the mileage from these.'}</p>
+                      <p>AI reads colors, interior, features and the mileage from these.</p>
                     </div>
                   </div>
+                  )}
                   <div className="bd">
+                    {!manual && (
                     <div className="note n-info">
                       <span>📷</span>
-                      {manual ? (
-                        <span>
-                          Upload <b>all your photos at once</b>. The <b>first photo is the cover</b>; drag them or use ◀ ▶ ★ to change the order.
-                        </span>
-                      ) : (
-                        <span>
-                          Upload <b>all your photos at once</b>, in any order. Include the <b>dashboard with the car switched on</b> so the mileage can be read. AI puts them in the best order and picks the
-                          cover; you can still drag them or use ◀ ▶ ★.
-                        </span>
-                      )}
+                      <span>
+                        Upload <b>all your photos at once</b>, in any order. Include the <b>dashboard with the car switched on</b> so the mileage can be read. AI puts them in the best order and picks the
+                        cover; you can still drag them or use ◀ ▶ ★.
+                      </span>
                     </div>
+                    )}
                     <div
                       className={`drop${dropOver ? ' over' : ''}`}
                       onDragEnter={(e) => {
@@ -1530,19 +1566,19 @@ export default function AiAddVehiclePage() {
 
               {/* VIN */}
               <div className="card">
+                {mode !== 'manual' && (
                 <div className="hd">
                   {numMark(mode === 'video' ? 2 : 1, !!decoded)}
                   <div style={{ flex: 1 }}>
-                    <h2>{mode === 'video' ? 'VIN (found in your video)' : mode === 'manual' ? 'Decode the VIN' : 'VIN'}</h2>
+                    <h2>{mode === 'video' ? 'VIN (found in your video)' : 'VIN'}</h2>
                     <p>
                       {mode === 'video'
                         ? 'Filled in from the sticker in your video. Check it, or type it if it couldn’t be read.'
-                        : mode === 'manual'
-                          ? 'Type or scan the VIN and click Decode VIN. Year, make, model, trim, engine and more fill in the form below.'
-                          : 'Type or scan it: we look it up in the official US vehicle database and most details fill in from this.'}
+                        : 'Type or scan it: we look it up in the official US vehicle database and most details fill in from this.'}
                     </p>
                   </div>
                 </div>
+                )}
                 <div className="bd">
                   <div className="f">
                     <div className="lr">
@@ -1608,14 +1644,8 @@ export default function AiAddVehiclePage() {
                     <NoteBox key={i} n={n} />
                   ))}
                   {mode === 'manual' && decoded && !vinBusy && vinKeys.length > 0 && (
-                    <div className="filled" role="status" aria-live="polite">
-                      <span>
-                        ✓ <b>
-                          {vinKeys.length} field{vinKeys.length === 1 ? '' : 's'} filled
-                        </b>
-                        : {vinKeys.map((k) => LABEL[k]).join(', ')}
-                      </span>
-                      <span style={{ fontSize: 12.5 }}>Please check these in the form below — VIN decoding can miss or mistake trim-specific options.</span>
+                    <div className="filled-line" role="status" aria-live="polite">
+                      ✓ {vinKeys.length} field{vinKeys.length === 1 ? '' : 's'} filled — please confirm the details below.
                     </div>
                   )}
                   {dup && dupNote}
@@ -1676,6 +1706,11 @@ export default function AiAddVehiclePage() {
                       <div className="fld">
                         <input id="aq-stock" autoComplete="off" placeholder="e.g. BM-1042" value={res.v.stock || ''} onChange={(e) => setOwn('stock', e.target.value)} />
                       </div>
+                      {stockDup && (
+                        <span className="ev" style={{ color: '#B91C1C', fontWeight: 600 }} role="alert">
+                          {stockDup.message}
+                        </span>
+                      )}
                     </div>
                     <div className="f mfull">
                       <div className="lr">
@@ -1775,7 +1810,6 @@ export default function AiAddVehiclePage() {
                               title={`${LABEL[k]} — filled in from the ${FILLED_BY[res.src[k]] === 'AI' ? 'photos / video by AI' : 'official VIN record'}`}
                               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: 320, border: '1px solid #E5E9F0', borderRadius: 999, background: '#F8FAFC', padding: '4px 10px', fontSize: 12.5, cursor: 'pointer' }}
                             >
-                              <span className={`chip ${SRC_CHIP[res.src[k]]?.[0] || 's-vin'}`}>{FILLED_BY[res.src[k]] || 'VIN'}</span>
                               <b style={{ color: '#0F172A', whiteSpace: 'nowrap' }}>{LABEL[k]}</b>
                             </button>
                           ))}
@@ -1806,9 +1840,9 @@ export default function AiAddVehiclePage() {
                       {numMark(String.fromCharCode(65 + si), !mi)}
                       <div style={{ flex: 1 }}>
                         <h2>{sec[0]}</h2>
-                        <p>{sec[1]}</p>
+                        {sec[1] ? <p>{sec[1]}</p> : null}
                       </div>
-                      <span className={`chip ${mi ? 's-miss' : ck ? 's-unsure' : 's-ok'}`}>{mi ? `${mi} needed` : ck ? `${ck} worth a look` : '✓ Complete'}</span>
+                      <span className={`chip ${mi ? 's-miss' : ck ? 's-unsure' : 's-ok'}`}>{mi ? `${mi} Required` : ck ? `${ck} worth a look` : '✓ Complete'}</span>
                     </div>
                     <div className="bd">
                       <div className="grid">{sec[2].map(fieldBox)}</div>
@@ -1837,8 +1871,8 @@ export default function AiAddVehiclePage() {
               })}
                   <div className="card" style={{ padding: '16px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
                     <div style={{ flex: '1 1 260px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <b>{dup ? dup.message : savedDraft ? 'Saved as a draft' : missingReq.length ? `${missingReq.length} detail${missingReq.length > 1 ? 's' : ''} still empty` : 'Ready to publish'}</b>
-                      <span className="hint">{dup ? 'Change the VIN to save this vehicle.' : 'You can publish now and add any empty details later.'}</span>
+                      <b>{dup ? dup.message : stockDup ? stockDup.message : savedDraft ? 'Saved as a draft' : missingReq.length ? `${missingReq.length} Field${missingReq.length > 1 ? 's' : ''} remaining` : 'Ready to publish'}</b>
+                      <span className="hint">{dup ? 'Change the VIN to save this vehicle.' : stockDup ? 'Change the stock number to publish this vehicle.' : 'You can publish now and complete any remaining details later.'}</span>
                     </div>
                     {saveButtons}
                   </div>
@@ -1854,7 +1888,7 @@ export default function AiAddVehiclePage() {
                   <h2 style={{ margin: 0, fontSize: 16 }}>Ready to publish?</h2>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span className="hint" style={{ fontSize: 13 }}>
-                      Recommended details
+                      Required details
                     </span>
                     <b>
                       {reqDone} of {reqTotal}
@@ -1870,13 +1904,13 @@ export default function AiAddVehiclePage() {
                     <div className="note n-ok" style={{ margin: 4 }}>
                       <span>✓</span>
                       <span>
-                        <b>All recommended details are filled.</b> You can publish now.
+                        <b>All required details are filled.</b> You can publish now.
                       </span>
                     </div>
                   ) : (
                     <>
                       <div className="hint" style={{ color: '#B91C1C', padding: '4px 8px', fontWeight: 700, textTransform: 'uppercase', fontSize: 11, letterSpacing: '.08em' }}>
-                        Still empty — optional ({missingReq.length})
+                        {missingReq.length} required field{missingReq.length === 1 ? '' : 's'} remaining
                       </div>
                       {missingReq.map((k) => (
                         <button key={k} type="button" className="miss-item" onClick={() => k !== 'photos' && goField(k)}>
@@ -1906,12 +1940,6 @@ export default function AiAddVehiclePage() {
                       ))}
                     </>
                   )}
-                </div>
-                <div style={{ borderTop: '1px solid #E5E9F0', padding: '14px 20px', background: '#F8FAFC', borderRadius: '0 0 14px 14px', fontSize: 12.5, color: '#526077', lineHeight: 1.9 }}>
-                  <b style={{ color: '#0F172A' }}>Legend</b>
-                  <br />
-                  <span className="chip s-vin">VIN</span> official record · <span className="chip s-ai">✨ AI</span> read by AI · <span className="chip s-unsure">✨ AI unsure</span> worth a quick look ·{' '}
-                  <span className="chip s-you">You</span> your answer · <span className="chip s-auto">Auto</span> created for you · <span className="chip s-miss">Needs you</span> required, please fill
                 </div>
               </div>
             </aside>

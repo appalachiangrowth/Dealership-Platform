@@ -7,6 +7,9 @@ import { CARGURUS_RULES, cleanVehicleInput, DEFAULT_RULES, normVin, publishProbl
 
 export const VIN_IN_INVENTORY = 'A vehicle with this VIN is already in your inventory.';
 export const VIN_SOLD = 'This vehicle (VIN) has already been sold.';
+/** published vehicles need a stock number of their own (trimmed, case-insensitive) within the dealership */
+export const stockInUse = (stock: string, name: string) =>
+  `Stock number ${stock} is already in use by ${name || 'another vehicle'}. Please enter a unique stock number before publishing.`;
 import { CargurusService } from '../cargurus/cargurus.service.js';
 import { PhotoJobsService } from './photo-jobs.service.js';
 import type { PhotoJob } from './photo-jobs.service.js';
@@ -206,11 +209,34 @@ export class VehiclesService {
     if (r.status === 'sold') throw new ConflictException({ message: VIN_SOLD, code: 'vin_sold', vehicle: r.vehicle });
   }
 
+  /**
+   * Same stock number on another published vehicle of this dealership (drafts and sold vehicles are not counted):
+   * trimmed, case-insensitive. exceptId = the vehicle being edited.
+   */
+  async stockCheck(tenantId: string, raw: unknown, exceptId?: string) {
+    const stock = clean(raw, 40).trim();
+    if (!stock) return { stock, status: 'none' as const, vehicle: null };
+    const hit = await this.prisma.vehicle.findFirst({
+      where: { tenantId, stockNumber: { equals: stock, mode: 'insensitive' }, status: 'PUBLISHED', ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+      select: { id: true, year: true, make: true, model: true, trim: true, status: true, stockNumber: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (!hit) return { stock, status: 'none' as const, vehicle: null };
+    return { stock, status: 'active' as const, vehicle: { ...hit, name: vehicleName(hit) } };
+  }
+
+  /** publishing (or saving a published vehicle) with a stock number another published vehicle uses: 400 */
+  private async assertStockFree(tenantId: string, stock: unknown, exceptId?: string) {
+    const r = await this.stockCheck(tenantId, stock, exceptId);
+    if (r.status === 'active') throw new BadRequestException({ message: stockInUse(r.stock, r.vehicle.name), code: 'stock_in_use', vehicle: r.vehicle });
+  }
+
   async create(tenantId: string, body: Record<string, unknown>, user: AuthUser) {
     const data = cleanVehicleInput(body) as Record<string, unknown>;
     if (!data.status) data.status = 'PUBLISHED';
     this.check(data);
     if (data.vin) await this.assertVinFree(tenantId, data.vin);
+    if (data.status === 'PUBLISHED' && data.stockNumber) await this.assertStockFree(tenantId, data.stockNumber);
     const slug = await this.uniqueSlug(tenantId, String(data.slug || vehicleName(data as never) || 'vehicle'));
     const v = await this.prisma.vehicle.create({ data: { ...(data as Prisma.VehicleUncheckedCreateInput), tenantId, slug } });
     await this.audit.record('vehicle.create', { tenantId, actor: user.login, detail: { id: v.id, name: vehicleName(v) } });
@@ -236,6 +262,11 @@ export class VehiclesService {
     this.check({ ...cur, ...data });
     // a changed VIN must not belong to another vehicle (in the inventory or sold)
     if (data.vin && normVin(data.vin) !== normVin(cur.vin)) await this.assertVinFree(tenantId, data.vin, id);
+    // a published vehicle (published now, or kept published) needs a stock number no other published vehicle has
+    const status = (data.status ?? cur.status) as string;
+    const stock = 'stockNumber' in data ? data.stockNumber : cur.stockNumber;
+    const stockChanged = 'stockNumber' in data && String(data.stockNumber || '').trim().toLowerCase() !== String(cur.stockNumber || '').trim().toLowerCase();
+    if (status === 'PUBLISHED' && stock && (stockChanged || cur.status !== 'PUBLISHED')) await this.assertStockFree(tenantId, stock, id);
     if (data.slug) data.slug = await this.uniqueSlug(tenantId, String(data.slug), id);
     const v = await this.prisma.vehicle.update({ where: { id }, data });
     await this.audit.record('vehicle.update', { tenantId, actor: user.login, detail: { id, name: vehicleName(v), fields: Object.keys(data) } });
@@ -258,10 +289,21 @@ export class VehiclesService {
     const where = { tenantId, id: { in: ids } };
     let count = 0;
     switch (body.action) {
-      case 'publish':
-        // vehicles without photos can be published too (photos can be added later)
-        count = (await this.prisma.vehicle.updateMany({ where, data: { status: 'PUBLISHED', soldAt: null } })).count;
+      case 'publish': {
+        // vehicles without photos can be published too (photos can be added later); a vehicle whose stock number
+        // another published vehicle (or one earlier in this selection) already uses is left as it is ("skipped")
+        const picked = await this.prisma.vehicle.findMany({ where, select: { id: true, stockNumber: true } });
+        const ok: string[] = [];
+        const seen = new Set<string>();
+        for (const v of picked) {
+          const s = String(v.stockNumber || '').trim().toLowerCase();
+          if (s && (seen.has(s) || (await this.stockCheck(tenantId, v.stockNumber, v.id)).status === 'active')) continue;
+          if (s) seen.add(s);
+          ok.push(v.id);
+        }
+        count = ok.length ? (await this.prisma.vehicle.updateMany({ where: { tenantId, id: { in: ok } }, data: { status: 'PUBLISHED', soldAt: null } })).count : 0;
         break;
+      }
       case 'draft':
         count = (await this.prisma.vehicle.updateMany({ where, data: { status: 'DRAFT', soldAt: null } })).count;
         break;
