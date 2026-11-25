@@ -270,22 +270,23 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
 
       {/* examples */}
       {enabled && focus && !text && !plan && !busy && (
-        <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 rounded-xl border border-[#E5E9F0] bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.14)]">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.06em] text-[#64748B]">Try saying</div>
-          <div className="flex flex-wrap gap-2">
-            {EXAMPLES.map((x) => (
+        <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 rounded-xl border border-[#E5E9F0] bg-white p-2.5 shadow-[0_12px_32px_rgba(15,23,42,0.14)] sm:p-3">
+          <div className="mb-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-[#64748B] sm:mb-2">Try saying</div>
+          <div className="flex flex-wrap gap-1.5 sm:gap-2">
+            {/* phones show only the first 2 suggestions (keeps the dropdown above the VIN section); all of them from sm up */}
+            {EXAMPLES.map((x, i) => (
               <button
                 key={x}
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => void run(x)}
-                className="rounded-full border border-[#E9E3FF] bg-[#F7F5FF] px-3 py-1.5 text-left text-[12.5px] font-medium text-[#5B3FD6] hover:bg-[#EFEAFF]"
+                className={`${i >= 2 ? 'hidden sm:inline-flex' : 'inline-flex'} rounded-full border border-[#E9E3FF] bg-[#F7F5FF] px-3 py-1.5 text-left text-[12.5px] font-medium text-[#5B3FD6] hover:bg-[#EFEAFF]`}
               >
                 {x}
               </button>
             ))}
           </div>
-          <div className="mt-2.5 text-xs text-[#64748B]">
+          <div className="mt-2 text-xs text-[#64748B] sm:mt-2.5">
             Or type a make, model, VIN or stock number to search. Simple changes are done straight away (with Undo); deleting or changing many things asks first.
           </div>
         </div>
