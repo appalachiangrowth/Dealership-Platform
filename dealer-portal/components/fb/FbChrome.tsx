@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { Store, Monitor, Power, LogOut, Shield, Trash2, ImageIcon, Loader2, Info, RefreshCw, ExternalLink } from 'lucide-react';
+import { Store, Monitor, Power, LogOut, Shield, Trash2, ImageIcon, Loader2, RefreshCw, ExternalLink } from 'lucide-react';
 import { FacebookIcon, fb, fbFetch, screenshotIn, useFb } from '@/lib/facebook';
 import { Button, Card, Field, Input, Modal, cx } from '../ui';
 import { useToast } from '../toast';
@@ -55,7 +55,10 @@ export function FbHeader() {
         ? { tone: 'ok', text: 'Connected', line: 'Facebook is resting to save resources. It wakes up by itself when you post, so the first post may take a few extra seconds.' }
         : state.browserOpen
           ? { tone: 'warn', text: 'Waiting for you to log in', line: 'Log in to Facebook in the browser below. You only need to do this once.' }
-          : { tone: 'mute', text: 'Not connected', line: 'Click Connect Facebook and log in once with your Facebook account. The login is saved on our server for your user only.' };
+          : { tone: 'mute', text: 'Not connected', line: 'This is a one-time process — connect once and your login stays saved.' };
+
+  /** nothing connected and no browser open: the plain "connect once" card */
+  const notConnected = !!state && !loggedIn && !known && !state.browserOpen;
 
   const tabs = [
     { href: '/dealer/facebook', label: 'Create a post' },
@@ -70,10 +73,7 @@ export function FbHeader() {
     <div className="mb-6 space-y-5">
       {/* page header with the tabs */}
       <header className="-mx-4 -mt-6 border-b border-[#E5E9F0] bg-white px-4 pt-5 sm:-mx-7 sm:-mt-7 sm:px-7">
-        <div className="flex flex-col gap-1">
-          <h1 className="m-0 text-[26px] font-bold tracking-[-0.02em] text-[#0F172A]">FB Poster</h1>
-          <p className="m-0 text-sm text-[#526077]">Share your vehicles on your Facebook Pages and on Marketplace, without copying and pasting.</p>
-        </div>
+        <h1 className="m-0 text-[26px] font-bold tracking-[-0.02em] text-[#0F172A]">FB Poster</h1>
         <nav aria-label="FB Poster sections" className="mt-3.5 flex gap-6 overflow-x-auto">
           {tabs.map((t) => {
             const on = path === t.href;
@@ -98,12 +98,15 @@ export function FbHeader() {
       {/* connection */}
       <div className="rounded-[14px] border border-[#E5E9F0] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
         <div className="flex flex-wrap items-center gap-4 px-5 py-4">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#1877F2] text-white">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1877F2] text-white">
             <FacebookIcon className="h-[22px] w-[22px]" />
           </span>
           <div className="flex min-w-[260px] flex-1 flex-col gap-[3px]">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[15px] font-bold text-[#0F172A]">{known || loggedIn ? `Connected as ${a?.fbName || 'your Facebook account'}` : 'Facebook'}</span>
+              <span className="text-[15px] font-bold text-[#0F172A]">
+                {known || loggedIn ? `Connected as ${a?.fbName || 'your Facebook account'}` : notConnected ? 'Facebook is not connected' : 'Facebook'}
+              </span>
+              {!notConnected && (
               <span
                 className={cx(
                   'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-[3px] text-xs font-semibold',
@@ -113,15 +116,8 @@ export function FbHeader() {
                 <span className={cx('h-1.5 w-1.5 rounded-full', status.tone === 'ok' ? 'bg-[#16A34A]' : status.tone === 'warn' ? 'bg-[#D97706]' : 'bg-[#94A3B8]')} />
                 {status.text}
               </span>
+              )}
               {a?.proxy && <span className="rounded-full bg-[#F1F5F9] px-2.5 py-[3px] text-xs font-semibold text-[#475569]">Proxy {a.proxy}</span>}
-              <span className="group relative inline-flex">
-                <button type="button" aria-label="About the Facebook connection" className="inline-flex h-6 w-6 cursor-help items-center justify-center rounded-full text-[#64748B] hover:bg-[#EAF1FF] hover:text-[#1D4ED8]">
-                  <Info className="h-[15px] w-[15px]" />
-                </button>
-                <span role="tooltip" className="pointer-events-none absolute bottom-[calc(100%+8px)] left-[-10px] z-40 hidden w-[260px] rounded-lg bg-[#0F172A] px-3 py-2.5 text-[12.5px] font-normal leading-normal text-[#F1F5F9] shadow-[0_8px_24px_rgba(15,23,42,0.25)] group-focus-within:block group-hover:block">
-                  Your Facebook login is stored securely on our server for your user only. Each team member connects their own Facebook account. You only need to log in once.
-                </span>
-              </span>
             </div>
             <span className="text-[13px] text-[#526077]">
               {status.line}

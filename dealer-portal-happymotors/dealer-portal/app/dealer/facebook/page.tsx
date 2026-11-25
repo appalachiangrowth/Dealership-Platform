@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, Car, CheckCircle2, Film, Hash, Info, Layers, Loader2, Pencil, Play, RefreshCw, Square, Star, Store, Trash2, Upload, XCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Car, CheckCircle2, Film, Hash, Layers, Loader2, Pencil, Play, RefreshCw, Square, Star, Store, Trash2, Upload, XCircle } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { FacebookIcon, fb, useFb, type FbItem } from '@/lib/facebook';
@@ -27,19 +27,6 @@ const LBL = 'text-[13px] font-semibold text-[#1E293B]';
 const BTN_S =
   'inline-flex min-h-[38px] items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-[#CBD5E1] bg-white px-3.5 text-sm font-semibold text-[#0F172A] transition hover:bg-[#F8FAFC] disabled:opacity-60';
 
-function Tip({ text, label }: { text: string; label: string }) {
-  return (
-    <span className="group relative inline-flex align-middle" onClick={(e) => e.preventDefault()}>
-      <button type="button" aria-label={`What is ${label}?`} className="inline-flex h-6 w-6 cursor-help items-center justify-center rounded-full text-[#64748B] outline-none hover:bg-[#EAF1FF] hover:text-[#1D4ED8] focus-visible:bg-[#EAF1FF]">
-        <Info className="h-[15px] w-[15px]" />
-      </button>
-      <span role="tooltip" className="pointer-events-none absolute bottom-[calc(100%+8px)] left-[-10px] z-40 hidden w-[260px] rounded-lg bg-[#0F172A] px-3 py-2.5 text-[12.5px] font-normal normal-case leading-normal tracking-normal text-[#F1F5F9] shadow-[0_8px_24px_rgba(15,23,42,0.25)] group-focus-within:block group-hover:block">
-        {text}
-      </span>
-    </span>
-  );
-}
-
 /** FB Poster › Create a post: your Facebook Pages and/or Marketplace — one button. */
 export default function FbPostPage() {
   const { state, refresh } = useFb();
@@ -56,8 +43,6 @@ export default function FbPostPage() {
   const [selPages, setSelPages] = useState<Set<string>>(new Set());
   const [pageLink, setPageLink] = useState('');
   const [addOpen, setAddOpen] = useState(false);
-  const [mpCopy, setMpCopy] = useState('');
-  const [showMpCopy, setShowMpCopy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const captionRef = useRef<HTMLTextAreaElement>(null);
 
@@ -133,19 +118,13 @@ export default function FbPostPage() {
   const fromVehicle = (id: string) =>
     run('vehicle', async () => {
       setVehicleId(id);
-      setMpCopy('');
       if (!id) {
         setMedia((m) => m.filter((x) => x.kind === 'file'));
         return;
       }
-      void fb
-        .get<{ text: string }>(`mp/vehicles/${id}/preview`)
-        .then((p) => p?.text && setMpCopy(p.text.trim()))
-        .catch(() => {});
       const r = await fb.post<{ copy: { hashtags: string }; text: string; photos: string[] }>(`mp/vehicles/${id}/generate`, { ai: false, save: false });
       setCaption(r.text.replace(r.copy.hashtags, '').replace(/\n{3,}/g, '\n\n').trim());
       if (r.copy.hashtags) setHashtags(r.copy.hashtags);
-      setMpCopy((cur) => cur || r.text.trim());
       setMedia((m) => [
         ...r.photos.slice(0, 10).map((u, i) => ({ key: `v${i}${u}`, kind: 'vehicle' as const, url: u, preview: mediaUrl(u), video: false })),
         ...m.filter((x) => x.kind === 'file'),
@@ -230,20 +209,10 @@ export default function FbPostPage() {
       'Stopped.',
     );
 
-  const where = [pageList.length === 1 ? pageList[0].name || 'your Page' : pageList.length > 1 && `${pageList.length} Pages`, toMp && 'Marketplace'].filter(Boolean) as string[];
   const cantPost = !count || !connected || (pageList.length > 0 && !toMp && !caption.trim() && !hashtags.trim() && !media.length);
 
   return (
     <div className="flex flex-col gap-5">
-      {!connected && state && (
-        <div className="flex items-start gap-2.5 rounded-[10px] border border-[#DBE7FE] bg-[#EFF6FF] px-3.5 py-3 text-[13px] text-[#1E3A8A]">
-          <Info className="mt-px h-[18px] w-[18px] shrink-0" />
-          <span>
-            <b>Step 1:</b> click <b>Connect Facebook</b> above and log in once. <b>Step 2:</b> choose a vehicle, tick your Pages and/or Marketplace, then press <b>Start posting</b>.
-          </span>
-        </div>
-      )}
-
       <div className="flex flex-wrap items-start gap-5">
         {/* ============ left: the post ============ */}
         <section aria-labelledby="cp-h" className={cx(CARD, 'min-w-0 flex-[1.3_1_460px]')}>
@@ -263,13 +232,8 @@ export default function FbPostPage() {
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-0.5">
                 <label htmlFor="fb-veh" className={LBL}>
-                  1. Vehicle
+                  Vehicle
                 </label>
-                <Tip
-                  label="Vehicle"
-                  text="Choose a vehicle from your inventory and we fill in its photos, price and description. You can still change anything before posting. Marketplace always needs a vehicle."
-                />
-                <span className="ml-1.5 text-xs text-[#526077]">{toMp ? 'Needed for Marketplace' : 'Optional'}</span>
                 {loading === 'vehicle' && <Loader2 className="ml-auto h-4 w-4 animate-spin text-[#526077]" />}
               </div>
               <div className={FLD}>
@@ -295,8 +259,7 @@ export default function FbPostPage() {
             {/* 2. photos */}
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-0.5">
-                <span className={LBL}>2. Photos &amp; videos</span>
-                <Tip label="Photos and videos" text="Up to 20 files: JPG, PNG or MP4. The first one is shown largest on Facebook, so start with your best outside shot. Used for the Page posts; Marketplace uses the vehicle’s own photos." />
+                <span className={LBL}>Photos &amp; videos</span>
                 <span className="ml-auto text-xs font-semibold text-[#526077]">{media.length} of 20</span>
               </div>
               {!!media.length && (
@@ -361,9 +324,8 @@ export default function FbPostPage() {
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-0.5">
                 <label htmlFor="fb-txt" className={LBL}>
-                  3. Post text
+                  Post text
                 </label>
-                <Tip label="Post text" text="What people read with your photos on your Page. Mention the price, mileage and how to contact you. Short, friendly posts get the most replies." />
                 <span className="ml-auto text-xs text-[#526077]">{caption.length} characters</span>
               </div>
               <div className={FLD}>
@@ -391,7 +353,6 @@ export default function FbPostPage() {
                 <label htmlFor="fb-tags" className={LBL}>
                   Hashtags
                 </label>
-                <Tip label="Hashtags" text="Words starting with # that help people find your post. Separate them with spaces or commas; we add the # for you." />
               </div>
               <div className={FLD}>
                 <span className="flex items-center pl-3 text-[#64748B]">
@@ -432,7 +393,6 @@ export default function FbPostPage() {
                   >
                     {loading === 'pages' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Refresh list
                   </button>
-                  <Tip label="Refresh list" text="Reloads your Pages from Facebook. Use this after you create or get access to a new Page." />
                 </div>
                 {pages.length ? (
                   pages.map((p) => (
@@ -500,11 +460,7 @@ export default function FbPostPage() {
                       ))}
                   </span>
                   <span className="text-[13px] text-[#526077]">
-                    {!vehicle
-                      ? 'Choose the vehicle in step 1: it is listed with its own photos and details.'
-                      : mpReady
-                        ? 'Every detail Marketplace needs is filled in. It is listed automatically.'
-                        : `Still needed: ${vehicle.missing.join(', ')}.`}
+                    {!vehicle || mpReady ? 'It is listed automatically with vehicle photos & details.' : `Still needed: ${vehicle.missing.join(', ')}.`}
                   </span>
                   {vehicle && !mpReady && (
                     <Link href={`/dealer/inventory/${vehicle.id}`} className="text-[13px] font-semibold text-[#1D4ED8] hover:underline" onClick={(e) => e.stopPropagation()}>
@@ -512,36 +468,11 @@ export default function FbPostPage() {
                     </Link>
                   )}
                 </span>
-                <Tip label="Facebook Marketplace" text="Marketplace is Facebook’s buy-and-sell area. Your listing shows to local buyers searching for vehicles, with price, mileage and photos taken from your inventory." />
               </label>
 
-              {toMp && vehicle && (
-                <div className="rounded-[10px] border border-[#BBE5CB] bg-[#F3FBF6] px-3.5 py-2.5 text-[13px]">
-                  <div className="flex items-center gap-2">
-                    <Store className="h-4 w-4 shrink-0 text-[#15803D]" />
-                    <span className="flex-1 text-[#14532D]">Marketplace listing text (description and hashtags)</span>
-                    <button type="button" className="font-semibold text-[#1D4ED8] hover:underline" onClick={() => setShowMpCopy(!showMpCopy)}>
-                      {showMpCopy ? 'Hide' : 'Show'}
-                    </button>
-                  </div>
-                  {showMpCopy && (
-                    <>
-                      <div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg bg-white p-2.5 font-mono text-[11px] leading-relaxed text-[#334155]">{mpCopy || 'Loading…'}</div>
-                      <p className="mb-0 mt-1 text-[11px] text-[#526077]">Change it on the Marketplace tab.</p>
-                    </>
-                  )}
-                </div>
-              )}
             </div>
 
             <div className="flex flex-col gap-2.5 rounded-b-[14px] border-t border-[#E5E9F0] bg-[#F8FAFC] px-5 py-4">
-              <span className="text-[13px] text-[#334155]">
-                {running || mpBusy
-                  ? 'Posting now — follow every step on the Posting history tab. You can leave this page while it runs.'
-                  : count
-                    ? `Posts to ${where.join(', then ')}${pageList.length > 1 ? ', with a short pause between Pages' : ''}. You can leave this page while it runs.`
-                    : 'Choose your Pages and/or Marketplace.'}
-              </span>
               {running || mpBusy ? (
                 <div className="flex gap-2">
                   <Link href="/dealer/facebook/history" className="inline-flex min-h-[46px] flex-1 items-center justify-center gap-2 rounded-lg bg-[#2563EB] px-[18px] text-[15px] font-semibold text-white hover:bg-[#1D4ED8]">
@@ -560,11 +491,6 @@ export default function FbPostPage() {
                 >
                   {loading === 'post' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Start posting
                 </button>
-              )}
-              {cantPost && !running && !mpBusy && (
-                <span className="text-center text-xs text-[#526077]">
-                  {!connected ? 'Connect Facebook above first.' : !count ? 'Tick a Page or Marketplace to start.' : 'Add some text or choose a vehicle to start.'}
-                </span>
               )}
             </div>
           </section>

@@ -265,6 +265,7 @@ export default function InventoryPage() {
                             <div className="text-xs text-slate-500">
                               {[v.bodyStyle, v.exteriorColor].filter(Boolean).join(' · ') || '—'} ·{' '}
                               {v.images.length ? `${v.images.length} photo${v.images.length === 1 ? '' : 's'}` : <span className="font-semibold text-amber-600">no photos</span>}
+                              {String(v.stockNumber || '').trim() && <span className="md:hidden"> · Stock #{String(v.stockNumber).trim()}</span>}
                             </div>
                           </div>
                         </div>
