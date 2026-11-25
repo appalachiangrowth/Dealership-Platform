@@ -10,7 +10,7 @@
  *     · Walkaround Video — one video; AI takes the photos, VIN, mileage and spoken notes from it.
  * "Only you can answer these" (price, mileage, stock number, history) stays at the top. Every form value is tagged
  * VIN / AI / You / Needs you and can be changed; values the dealer changed are kept when AI finishes later. A VIN
- * decode, the photo reading and the video reading each end with a "please verify" popup. Publishing uploads the
+ * decode, the photo reading and the video reading fill the form in place (no popups). Publishing uploads the
  * photos, saves the vehicle and offers Facebook.
  */
 import Link from 'next/link';
@@ -28,7 +28,6 @@ import { trimOptions } from '@/lib/trims';
 import { PriceInput, rawPrice } from '@/components/PriceInput';
 import { useMobileFormFocus } from '@/lib/use-mobile-form';
 import { VinScannerModal } from '@/components/VinScannerModal';
-import { VerifyDecodedModal } from '@/components/VerifyDecodedModal';
 import { ScanLine } from 'lucide-react';
 import { brandRun } from '@/lib/branding';
 import {
@@ -121,7 +120,7 @@ type AiState = 'idle' | 'waiting' | 'running' | 'done' | 'error';
 type Mode = 'manual' | 'photos' | 'video';
 const MANUAL_HINT = 'Enter all 17 characters, then click Decode VIN.';
 const AUTO_HINT = 'Looks up automatically when all 17 characters are entered.';
-/** the VIN box with its Scan icon, phone layout and the "please verify" popup (on top of AQ_CSS) */
+/** the VIN box with its Scan icon and phone layout (on top of AQ_CSS) */
 const ENTRY_CSS = `
 /* Add Manually: VIN box + Decode VIN on one row; the "N fields filled" summary under it */
 .aq .vinrow{display:flex;gap:10px;align-items:stretch}
@@ -294,15 +293,6 @@ export default function AiAddVehiclePage() {
   /** the VIN the current decoded record belongs to */
   const decodedVin = useRef('');
   const [vinNotes, setVinNotes] = useState<Note[]>([]);
-  /**
-   * "Please verify" popup: shown when a VIN decode, the AI photo reading or the walkaround video reading finishes.
-   * Dismissed with "Understood".
-   */
-  const [verify, setVerify] = useState<null | 'vin' | 'photos' | 'video'>(null);
-  const verifyOpen = verify !== null;
-  const setVerifyOpen = (open: boolean) => setVerify(open ? 'vin' : null);
-  /** Cancel and Understood both just close it: the filled-in values stay */
-  const closeVerify = useCallback(() => setVerify(null), []);
 
   // photos
   const [photos, _setPhotos] = useState<Photo[]>([]);
@@ -437,8 +427,6 @@ export default function AiAddVehiclePage() {
       setVinHint({ text: '', color: '#526077' });
       decodedVin.current = v;
       setDecoded(d);
-      // the video's own popup comes when AI has finished reading it (videoAfterVin)
-      if (modeRef.current !== 'video') setVerify('vin');
       if (modeRef.current === 'video') await videoAfterVin(d);
     } catch (e) {
       if (vinRef.current === v) setVinNotes([{ kind: 'bad', icon: '⚠', html: (e as Error).message }]);
@@ -539,7 +527,6 @@ export default function AiAddVehiclePage() {
       setAiMs(Math.round(performance.now() - t0));
       setAiState('done');
       lastRun.current = key;
-      setVerify('photos');
     } catch (e) {
       if (ver !== aiVer.current) return;
       setAiState('error');
@@ -580,7 +567,6 @@ export default function AiAddVehiclePage() {
     setVNotes([]);
     setVDone(false);
     lastRun.current = '';
-    setVerifyOpen(false);
     // Photos & VIN: the full form is always open (fill it in by hand, or let the VIN / photos fill it)
     setFormOpen(m === 'photos' || !!decodedRef.current);
     const v = vinRef.current;
@@ -770,19 +756,7 @@ export default function AiAddVehiclePage() {
         },
       ];
       if (vinWarn) notes.push({ kind: 'warn', icon: '⚠', html: vinWarn });
-      if (!odo) notes.push({ kind: 'info', icon: 'ℹ', html: 'The mileage couldn’t be read. You can type it on the results page. Tip: film the dashboard for 3 seconds with the car switched on.' });
-      if (sn.length)
-        notes.push({
-          kind: 'info',
-          icon: '🗣',
-          html: (
-            <>
-              <b>You said:</b> {sn.join(' · ')}
-              <br />
-              <span className="hint">Added to “Anything else buyers should know”. Edit it there.</span>
-            </>
-          ),
-        });
+      if (!odo) notes.push({ kind: 'warn', icon: '⚠', html: 'Mileage not read from the video. Please enter it.' });
       setVNotes(notes);
       setVDone(true);
       if (found && found.length === 17) {
@@ -791,7 +765,6 @@ export default function AiAddVehiclePage() {
       } else {
         vstep('vin', 'err', 'VIN not readable in the video. Please type it below.');
         setAiState('done');
-        setVerify('video');
         setTimeout(() => {
           const el = document.getElementById('aq-vin');
           el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -833,7 +806,6 @@ export default function AiAddVehiclePage() {
       setAi({ ...aiRef.current, description: '' });
     }
     setAiState('done');
-    setVerify('video');
   };
 
   /* ---------------- the full form (opens by itself) ---------------- */
@@ -857,6 +829,7 @@ export default function AiAddVehiclePage() {
       }
     };
     (['year', 'make', 'model', 'trim', 'vtype', 'body', 'engine', 'hp', 'fuel', 'drive', 'trans', 'doors', 'seats'] as const).forEach((k) => set(k, f[k], 'vin'));
+    if (R.v.trim) R.v.trim = R.v.trim.toUpperCase();
     if (R.v.body) R.v.body = normBodyStyle(R.v.body);
     if (R.v.drive) R.v.drive = normDrive(R.v.drive);
     ['trim', 'trans', 'body'].forEach((k) => {
@@ -1320,15 +1293,6 @@ export default function AiAddVehiclePage() {
                   </div>
                   )}
                   <div className="bd">
-                    {!manual && (
-                    <div className="note n-info">
-                      <span>📷</span>
-                      <span>
-                        Upload <b>all your photos at once</b>, in any order. Include the <b>dashboard with the car switched on</b> so the mileage can be read. AI puts them in the best order and picks the
-                        cover; you can still drag them or use ◀ ▶ ★.
-                      </span>
-                    </div>
-                    )}
                     <div
                       className={`drop${dropOver ? ' over' : ''}`}
                       onDragEnter={(e) => {
@@ -1461,39 +1425,6 @@ export default function AiAddVehiclePage() {
                     </div>
                   </div>
                   <div className="bd">
-                    <div className="guide">
-                      <div className="g-top">
-                        <b>How to film (60–90 seconds)</b>
-                        <span className="hint">Follow this once and AI picks great photos, the VIN and the mileage for you.</span>
-                      </div>
-                      <div className="g-rules">
-                        <span>📱 Hold the phone <b>sideways</b> (landscape)</span>
-                        <span>🚶 Walk <b>slowly</b>, like a calm stroll</span>
-                        <span>☀️ Daylight, sun <b>behind you</b></span>
-                        <span>✋ <b>Pause 2 s</b> at each stop</span>
-                      </div>
-                      <div className="g-cols">
-                        <div className="g-col">
-                          <h4>🚗 Outside</h4>
-                          <ol className="film">
-                            <li>Stand <b>2–3 metres (8–10 ft)</b> away so the <b>whole car</b> fits in the screen, phone at <b>chest height</b>.</li>
-                            <li>Start at the <b>front-left corner</b> (front and side both visible). Pause 2 s. This is usually the cover photo.</li>
-                            <li>Walk around: <b>front → front-right corner → right side → rear-right corner → back → rear-left corner → left side</b>. Pause 2 s at each.</li>
-                            <li>Step in to <b>1 metre (3 ft)</b> for one <b>wheel</b>, and for any scratch or dent you want to show.</li>
-                          </ol>
-                        </div>
-                        <div className="g-col">
-                          <h4>🪑 Inside</h4>
-                          <ol className="film" start={5}>
-                            <li>Open the driver door. Film the <b>VIN sticker</b> on the door frame from <b>15–20 cm (6–8 in)</b>, filling the screen. <b>Hold still 3 s.</b></li>
-                            <li>From the open door, about <b>1 metre</b> back, film the <b>dashboard and front seats</b>.</li>
-                            <li>Switch the car <b>on</b>. Film the <b>mileage</b> on the dashboard from <b>30–40 cm (1 ft)</b>. <b>Hold still 3 s.</b> (Total miles, not the trip meter.)</li>
-                            <li>Open a back door for the <b>back seats</b>, then the <b>trunk</b> (and the engine if you like).</li>
-                          </ol>
-                        </div>
-                      </div>
-                      <div className="g-say">🗣 <b>Talk while you film</b>, e.g. “new tyres, one owner, small scratch on the rear bumper”. We turn it into notes for the listing.</div>
-                    </div>
                     <div
                       className={`drop${vDrop ? ' over' : ''}`}
                       onDragEnter={(e) => {
@@ -1821,9 +1752,6 @@ export default function AiAddVehiclePage() {
               {mode !== 'manual' && !ai && !aiBusy && status?.hasKey !== false && (aiState === 'error' || photos.length > 0) && (
                     <NoteBox n={{ kind: 'warn', icon: '⚠', html: <><b>AI didn’t read the photos</b>{aiErr ? ` (${aiErr})` : ''}. Colors, interior and mileage need to be filled in by you.</> }} />
                   )}
-                  {!ai && !aiBusy && aiState !== 'error' && !photos.length && mode === 'photos' && (
-                    <NoteBox n={{ kind: 'info', icon: '📷', html: <>Add photos above and AI fills in colors, interior, features and mileage in the form below.</> }} />
-                  )}
               {ai?.vehicle_matches_vin?.status === 'mismatch' && (
                 <NoteBox n={{ kind: 'bad', icon: '⚠', html: <><b>The photos may show a different vehicle than the VIN.</b> {ai.vehicle_matches_vin.note}</> }} />
               )}
@@ -1949,7 +1877,6 @@ export default function AiAddVehiclePage() {
 
       <VinScannerModal open={scanOpen} onClose={() => setScanOpen(false)} onVin={onScanned} aiOn={!!status?.hasKey} />
 
-      <VerifyDecodedModal open={verifyOpen} kind={verify} onCancel={closeVerify} onUnderstood={closeVerify} />
 
       <FbPostModal
         vehicle={fbVehicle}

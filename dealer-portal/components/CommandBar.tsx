@@ -286,9 +286,6 @@ export function CommandBar({ enabled = true }: { enabled?: boolean }) {
               </button>
             ))}
           </div>
-          <div className="mt-2 text-xs text-[#64748B] sm:mt-2.5">
-            Or type a make, model, VIN or stock number to search. Simple changes are done straight away (with Undo); deleting or changing many things asks first.
-          </div>
         </div>
       )}
 

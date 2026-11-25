@@ -98,7 +98,8 @@ export function mapNhtsa(r: Rec) {
   const trim = [pick(r, 'Trim'), pick(r, 'Trim2')]
     .filter((x) => x && !(model && same(x, model)))
     .join(' ')
-    .trim();
+    .trim()
+    .toUpperCase();
   const codes = (pick(r, 'ErrorCode') || '0').split(',').map((c) => c.trim());
   const clean = codes.every((c) => c === '0');
   const hp = pick(r, 'EngineHP');
