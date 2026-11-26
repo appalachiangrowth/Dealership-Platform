@@ -152,6 +152,25 @@ export async function fbFetch(path: string, init: RequestInit = {}) {
   return fetch(API_URL + path, { ...init, headers, cache: 'no-store' });
 }
 
+/**
+ * FB Poster live view over one WebSocket (pictures in, clicks / typing out).
+ * Goes straight to the API when NEXT_PUBLIC_API_URL is an https:// address (wss://…), otherwise to this site's own
+ * /api path on the same domain (Nginx passes that one path straight to the API: Next.js cannot carry WebSockets).
+ * The login token travels as a WebSocket sub-protocol, never in the URL. null = no WebSocket here (use HTTP).
+ */
+export function fbViewSocket(): { url: string; protocols: string[] } | null {
+  if (typeof window === 'undefined' || typeof WebSocket === 'undefined') return null;
+  const base = /^https?:\/\//i.test(API_URL)
+    ? API_URL.replace(/^http/i, 'ws')
+    : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}${API_URL.startsWith('/') ? API_URL : `/${API_URL}`}`;
+  const protocols = ['fbview'];
+  const token = auth.token();
+  if (token) protocols.push(`bearer.${token}`);
+  const tenant = auth.supportTenant();
+  if (tenant) protocols.push(`tenant.${tenant}`);
+  return { url: `${base.replace(/\/+$/, '')}/dealer/facebook/view/ws`, protocols };
+}
+
 export const fb = {
   post: <T = unknown>(path: string, body?: unknown) => api<T>(`/dealer/facebook/${path}`, { method: 'POST', body: body ?? {} }),
   put: <T = unknown>(path: string, body?: unknown) => api<T>(`/dealer/facebook/${path}`, { method: 'PUT', body: body ?? {} }),

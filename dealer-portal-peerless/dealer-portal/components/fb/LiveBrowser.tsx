@@ -2,15 +2,22 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, Globe, X, Keyboard, Send, Loader2 } from 'lucide-react';
-import { fb, fbFetch, useFb } from '@/lib/facebook';
+import { fb, fbFetch, fbViewSocket, useFb } from '@/lib/facebook';
 import { useToast } from '../toast';
 import { cx } from '../ui';
 
 const SPECIAL = new Set(['Enter', 'Backspace', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Delete', 'Home', 'End', 'PageUp', 'PageDown']);
 
+/** typing is sent after this pause (ms); scrolling at most this often */
+const TYPE_MS = 30;
+const WHEEL_MS = 45;
+/** a WebSocket that has not opened by then is treated as blocked (HTTP is used instead) */
+const WS_OPEN_MS = 4000;
+
 /**
  * The dealer's Facebook browser, running on the server, shown inside the portal.
- * Pictures of the screen are streamed in; clicks, scrolling and typing are sent back.
+ * Pictures of the screen stream in and clicks, scrolling and typing go back over ONE WebSocket; when a WebSocket
+ * cannot be opened (blocked by a proxy / firewall), the old HTTP way is used automatically.
  */
 export function LiveBrowser() {
   const { state, setViewOpen } = useFb();
@@ -25,18 +32,34 @@ export function LiveBrowser() {
   const box = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLImageElement>(null);
   const chain = useRef<Promise<unknown>>(Promise.resolve());
+  /** the open live-view socket (null = HTTP mode) */
+  const sock = useRef<WebSocket | null>(null);
+  const mode = useRef<'ws' | 'http'>('ws');
   const textBuf = useRef('');
   const textTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wheel = useRef({ dy: 0, dx: 0, x: 0, y: 0, t: null as ReturnType<typeof setTimeout> | null });
   const W = state?.screen.width || 1280;
   const H = state?.screen.height || 860;
 
-  // ---- picture stream (long-poll; a new picture arrives whenever the screen changes) ----
+  // ---- picture stream: WebSocket push first, HTTP long-poll as the fallback ----
   useEffect(() => {
     let alive = true;
     let seq = 0;
     let url = '';
-    (async () => {
+    let ws: WebSocket | null = null;
+    let tries = 0;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+
+    const show = (blob: Blob) => {
+      const next = URL.createObjectURL(blob);
+      setSrc(next);
+      if (url) URL.revokeObjectURL(url);
+      url = next;
+    };
+
+    // the old way: one HTTP request per picture
+    const httpLoop = async () => {
+      mode.current = 'http';
       await fb.post('view/start').catch((e) => toastRef.current.error((e as Error).message));
       while (alive) {
         try {
@@ -44,10 +67,7 @@ export function LiveBrowser() {
           if (!alive) break;
           if (r.status === 200) {
             seq = Number(r.headers.get('X-Frame-Seq')) || seq + 1;
-            const next = URL.createObjectURL(await r.blob());
-            setSrc(next);
-            if (url) URL.revokeObjectURL(url);
-            url = next;
+            show(await r.blob());
           } else if (r.status !== 204) {
             await new Promise((ok) => setTimeout(ok, 1500));
           }
@@ -55,18 +75,80 @@ export function LiveBrowser() {
           await new Promise((ok) => setTimeout(ok, 1500));
         }
       }
-    })();
+    };
+
+    const openSocket = () => {
+      const target = fbViewSocket();
+      if (!target) return void httpLoop();
+      let opened = false;
+      try {
+        ws = new WebSocket(target.url, target.protocols);
+      } catch {
+        return void httpLoop();
+      }
+      ws.binaryType = 'blob';
+      const openTimer = setTimeout(() => {
+        if (!opened) ws?.close();
+      }, WS_OPEN_MS);
+      ws.onopen = () => {
+        opened = true;
+        tries = 0;
+        clearTimeout(openTimer);
+        sock.current = ws;
+        mode.current = 'ws';
+      };
+      ws.onmessage = (m) => {
+        if (m.data instanceof Blob) show(m.data);
+        else {
+          try {
+            const msg = JSON.parse(String(m.data)) as { type?: string; message?: string };
+            if (msg.type === 'error' && msg.message) toastRef.current.error(msg.message);
+          } catch {
+            /* not for us */
+          }
+        }
+      };
+      ws.onclose = (ev) => {
+        clearTimeout(openTimer);
+        if (sock.current === ws) sock.current = null;
+        ws = null;
+        if (!alive) return;
+        if (ev.code === 4001) {
+          // the browser was closed on the server (Close / Remove login / idle): do not start it again from here
+          setViewOpen(false);
+          return;
+        }
+        if (ev.code === 4002) return; // could not start (the reason was shown); "Connect Facebook" tries again
+        if (!opened || ++tries > 3) return void httpLoop(); // WebSockets blocked on this network: use HTTP
+        retry = setTimeout(openSocket, 600 * tries); // network blip: reconnect
+      };
+    };
+    openSocket();
+
     return () => {
       alive = false;
+      if (retry) clearTimeout(retry);
       if (url) URL.revokeObjectURL(url);
-      // nobody is watching: the server stops sending pictures (the browser keeps running)
-      void fb.post('view/stop').catch(() => undefined);
+      if (ws) {
+        // closing the socket stops Chrome's picture stream on the server at once
+        ws.onclose = null;
+        ws.close(1000);
+        sock.current = null;
+      }
+      // HTTP mode: nobody is watching any more, the server stops sending pictures (the browser keeps running)
+      if (mode.current === 'http') void fb.post('view/stop').catch(() => undefined);
     };
-  }, []);
+  }, [setViewOpen]);
 
   // ---- sending input, strictly in order ----
   const send = useCallback(
     (ev: Record<string, unknown>) => {
+      const ws = sock.current;
+      // over the open socket: no request per key / click; the server runs them strictly in order
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(ev));
+        return;
+      }
       chain.current = chain.current.then(() => fb.post('view/input', ev).catch((e) => toastRef.current.error((e as Error).message)));
     },
     [],
@@ -112,7 +194,7 @@ export function LiveBrowser() {
         w.dx = 0;
         w.dy = 0;
         w.t = null;
-      }, 120);
+      }, WHEEL_MS);
     }
   };
 
@@ -135,7 +217,7 @@ export function LiveBrowser() {
       e.preventDefault();
       textBuf.current += k;
       if (textTimer.current) clearTimeout(textTimer.current);
-      textTimer.current = setTimeout(flushText, 90);
+      textTimer.current = setTimeout(flushText, TYPE_MS);
     }
   };
 
@@ -150,7 +232,8 @@ export function LiveBrowser() {
   const nav = (action: string) => fb.post('view/nav', { action }).catch((e) => toast.error((e as Error).message));
 
   const close = async () => {
-    await fb.post('view/stop').catch(() => undefined);
+    // WebSocket: unmounting closes the socket, which stops the pictures on the server at once
+    if (mode.current === 'http') await fb.post('view/stop').catch(() => undefined);
     setViewOpen(false);
   };
 

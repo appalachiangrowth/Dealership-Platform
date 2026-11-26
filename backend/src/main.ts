@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
@@ -8,6 +8,10 @@ import { mkdirSync } from 'fs';
 import compression from 'compression';
 import { AppModule } from './app.module.js';
 import { assertJwtSecret } from './common/jwt.js';
+import { AuthGuard } from './common/auth.guard.js';
+import { PrismaService } from './prisma/prisma.service.js';
+import { FacebookService } from './facebook/facebook.service.js';
+import { attachFbViewSocket } from './facebook/fb-view-socket.js';
 
 // one failing Facebook step or e-mail must never take the whole API (and every dealer's Chrome) down
 process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
@@ -72,6 +76,13 @@ async function bootstrap() {
 
   const port = process.env.PORT || 4000;
   await app.listen(port, process.env.HOST || '0.0.0.0'); // HOST=127.0.0.1 on a VPS behind Nginx
+
+  // FB Poster live view: pictures + clicks/typing over one WebSocket (/dealer/facebook/view/ws); the HTTP
+  // /view/frame and /view/input endpoints stay as the fallback
+  attachFbViewSocket(app.getHttpServer(), {
+    guard: new AuthGuard(app.get(Reflector), app.get(PrismaService)),
+    fb: app.get(FacebookService),
+  });
   console.log(`Dealer Platform API running on http://${process.env.HOST || 'localhost'}:${port} (${process.env.NODE_ENV || 'development'})`);
 }
 

@@ -101,6 +101,8 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
   private tempPhotos = new Map<string, string[]>();
   private writes: Promise<unknown> = Promise.resolve();
   private reaper?: NodeJS.Timeout;
+  /** a Chrome start being made room for, per user: the live view and "Connect Facebook" arriving together share it */
+  private rooming = new Map<string, Promise<void>>();
   private lastHealth = 0;
 
   constructor(
@@ -249,7 +251,14 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
     const c = await this.ctx(tenantId, u);
     const k = this.key(tenantId, c.uk);
     const s = this.session(tenantId, c.uk);
-    if (!s.isOpen()) await this.makeRoom(k);
+    if (!s.isOpen()) {
+      let p = this.rooming.get(k);
+      if (!p) {
+        p = this.makeRoom(k).finally(() => this.rooming.delete(k));
+        this.rooming.set(k, p);
+      }
+      await p;
+    }
     return { ...c, s };
   }
 
@@ -322,9 +331,13 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
     return { ok: true, starting: true };
   }
 
+  /**
+   * Connect Facebook: Chrome starts (or is reused), then the login page loads and the picture stream starts at the
+   * same time — no picture of an empty page first. A live view opening at the same moment shares the same start.
+   */
   async connect(tenantId: string, u: AuthUser) {
     const { s } = await this.live(tenantId, u);
-    await this.wrap(s.viewStart());
+    s.viewWanted();
     return this.wrap(s.connect());
   }
 
@@ -381,6 +394,40 @@ export class FacebookService implements OnModuleInit, OnModuleDestroy {
     const { uk } = await this.ctx(tenantId, u);
     await this.session(tenantId, uk).viewStop();
     return { ok: true };
+  }
+
+  /**
+   * Live view over a WebSocket: start (or share the start of) Chrome and the picture stream, and push every new
+   * picture to `push` (null = the browser was closed). The returned close() stops Chrome's picture-making at once
+   * when this was the last viewer.
+   */
+  async openViewer(tenantId: string, u: AuthUser, push: (frame: Buffer | null) => void) {
+    const { s } = await this.live(tenantId, u);
+    s.S.lastSeen = Date.now();
+    s.S.lastFrame = Date.now();
+    const off: () => number = s.onFrame(push);
+    try {
+      await this.wrap(s.viewStart());
+    } catch (e) {
+      if (off() === 0) await s.viewStop().catch(() => undefined);
+      throw e;
+    }
+    const cur = s.currentFrame() as { data: Buffer } | null;
+    if (cur) push(cur.data);
+    let closed = false;
+    return {
+      input: (ev: Record<string, unknown>) => this.wrap(s.input(ev) as Promise<unknown>),
+      /** the viewer is still there (keeps the stream and the browser from being closed as unwatched) */
+      seen: () => {
+        s.S.lastSeen = Date.now();
+        s.S.lastFrame = Date.now();
+      },
+      close: async () => {
+        if (closed) return;
+        closed = true;
+        if (off() === 0) await s.viewStop().catch(() => undefined);
+      },
+    };
   }
 
   /** the next screen picture (long-poll) */

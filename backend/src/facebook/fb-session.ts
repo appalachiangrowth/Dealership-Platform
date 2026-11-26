@@ -23,9 +23,14 @@ const VIDEO_EXT = new Set(['.mp4', '.mov', '.m4v', '.webm', '.avi', '.mkv', '.3g
 const isVideoFile = (f) => VIDEO_EXT.has(path.extname(f).toLowerCase());
 const clamp = (v, lo, hi) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : lo; };
 
-/** size of the server-side browser screen (the live view shows exactly this) */
+/** size of the server-side browser screen (the live view shows exactly this; clicks use these coordinates) */
 export const VIEW_W = 1280;
 export const VIEW_H = 860;
+/**
+ * Live-view pictures are streamed smaller and lighter than the screen (about 60% less JPEG work for Chrome and less
+ * data per frame). The viewer scales them back up and maps clicks onto VIEW_W x VIEW_H, so clicks still land exactly.
+ */
+const CAST = { format: 'jpeg', quality: 45, maxWidth: 960, maxHeight: 645, everyNthFrame: 1 };
 
 // ---------- Puppeteer is loaded only when someone uses the poster ----------
 let puppeteerPromise = null;
@@ -252,42 +257,77 @@ export function createFbSession(opts) {
   }
 
   // ---------- live view (the dealer sees and uses this browser inside the portal) ----------
-  const view = { on: false, cdp: null, page: null, frame: null, seq: 0, waiters: [] };
+  const view = { on: false, cdp: null, page: null, frame: null, seq: 0, waiters: [], starting: null, viewStarting: null };
+  /** WebSocket viewers: each gets every new picture pushed to it (no polling) */
+  const frameListeners = new Set();
 
+  function pushFrame(buf) {
+    view.frame = buf;
+    view.seq++;
+    for (const w of view.waiters.splice(0)) w();
+    for (const fn of frameListeners) { try { fn(buf, view.seq); } catch (e) {} }
+  }
+
+  /** start streaming pictures of the page; concurrent callers share the same start */
   async function startScreencast() {
     if (!page || page.isClosed()) return;
     if (view.cdp && view.page === page) return;
-    try { if (view.cdp) await view.cdp.detach(); } catch (e) {}
-    const cdp = await page.createCDPSession();
-    view.cdp = cdp; view.page = page;
-    cdp.on('Page.screencastFrame', async (f) => {
-      view.frame = Buffer.from(f.data, 'base64');
-      view.seq++;
-      for (const w of view.waiters.splice(0)) w();
-      try { await cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }); } catch (e) {}
-    });
-    await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 62, maxWidth: VIEW_W, maxHeight: VIEW_H, everyNthFrame: 1 });
-    // the screencast only sends a picture when something changes: take the first one now
-    try {
-      view.frame = await page.screenshot({ type: 'jpeg', quality: 62 });
-      view.seq++;
-      for (const w of view.waiters.splice(0)) w();
-    } catch (e) {}
+    if (view.starting) return view.starting;
+    const p = page;
+    view.starting = (async () => {
+      try { if (view.cdp) await view.cdp.detach(); } catch (e) {}
+      const cdp = await p.createCDPSession();
+      view.cdp = cdp; view.page = p;
+      let got = false;
+      cdp.on('Page.screencastFrame', async (f) => {
+        got = true;
+        pushFrame(Buffer.from(f.data, 'base64'));
+        try { await cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }); } catch (e) {}
+      });
+      await cdp.send('Page.startScreencast', CAST);
+      // No picture of about:blank up front: the first picture is the real page as soon as it paints. Only a page
+      // that is already loaded and does not change (e.g. the view reopened on a still page) gets one small picture.
+      setTimeout(() => {
+        if (got || view.cdp !== cdp || p.isClosed() || /^about:blank/.test(p.url())) return;
+        cdp
+          .send('Page.captureScreenshot', { format: 'jpeg', quality: CAST.quality, clip: { x: 0, y: 0, width: VIEW_W, height: VIEW_H, scale: CAST.maxWidth / VIEW_W } })
+          .then((r) => { if (!got && view.cdp === cdp) pushFrame(Buffer.from(r.data, 'base64')); })
+          .catch(() => {});
+      }, 1200);
+    })().finally(() => { view.starting = null; });
+    return view.starting;
   }
 
+  /** the live view is open in the portal: Chrome (if needed) + picture stream; concurrent calls share one start */
   async function viewStart() {
     view.on = true;
     S.lastAction = Date.now();
-    await ensureBrowser();
-    await startScreencast();
+    if (!view.viewStarting) {
+      view.viewStarting = (async () => {
+        await ensureBrowser();
+        await startScreencast();
+      })().finally(() => { view.viewStarting = null; });
+    }
+    return view.viewStarting;
   }
 
+  /** nobody is watching: Chrome stops making pictures at once (the browser itself keeps running) */
   async function viewStop() {
     view.on = false;
     const cdp = view.cdp;
     view.cdp = null; view.page = null;
     try { if (cdp) { await cdp.send('Page.stopScreencast'); await cdp.detach(); } } catch (e) {}
     for (const w of view.waiters.splice(0)) w();
+  }
+
+  /** a WebSocket viewer: gets every new picture; returns "unsubscribe" (which tells how many viewers are left) */
+  function onFrame(fn) {
+    frameListeners.add(fn);
+    return () => { frameListeners.delete(fn); return frameListeners.size; };
+  }
+  /** the newest picture (sent to a viewer that just connected) */
+  function currentFrame() {
+    return view.frame ? { seq: view.seq, data: view.frame } : null;
   }
 
   /** the newest picture after `after` (waits up to waitMs for a new one) */
@@ -341,8 +381,9 @@ export function createFbSession(opts) {
       case 'text': {
         const t = String(ev.text || '').slice(0, 5000);
         if (!t) break;
-        // short text is typed key by key (like a person); long pasted text is inserted at once
-        if (t.length <= 60 && !/[\u{1F000}-\u{1FFFF}]/u.test(t)) await page.keyboard.type(t, { delay: 15 });
+        // live view: the dealer is typing (e-mail, password, codes) — no artificial delay between letters.
+        // Short text still sends real key presses (some Facebook boxes listen for them); long / emoji text is inserted.
+        if (t.length <= 60 && !/[\u{1F000}-\u{1FFFF}]/u.test(t)) await page.keyboard.type(t, { delay: 0 });
         else await page.keyboard.sendCharacter(t);
         break;
       }
@@ -383,18 +424,25 @@ export function createFbSession(opts) {
   async function connect() {
     await ensureBrowser();
     S.lastAction = Date.now();
+    // the picture stream starts at the same time as the page loads (not before it): the first picture the dealer
+    // sees is Facebook itself, not an empty page
+    const cast = view.on ? startScreencast().catch(() => {}) : Promise.resolve();
     if (!(await isLoggedIn())) {
-      if (!busy) await page.goto('https://www.facebook.com/login', { waitUntil: 'domcontentloaded' });
+      if (!busy) await Promise.all([page.goto('https://www.facebook.com/login', { waitUntil: 'domcontentloaded' }), cast]);
+      else await cast;
       log('Please log in to Facebook in the browser below.');
       return { loggedIn: false };
     }
-    if (!busy && !page.url().includes('facebook.com')) await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
+    if (!busy && !page.url().includes('facebook.com')) await Promise.all([page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' }), cast]);
+    else await cast;
     log('Already logged in (saved login). Use "Switch account" to log in with a different account.');
     return { loggedIn: true };
   }
 
   async function close() {
     await viewStop();
+    // WebSocket viewers are told the browser closed (they do not reconnect and start it again)
+    for (const fn of frameListeners) { try { fn(null, view.seq); } catch (e) {} }
     const b = browser;
     browser = null; page = null; busy = false;
     try { if (b) await b.close(); } catch (e) {}
@@ -2502,7 +2550,7 @@ export function createFbSession(opts) {
     isOpen: () => !!browser,
     healthy, viewOn: () => view.on,
     ensureBrowser, warm, isLoggedIn, fbUserId, fetchName, connect, close, switchAccount, forget,
-    viewStart, viewStop, frame, input, nav,
+    viewStart, viewStop, frame, input, nav, onFrame, currentFrame, viewWanted: () => { view.on = true; S.lastAction = Date.now(); },
     loadPages, loadGroups, switchToPage, startPost, stopPosting,
     mpEnqueue, mpStop, mpQueued: () => queue.map((q) => q.id),
   };

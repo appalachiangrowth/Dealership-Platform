@@ -80,6 +80,20 @@ export class AuthGuard implements CanActivate {
     return true;
   }
 
+  /**
+   * The same login / dealership / permission checks as an HTTP request, for a WebSocket (FB Poster live view).
+   * tenantHeader: the dealership a platform owner picked (support mode), like the X-Tenant-Id header.
+   */
+  async checkSocket(token: string, tenantHeader: string, perms: Permission[]): Promise<{ user: AuthUser; tenantId: string }> {
+    const user = token ? await this.loadUser(token) : null;
+    if (!user) throw new UnauthorizedException('Please log in');
+    const req: AuthedRequest = { auth: user, headers: { 'x-tenant-id': tenantHeader || undefined } };
+    const tenantId = await this.resolveTenant(req);
+    user.tenantId = tenantId;
+    if (perms.length && !perms.some((p) => user.perms.includes(p))) throw new ForbiddenException('You do not have permission for this');
+    return { user, tenantId };
+  }
+
   private async tenantStatus(id: string): Promise<string | null> {
     const hit = fresh(tenantCache, id, USER_TTL);
     if (hit) return hit.status;
