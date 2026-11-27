@@ -147,6 +147,12 @@ const ENTRY_CSS = `
 .aq .fld.unsure{--fld-bg:#FFFDF5;border-color:transparent;background:linear-gradient(var(--fld-bg),var(--fld-bg)) padding-box,conic-gradient(from var(--aq-ang),#FCD34D,#FBBF24 40%,#FDE68A 70%,#FCD34D) border-box}
 .aq .fld.miss,.aq .fld.miss:focus-within{--fld-bg:#FFFBFB;border-color:transparent;background:linear-gradient(var(--fld-bg),var(--fld-bg)) padding-box,conic-gradient(from var(--aq-ang),#DC2626,#F87171 30%,#B91C1C 55%,#EF4444 80%,#DC2626) border-box;animation:aq-ring 4s linear infinite,aq-redpulse 1.8s ease-in-out infinite}
 @media (prefers-reduced-motion:reduce){.aq .fld,.aq .fld.miss{animation:none}.aq .fld.miss{box-shadow:0 0 0 2px rgba(220,38,38,.2)}}
+/* the dashed photo / video drop box: the dashes travel slowly around its rounded border (an animated SVG outline;
+   faster and blue while files are dragged over it). Inside of the box is unchanged. */
+.aq .drop{border-color:transparent;background-color:#F8FAFC;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cstyle%3Erect{animation:m 2.4s linear infinite}@keyframes m{to{stroke-dashoffset:-36}}@media (prefers-reduced-motion:reduce){rect{animation:none}}%3C/style%3E%3Crect width='100%25' height='100%25' fill='none' rx='12' ry='12' stroke='%2393C5FD' stroke-width='3' stroke-dasharray='10 8' stroke-linecap='round'/%3E%3C/svg%3E"),linear-gradient(110deg,rgba(239,246,255,0) 30%,rgba(219,234,254,.55) 50%,rgba(239,246,255,0) 70%);background-size:100% 100%,250% 100%;background-repeat:no-repeat;animation:aq-sheen 5s ease-in-out infinite}
+.aq .drop.over{background-color:#EFF6FF;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cstyle%3Erect{animation:m 0.9s linear infinite}@keyframes m{to{stroke-dashoffset:-36}}@media (prefers-reduced-motion:reduce){rect{animation:none}}%3C/style%3E%3Crect width='100%25' height='100%25' fill='none' rx='12' ry='12' stroke='%232563EB' stroke-width='3' stroke-dasharray='10 8' stroke-linecap='round'/%3E%3C/svg%3E")}
+@keyframes aq-sheen{0%{background-position:0 0,120% 0}60%,100%{background-position:0 0,-20% 0}}
+@media (prefers-reduced-motion:reduce){.aq .drop{animation:none}}
 /* "Online Search & Web Address" inside More Options */
 .aq .subsec{display:flex;flex-direction:column;gap:8px;margin-top:18px;padding-top:16px;border-top:1px solid #E5E9F0}
 .aq .subsec h3{margin:0;font-size:14.5px;font-weight:700;color:#0F172A}
