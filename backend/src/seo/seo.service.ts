@@ -106,7 +106,11 @@ const LEGACY_BASES = ['inventory', 'vehicle', 'vehicles'];
 /** Folders with the website designs (theme.json per version). Used to list each dealership's pages. */
 function themeDirs(): string[] {
   const env = String(process.env.SEO_THEME_DIRS || process.env.THEMES_DIR || '').split(',').map((s) => s.trim()).filter(Boolean);
-  const defaults = [resolve(process.cwd(), '../frontend/themes'), resolve(process.cwd(), '../peerless-autos-frontend/frontend/themes')];
+  const defaults = [
+    resolve(process.cwd(), '../frontend/themes'),
+    resolve(process.cwd(), '../peerless-autos-frontend/frontend/themes'),
+    resolve(process.cwd(), '../happy-motors-frontend/frontend/themes'),
+  ];
   return [...new Set([...env.map((d) => resolve(d)), ...defaults])].filter((d) => existsSync(d));
 }
 

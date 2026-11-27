@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Header, Headers, NotFoundException, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Header, Headers, Logger, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import { PublicService } from './public.service.js';
 import type { PublicVehicleQuery } from './public.service.js';
 import { LeadsService } from '../leads/leads.service.js';
@@ -16,6 +16,8 @@ import { ClientIp, Public } from '../common/decorators.js';
 @Controller('public')
 @Public()
 export class PublicController {
+  private readonly log = new Logger('PublicLeads');
+
   constructor(
     private readonly pub: PublicService,
     private readonly leads: LeadsService,
@@ -71,7 +73,14 @@ export class PublicController {
     return this.pub.sitemap(this.host(host, h));
   }
 
-  /** Inquiry from the contact form / vehicle request form. */
+  /**
+   * Inquiry from the contact form / vehicle request / test drive / trade-in / financing forms (storefront api/lead.php).
+   * The dealership is chosen by the website host first (?host= / X-Site-Host), exactly like every other /public endpoint.
+   * When the host does not match a dealership (a custom domain not yet in Platform Admin › Dealers › Domains, a
+   * www./root mismatch on an old record, a proxy that dropped the Host header…), the dealer id the storefront sends
+   * (body dealerSlug / dealerId, or the X-Dealer-Slug header) is used, the same fallback the visitor tracker
+   * (/public/track) already has. Before, such an inquiry got a 404 and was lost while the visitor tracking kept working.
+   */
   @Post('leads')
   async lead(
     @Query('host') host: string,
@@ -80,9 +89,34 @@ export class PublicController {
     @ClientIp() ip: string,
     @Headers('x-visitor-user-agent') vua?: string,
     @Headers('user-agent') ua?: string,
+    @Headers('x-dealer-slug') slugHeader?: string,
   ) {
-    const t = await this.pub.tenantFor(this.host(host, h));
+    const siteHost = this.host(host, h);
+    const slug = String(b?.dealerSlug || b?.dealerId || slugHeader || '').trim().toLowerCase();
+    const t = await this.leadTenant(siteHost, slug);
     return this.leads.submit(t.id, b, ip, vua || ua || '');
+  }
+
+  /** host → dealership; else the dealer id sent with the inquiry. Logs every inquiry that cannot be placed. */
+  private async leadTenant(siteHost: string, slug: string) {
+    let first: unknown;
+    if (siteHost) {
+      try {
+        return await this.pub.tenantFor(siteHost);
+      } catch (e) {
+        if (e instanceof ForbiddenException) throw e; // suspended dealership: never accept via the fallback either
+        first = e;
+      }
+    }
+    if (/^[a-z0-9][a-z0-9-]{1,39}$/.test(slug)) {
+      const t = await this.prisma.tenant.findUnique({ where: { id: slug } });
+      if (t && t.status !== 'SUSPENDED') {
+        this.log.warn(`Inquiry for host "${siteHost}" matched no domain; saved for dealership "${slug}" (dealer id sent by the website). Add the domain in Platform Admin › Dealers.`);
+        return t;
+      }
+    }
+    this.log.error(`Inquiry REJECTED: host "${siteHost}" and dealer id "${slug}" match no dealership. Check the website's domain / NEXT_PUBLIC_TENANT.`);
+    throw first ?? new NotFoundException({ message: 'No dealership is connected to this address yet', code: 'unknown_site' });
   }
 
   @Get('feeds/inventory.xml')

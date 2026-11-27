@@ -51,7 +51,8 @@ async function bootstrap() {
     // Admin calls use a Bearer token (no cookies), so this is safe.
     origin: (origin, cb) => cb(null, true),
     credentials: false,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Id', 'X-Site-Host'],
+    // X-Dealer-Slug: the dealership id a storefront sends with an inquiry (fallback when the host is not matched)
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Id', 'X-Site-Host', 'X-Dealer-Slug', 'X-Visitor-User-Agent'],
     exposedHeaders: ['Content-Disposition', 'X-Frame-Seq', 'X-Response-Time', 'Server-Timing'],
   });
 

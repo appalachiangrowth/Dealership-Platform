@@ -32,14 +32,17 @@ const ASSETS_ROOT = join(WEBSITE_DIR, 'public', 'themes');
 
 /**
  * More website apps that read designs from their OWN folders (<dir>/themes and <dir>/public/themes) and so must get a
- * copy of every design installed here: WEBSITE_MIRROR_DIRS in backend/.env (comma-separated), plus the Peerless
- * storefront next to the backend (../peerless-autos-frontend/frontend) when it exists. Only folders that already have
+ * copy of every design installed here: WEBSITE_MIRROR_DIRS in backend/.env (comma-separated), plus the single-dealer
+ * storefronts next to the backend (../peerless-autos-frontend/frontend, ../happy-motors-frontend/frontend) when they
+ * exist. Without the Happy Motors folder here, designs installed from Platform Admin never reached happymotors1.com
+ * (it kept serving the copy bundled at build time). Only folders that already have
  * a themes/ folder are used, so a wrong path never creates a stray copy.
  */
 export const MIRROR_DIRS: string[] = (() => {
   const wanted = [
     ...String(process.env.WEBSITE_MIRROR_DIRS || '').split(','),
     join(process.cwd(), '..', 'peerless-autos-frontend', 'frontend'),
+    join(process.cwd(), '..', 'happy-motors-frontend', 'frontend'),
   ]
     .map((d) => d.trim())
     .filter(Boolean)

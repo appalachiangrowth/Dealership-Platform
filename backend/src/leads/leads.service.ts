@@ -19,6 +19,9 @@ export interface PublicLeadInput {
   website?: string; // honeypot
   /** anonymous website visitor id (storefront tracker): links the inquiry to the visitor's browsing history */
   visitorId?: string;
+  /** dealership id the storefront belongs to: used only when the website host matches no dealership (public.controller) */
+  dealerSlug?: string;
+  dealerId?: string;
 }
 
 const STATUSES: LeadStatus[] = ['UNREAD', 'READ', 'REPLIED', 'CLOSED'];
