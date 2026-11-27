@@ -157,13 +157,30 @@ function Tip({ text, label }: { text?: string; label: string }) {
 }
 
 /** a numbered card of the form with its "2 of 4 required" chip; some can be hidden */
-/** the Specifications fields kept under "More options" (closed by default) */
-const MORE_KEYS = ['horsepower', 'interiorType', 'mpg', 'fuelTank', 'doors', 'seats', 'owners', 'accidents', 'features'];
+/** the fields kept under "More Options" in Specifications (closed by default), incl. Online Search & Web Address */
+const MORE_KEYS = ['horsepower', 'interiorType', 'mpg', 'fuelTank', 'doors', 'seats', 'owners', 'accidents', 'features', 'metaTitle', 'slug', 'title', 'metaDescription'];
 
 /**
  * A "More options" toggle that spans the whole field grid and smoothly opens / closes the fields under it.
  * The fields stay in the page while closed (their values are kept and saved; links to a field can still find it).
  */
+/**
+ * Animated outlines (same look as the VIN / Photos boxes of Add Vehicle): the gradient border is drawn as the
+ * border-box background, so boxes keep overflow:hidden. A field with a problem stays unmistakably red (crimson
+ * outline that pulses), never blue. Scoped under .vf so it wins over the Tailwind border / background utilities.
+ */
+const VF_CSS = `
+@property --aq-ang{syntax:'<angle>';inherits:false;initial-value:0deg}
+@keyframes aq-ring{to{--aq-ang:360deg}}
+@keyframes vf-halo{0%,100%{box-shadow:0 1px 2px rgba(15,23,42,.05),0 0 0 0 rgba(37,99,235,0)}50%{box-shadow:0 1px 2px rgba(15,23,42,.05),0 0 18px 1px rgba(37,99,235,.16)}}
+@keyframes vf-redpulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0)}50%{box-shadow:0 0 0 3px rgba(220,38,38,.20)}}
+.vf .vf-glow{border:1.5px solid transparent;background:linear-gradient(#fff,#fff) padding-box,conic-gradient(from var(--aq-ang),#2563EB,#60A5FA 25%,#A5B4FC 40%,#22C55E 55%,#60A5FA 75%,#2563EB) border-box;animation:aq-ring 6s linear infinite,vf-halo 4.5s ease-in-out infinite}
+.vf .vf-fld{border-color:transparent;background:linear-gradient(#fff,#fff) padding-box,conic-gradient(from var(--aq-ang),#CBD5E1,#93C5FD 30%,#CBD5E1 55%,#BFDBFE 80%,#CBD5E1) border-box;animation:aq-ring 9s linear infinite}
+.vf .vf-fld:focus-within{border-color:transparent;background:linear-gradient(#fff,#fff) padding-box,conic-gradient(from var(--aq-ang),#2563EB,#60A5FA 50%,#2563EB) border-box}
+.vf .vf-fld.vf-err,.vf .vf-fld.vf-err:focus-within{border-color:transparent;background:linear-gradient(#FFFBFB,#FFFBFB) padding-box,conic-gradient(from var(--aq-ang),#DC2626,#F87171 30%,#B91C1C 55%,#EF4444 80%,#DC2626) border-box;animation:aq-ring 4s linear infinite,vf-redpulse 1.8s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.vf .vf-glow,.vf .vf-fld,.vf .vf-fld.vf-err{animation:none}.vf .vf-fld.vf-err{box-shadow:0 0 0 2px rgba(220,38,38,.2)}}
+`;
+
 function MoreOptions({ open, onToggle, filledCount, needed, children }: { open: boolean; onToggle: () => void; filledCount: number; needed: number; children: React.ReactNode }) {
   return (
     <div className="col-span-full flex flex-col">
@@ -174,7 +191,7 @@ function MoreOptions({ open, onToggle, filledCount, needed, children }: { open: 
         aria-controls="more-options"
         className="inline-flex min-h-10 items-center gap-2 self-start rounded-lg border border-[#BFD3FE] bg-[#EFF6FF] px-3.5 text-sm font-semibold text-[#1D4ED8] transition hover:bg-[#DBEAFE] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
       >
-        {open ? 'Fewer options' : 'More options'}
+        {open ? 'Fewer Options' : 'More Options'}
         <ChevronDown className={cx('h-4 w-4 transition-transform duration-300', open && 'rotate-180')} />
         {!open && filledCount > 0 && <span className="text-xs font-medium text-[#526077]">({filledCount} filled)</span>}
         {needed > 0 && <span className="rounded-full bg-[#FEF3C7] px-2 py-0.5 text-[11px] font-semibold text-[#92400E]">{needed} required</span>}
@@ -602,7 +619,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
         {o.raw ? (
           control
         ) : (
-          <div className={cx(BOX, err ? 'border-[#DC2626]' : 'border-[#CBD5E1]', hot === k && 'ring-2 ring-amber-400 ring-offset-2')}>
+          <div className={cx(BOX, 'vf-fld', err ? 'vf-err border-[#DC2626]' : 'border-[#CBD5E1]', hot === k && 'ring-2 ring-amber-400 ring-offset-2')}>
             {o.prefix && <span className="flex items-center pl-2 font-medium text-[#526077] sm:pl-3">{o.prefix}</span>}
             {control}
             {o.suffix && <span className="flex items-center pr-2 font-medium text-[#526077] sm:pr-3">{o.suffix}</span>}
@@ -650,7 +667,8 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   const doDraft = () => (status0 === 'SOLD' && !isNew ? save('SOLD', 'Saved') : save('DRAFT', 'Saved as draft - hidden from your website'));
 
   return (
-    <form ref={formRef} onSubmit={(e) => e.preventDefault()} className="pb-12" autoComplete="off">
+    <form ref={formRef} onSubmit={(e) => e.preventDefault()} className="vf pb-12" autoComplete="off">
+      <style dangerouslySetInnerHTML={{ __html: VF_CSS }} />
       {/* ===== page header =====
           phones (< 768 px): one slim sticky bar — back, title, Save and a ••• menu with the other actions; it scrolls
           away while a field is typed in so the field keeps the space above the keyboard.
@@ -839,7 +857,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
             {problem('images') && photoN > 0 && <p className="mt-2 text-xs font-medium text-[#B91C1C]">{problem('images')}</p>}
           </Sec>
 
-          <Sec id="sec-basics" num={2} title="The basics" desc="Confirm your vehicle details." chip={chipFor('Basics')}>
+          <Sec id="sec-basics" num={2} title="The Basics" desc="Confirm your vehicle details." chip={chipFor('Basics')}>
             <div className={GRID}>
               {field('year', 'Year', inp('year', { type: 'number', min: 1900, placeholder: 'e.g. 2021', inputMode: 'numeric' }))}
               {field('make', 'Make', dl('make', 'makes-list', VEHICLE_MAKES, { placeholder: 'e.g. Toyota' }))}
@@ -904,6 +922,20 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
                     ),
                     { full: true, after: <span className="text-xs text-[#526077]">One per line.</span> },
                   )}
+                  {/* Online Search & Web Address (was its own card below Description) */}
+                  <div className="col-span-full mt-1 flex flex-col gap-0.5 border-t border-[#E5E9F0] pt-4">
+                    <h3 className="m-0 text-[14.5px] font-bold text-[#0F172A]">Online Search &amp; Web Address</h3>
+                    <span className="text-[13px] text-[#526077]">Auto-Populated. Edit as needed.</span>
+                  </div>
+                  {field('metaTitle', 'Search title', inp('metaTitle', { placeholder: 'e.g. 2021 Toyota Corolla LE for sale in Salem' }), { wide: true })}
+                  {field('slug', 'Web address', inp('slug', { placeholder: '2021-toyota-corolla-le' }), { wide: true })}
+                  {field('title', 'Custom listing title', inp('title', { placeholder: 'e.g. One-owner Toyota Camry SE' }), { wide: true })}
+                  {field(
+                    'metaDescription',
+                    'Search description',
+                    area(v.metaDescription || '', (t) => set('metaDescription', t), { id: 'in-metaDescription', rows: 3, placeholder: 'A one or two sentence summary shown under the title in Google…' }),
+                    { full: true },
+                  )}
                 </div>
               </MoreOptions>
             </div>
@@ -952,37 +984,13 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
               )}
             </div>
           </Sec>
-
-          <Sec
-            id="sec-seo"
-            num={6}
-            title="Online search & Web address"
-            desc="Auto-Populated. Edit as needed."
-            chip={{ text: 'Optional', tone: 'opt' }}
-            collapsible
-            startOpen={false}
-            forceOpen={['slug', 'title', 'metaTitle', 'metaDescription'].includes(hot)}
-          >
-            <div className={GRID}>
-              {field('metaTitle', 'Search title', inp('metaTitle', { placeholder: 'e.g. 2021 Toyota Corolla LE for sale in Salem' }), { wide: true })}
-              {field('slug', 'Web address', inp('slug', { placeholder: '2021-toyota-corolla-le' }), { wide: true })}
-              {field('title', 'Custom listing title', inp('title', { placeholder: 'e.g. One-owner Toyota Camry SE' }), { wide: true })}
-              {field(
-                'metaDescription',
-                'Search description',
-                area(v.metaDescription || '', (t) => set('metaDescription', t), { id: 'in-metaDescription', rows: 3, placeholder: 'A one or two sentence summary shown under the title in Google…' }),
-                { full: true },
-              )}
-            </div>
-          </Sec>
-
         </div>
 
         {/* ===== publishing panel ===== */}
         <aside aria-label="Publishing checklist" className="flex min-w-0 flex-[1_1_300px] flex-col gap-4 lg:sticky lg:top-[132px]">
-          <section className={cx(CARD, 'overflow-hidden')}>
+          <section className={cx(CARD, 'vf-glow overflow-hidden')}>
             <div className="flex flex-col gap-3 px-5 py-[18px]">
-              <h2 className="m-0 text-base font-bold text-[#0F172A]">Ready to publish?</h2>
+              <h2 className="m-0 text-base font-bold text-[#0F172A]">Ready to Publish?</h2>
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-[13px] text-[#526077]">Required details</span>
                 <span className="text-sm font-bold tabular-nums text-[#0F172A]">

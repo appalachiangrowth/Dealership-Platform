@@ -48,8 +48,10 @@ const OPT: Record<string, string[]> = {
 };
 // [key, label, required, tip, prefix, suffix, size, kind]
 type FieldDef = [string, string, 0 | 1, string, string?, string?, string?, string?];
+/** the search fields: shown inside "More Options" (no card of their own) */
+const SEO_TITLE = 'Online Search & Web Address';
 const SECTIONS: [string, string, FieldDef[]][] = [
-  ['The basics', 'Confirm your vehicle details.', [
+  ['The Basics', 'Confirm your vehicle details.', [
     ['year', 'Year', 1, 'The model year, as 4 digits.'],
     ['make', 'Make', 1, 'The manufacturer, e.g. Toyota or Ford.'],
     ['model', 'Model', 1, 'The model name, e.g. Corolla or F-150.'],
@@ -87,14 +89,14 @@ const SECTIONS: [string, string, FieldDef[]][] = [
   ['Description', 'Describe this vehicle.', [
     ['description', 'Description', 1, 'Written by AI from the VIN record and what it saw in the photos. Edit it freely.', '', '', 'full', 'area'],
   ]],
-  ['Online search & Web address', 'Auto-Populated. Edit as needed.', [
+  [SEO_TITLE, 'Auto-Populated. Edit as needed.', [
     ['seoTitle', 'Search title', 0, 'The title shown in Google results and the browser tab.', '', '', 'wide'],
     ['slug', 'Web address', 0, 'The end of this vehicle’s web address.', '', '', 'wide'],
   ]],
 ];
 /** Specifications fields shown under "More options" (closed by default; still part of the form and saved as before) */
 const MORE_KEYS = ['hp', 'itype', 'mpg', 'tank', 'doors', 'seats', 'owners', 'accidents', 'options'];
-/** "Online search & Web address" fields (that card is closed by default) */
+/** "Online Search & Web Address" fields: also under "More Options" (they have no card of their own any more) */
 const SEO_KEYS = ['seoTitle', 'slug'];
 const LABEL: Record<string, string> = {};
 const REQUIRED: string[] = [];
@@ -136,6 +138,19 @@ const ENTRY_CSS = `
   -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;
   animation:aq-ring 6s linear infinite;opacity:.85}
 @media (prefers-reduced-motion:reduce){.aq .card.glow,.aq .card.glow::before{animation:none}}
+/* form fields: a quiet animated outline (gradient border drawn as the border-box background, so .fld keeps overflow:hidden).
+   Red stays unmistakably red: a missing required field (.miss) gets a crimson outline that pulses; never blue or green. */
+@keyframes aq-redpulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0)}50%{box-shadow:0 0 0 3px rgba(220,38,38,.20)}}
+.aq .fld{border-color:transparent;background:linear-gradient(var(--fld-bg,#fff),var(--fld-bg,#fff)) padding-box,conic-gradient(from var(--aq-ang),#CBD5E1,#93C5FD 30%,#CBD5E1 55%,#BFDBFE 80%,#CBD5E1) border-box;animation:aq-ring 9s linear infinite}
+.aq .fld:focus-within{border-color:transparent;background:linear-gradient(var(--fld-bg,#fff),var(--fld-bg,#fff)) padding-box,conic-gradient(from var(--aq-ang),#2563EB,#60A5FA 50%,#2563EB) border-box}
+.aq .fld.ai{--fld-bg:#FBFAFF;border-color:transparent;background:linear-gradient(var(--fld-bg),var(--fld-bg)) padding-box,conic-gradient(from var(--aq-ang),#C4B5FD,#A5B4FC 40%,#DDD6FE 70%,#C4B5FD) border-box}
+.aq .fld.unsure{--fld-bg:#FFFDF5;border-color:transparent;background:linear-gradient(var(--fld-bg),var(--fld-bg)) padding-box,conic-gradient(from var(--aq-ang),#FCD34D,#FBBF24 40%,#FDE68A 70%,#FCD34D) border-box}
+.aq .fld.miss,.aq .fld.miss:focus-within{--fld-bg:#FFFBFB;border-color:transparent;background:linear-gradient(var(--fld-bg),var(--fld-bg)) padding-box,conic-gradient(from var(--aq-ang),#DC2626,#F87171 30%,#B91C1C 55%,#EF4444 80%,#DC2626) border-box;animation:aq-ring 4s linear infinite,aq-redpulse 1.8s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.aq .fld,.aq .fld.miss{animation:none}.aq .fld.miss{box-shadow:0 0 0 2px rgba(220,38,38,.2)}}
+/* "Online Search & Web Address" inside More Options */
+.aq .subsec{display:flex;flex-direction:column;gap:8px;margin-top:18px;padding-top:16px;border-top:1px solid #E5E9F0}
+.aq .subsec h3{margin:0;font-size:14.5px;font-weight:700;color:#0F172A}
+.aq .subsec .hint{margin:-4px 0 4px}
 /* "← Inventory": a bigger, bolder arrow that is easy to tap */
 .aq .backlink{display:inline-flex;align-items:center;gap:6px;font-size:14px;min-height:36px;margin-left:-4px;padding:0 6px;border-radius:8px;text-decoration:none}
 .aq .backlink:hover{background:#EFF6FF}
@@ -146,7 +161,7 @@ const ENTRY_CSS = `
 .aq .btn.pub .spin.w{border-color:rgba(255,255,255,.45);border-top-color:#fff}
 .aq .btn.draft{background:#E2E8F0;border-color:#CBD5E1;color:#1E293B}
 .aq .btn.draft:hover:not(:disabled){background:#CBD5E1}
-/* "More options" (Specifications) and the "Online search & Web address" card: open / close smoothly */
+/* "More Options" (Specifications, incl. Online Search & Web Address): open / close smoothly */
 .aq .more{grid-column:1/-1;display:flex;flex-direction:column}
 .aq .moreb{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 14px;border-radius:8px;border:1px solid #BFD3FE;background:#EFF6FF;color:#1D4ED8;font-weight:600;cursor:pointer}
 .aq .moreb:hover{background:#DBEAFE}
@@ -335,9 +350,8 @@ export default function AiAddVehiclePage() {
   const sentIds = useRef<number[]>([]);
   /** which photo box a file is dragged over (the box at the top, or its copy above Publish) */
   const [dropOver, setDropOver] = useState<'' | 'top' | 'bottom'>('');
-  /** "More options" in Specifications and the "Online search & Web address" card: both closed by default */
+  /** "More Options" in Specifications (with the Online Search & Web Address fields): closed by default */
   const [moreOpen, setMoreOpen] = useState(false);
-  const [seoOpen, setSeoOpen] = useState(false);
 
   // AI
   const [ai, _setAi] = useState<any>(null);
@@ -1025,10 +1039,10 @@ export default function AiAddVehiclePage() {
   const reqDone = reqTotal - missingReq.length;
 
   const goField = (k: string) => {
-    // a field under "More options" or in the closed "Online search" card: open it first, then scroll once it has opened
-    const closed = (MORE_KEYS.includes(k) && !moreOpen) || (SEO_KEYS.includes(k) && !seoOpen);
-    if (MORE_KEYS.includes(k)) setMoreOpen(true);
-    if (SEO_KEYS.includes(k)) setSeoOpen(true);
+    // a field under the closed "More Options" (incl. Online Search & Web Address): open it first, then scroll once it has opened
+    const inMore = MORE_KEYS.includes(k) || SEO_KEYS.includes(k);
+    const closed = inMore && !moreOpen;
+    if (inMore) setMoreOpen(true);
     const go = () => {
       document.getElementById(`f-${k}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       setTimeout(() => (document.getElementById(`r-${k}`) as HTMLElement | null)?.focus({ preventScroll: true }), 350);
@@ -1332,7 +1346,7 @@ export default function AiAddVehiclePage() {
                   <div className="hd">
                     {numMark(n, photos.length > 0)}
                     <div style={{ flex: 1 }}>
-                      <h2>{mode === 'video' ? 'Photos from your video' : 'Photos'}</h2>
+                      <h2>{mode === 'video' ? 'Photos From Your Video' : 'Photos'}</h2>
                       <p>AI reads colors, interior, features and the mileage from these.</p>
                     </div>
                   </div>
@@ -1468,7 +1482,7 @@ export default function AiAddVehiclePage() {
                   <div className="hd">
                     {numMark(1, vDone)}
                     <div style={{ flex: 1 }}>
-                      <h2>Walkaround video</h2>
+                      <h2>Walkaround Video</h2>
                       <p>One short video around and inside the car. We take the photos, VIN and mileage from it.</p>
                     </div>
                   </div>
@@ -1549,7 +1563,7 @@ export default function AiAddVehiclePage() {
                 <div className="hd">
                   {numMark(mode === 'video' ? 2 : 1, !!decoded)}
                   <div style={{ flex: 1 }}>
-                    <h2>{mode === 'video' ? 'VIN (found in your video)' : 'VIN'}</h2>
+                    <h2>{mode === 'video' ? 'VIN (Found in Your Video)' : 'VIN'}</h2>
                     <p>
                       {mode === 'video'
                         ? 'Filled in from the sticker in your video. Check it, or type it if it couldn’t be read.'
@@ -1640,7 +1654,7 @@ export default function AiAddVehiclePage() {
                 <div className="hd">
                   {numMark(mode === 'video' ? (photos.length ? 4 : 3) : 3, Number(rawPrice(you.price)) > 0 && !!String(res.v.mileage || '').trim() && !!String(res.v.stock || '').trim())}
                   <div style={{ flex: 1 }}>
-                    <h2>Only you can answer these</h2>
+                    <h2>Only You Can Answer These</h2>
                     <p>Price, stock number and history are never filled in by AI. If AI reads the mileage, check it here.</p>
                   </div>
                 </div>
@@ -1766,7 +1780,7 @@ export default function AiAddVehiclePage() {
                       <span className={`num${decodedKeys.length ? ' ok' : ''}`}>{decodedKeys.length ? '✓' : '•'}</span>
                       <div style={{ flex: 1 }}>
                         <h2>
-                          {decodedKeys.length} field{decodedKeys.length === 1 ? '' : 's'} decoded
+                          {decodedKeys.length} Field{decodedKeys.length === 1 ? '' : 's'} Decoded
                           {aiBusy ? ' · AI is still reading…' : ''}
                         </h2>
                         <p>
@@ -1811,8 +1825,10 @@ export default function AiAddVehiclePage() {
                 const mi = sec[2].filter((f) => f[2] && missingReq.includes(f[0])).length;
                 const ck = keys.filter((k) => toCheck.includes(k)).length;
                 const isSpecs = sec[0] === 'Specifications';
-                const isSeo = sec[0] === 'Online search & Web address';
-                const moreFilled = isSpecs ? MORE_KEYS.filter((k) => String(res.v[k] || '').trim()).length : 0;
+                // the search fields are shown inside "More Options" of Specifications: no card of their own
+                if (sec[0] === SEO_TITLE) return null;
+                const seoSec = SECTIONS.find((x) => x[0] === SEO_TITLE);
+                const moreFilled = isSpecs ? [...MORE_KEYS, ...SEO_KEYS].filter((k) => String(res.v[k] || '').trim()).length : 0;
                 return (
                   <div className="card" key={si}>
                     <div className="hd">
@@ -1822,28 +1838,14 @@ export default function AiAddVehiclePage() {
                         {sec[1] ? <p>{sec[1]}</p> : null}
                       </div>
                       <span className={`chip ${mi ? 's-miss' : ck ? 's-unsure' : 's-ok'}`}>{mi ? `${mi} Required` : ck ? `${ck} worth a look` : '✓ Complete'}</span>
-                      {isSeo && (
-                        <button type="button" className="btn sm" aria-expanded={seoOpen} aria-controls="aq-seo-fields" onClick={() => setSeoOpen(!seoOpen)}>
-                          {seoOpen ? 'Hide' : 'Show'} <span className={`chev${seoOpen ? ' up' : ''}`} aria-hidden>▾</span>
-                        </button>
-                      )}
                     </div>
-                    {isSeo ? (
-                      <div id="aq-seo-fields" className={`aq-collapse${seoOpen ? ' on' : ''}`} aria-hidden={!seoOpen}>
-                        <div>
-                          <div className="bd">
-                            <div className="grid">{sec[2].map(fieldBox)}</div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
                     <div className="bd">
                       {isSpecs ? (
                         <div className="grid">
                           {sec[2].filter((f) => !MORE_KEYS.includes(f[0])).map(fieldBox)}
                           <div className="more">
                             <button type="button" className="moreb" aria-expanded={moreOpen} aria-controls="aq-more-options" onClick={() => setMoreOpen(!moreOpen)}>
-                              {moreOpen ? 'Fewer options' : 'More options'} <span className={`chev${moreOpen ? ' up' : ''}`} aria-hidden>▾</span>
+                              {moreOpen ? 'Fewer Options' : 'More Options'} <span className={`chev${moreOpen ? ' up' : ''}`} aria-hidden>▾</span>
                               {!moreOpen && moreFilled > 0 && <span className="hint">({moreFilled} filled)</span>}
                             </button>
                             <div id="aq-more-options" className={`aq-collapse${moreOpen ? ' on' : ''}`} aria-hidden={!moreOpen}>
@@ -1851,6 +1853,13 @@ export default function AiAddVehiclePage() {
                                 <div className="grid" style={{ paddingTop: 14 }}>
                                   {sec[2].filter((f) => MORE_KEYS.includes(f[0])).map(fieldBox)}
                                 </div>
+                                {seoSec && (
+                                  <div className="subsec">
+                                    <h3>{seoSec[0]}</h3>
+                                    {seoSec[1] ? <p className="hint">{seoSec[1]}</p> : null}
+                                    <div className="grid">{seoSec[2].map(fieldBox)}</div>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1878,7 +1887,6 @@ export default function AiAddVehiclePage() {
                         />
                       )}
                     </div>
-                    )}
                   </div>
                 );
               })}
@@ -1898,9 +1906,9 @@ export default function AiAddVehiclePage() {
             </div>
             {formOpen && modeReady && (
             <aside className="panel">
-              <div className="card">
+              <div className="card glow">
                 <div className="bd" style={{ gap: 10 }}>
-                  <h2 style={{ margin: 0, fontSize: 16 }}>Ready to publish?</h2>
+                  <h2 style={{ margin: 0, fontSize: 16 }}>Ready to Publish?</h2>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span className="hint" style={{ fontSize: 13 }}>
                       Required details
