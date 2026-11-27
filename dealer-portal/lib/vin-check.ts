@@ -52,10 +52,19 @@ export const normDrive = (v: unknown) => {
 };
 
 /* ---------------- duplicate stock number (published vehicles; trimmed, case-insensitive) ---------------- */
-export type StockDup = { message: string; vehicle: { id: string; name: string; status: string } };
+export type StockDup = { message: string; vehicle: { id: string; name: string; status: string; year?: number | string | null; make?: string | null; model?: string | null } };
 
-export const stockInUse = (stock: string, name: string) =>
-  `Stock number ${stock} is already in use by ${name || 'another vehicle'}. Please enter a unique stock number before publishing.`;
+/** "2019 Honda Accord": year, make and model only (never the trim) */
+export const yearMakeModel = (v: { year?: unknown; make?: unknown; model?: unknown } | null | undefined) =>
+  [v?.year, v?.make, v?.model].map((x) => String(x ?? '').trim()).filter(Boolean).join(' ');
+
+/** the error under Stock number: names the other vehicle by year, make and model (no trim) */
+export const stockInUse = (stock: string, v: { year?: unknown; make?: unknown; model?: unknown } | null | undefined) => {
+  const ymm = yearMakeModel(v);
+  return `Stock number ${stock} is already assigned to ${ymm ? `a ${ymm}` : 'another vehicle'}. Please enter a different stock number to proceed.`;
+};
+/** matches the stock number error from the API (current and older wording) */
+export const STOCK_TAKEN_RE = /^Stock number .* is already (in use|assigned)/;
 
 /** null = the stock number is free (or the check could not run; the API checks again when publishing) */
 export async function checkStock(stock: string, exceptId?: string): Promise<StockDup | null> {
@@ -66,7 +75,7 @@ export async function checkStock(stock: string, exceptId?: string): Promise<Stoc
       `/dealer/vehicles/stock-check?stock=${encodeURIComponent(s)}${exceptId ? `&id=${encodeURIComponent(exceptId)}` : ''}`,
     );
     if (r.status !== 'active' || !r.vehicle) return null;
-    return { message: stockInUse(s, r.vehicle.name), vehicle: r.vehicle };
+    return { message: stockInUse(s, r.vehicle), vehicle: r.vehicle };
   } catch {
     return null;
   }

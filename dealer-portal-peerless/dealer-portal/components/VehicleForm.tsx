@@ -10,7 +10,7 @@ import { autoDescription } from '@/lib/vehicle-description';
 import { FacebookIcon } from '@/lib/facebook';
 import { FbPostModal } from './fb/FbPostModal';
 import { brandRun } from '@/lib/branding';
-import { BODY_STYLES, DRIVETRAINS, checkVin, normBodyStyle, normDrive, normVin, VinDup, checkStock, stockInUse, StockDup } from '@/lib/vin-check';
+import { BODY_STYLES, DRIVETRAINS, checkVin, normBodyStyle, normDrive, normVin, VinDup, checkStock, stockInUse, StockDup, STOCK_TAKEN_RE } from '@/lib/vin-check';
 import { trimOptions } from '@/lib/trims';
 import { useMobileFormFocus } from '@/lib/use-mobile-form';
 import { PriceInput, rawPrice } from './PriceInput';
@@ -157,6 +157,42 @@ function Tip({ text, label }: { text?: string; label: string }) {
 }
 
 /** a numbered card of the form with its "2 of 4 required" chip; some can be hidden */
+/** the Specifications fields kept under "More options" (closed by default) */
+const MORE_KEYS = ['horsepower', 'interiorType', 'mpg', 'fuelTank', 'doors', 'seats', 'owners', 'accidents', 'features'];
+
+/**
+ * A "More options" toggle that spans the whole field grid and smoothly opens / closes the fields under it.
+ * The fields stay in the page while closed (their values are kept and saved; links to a field can still find it).
+ */
+function MoreOptions({ open, onToggle, filledCount, needed, children }: { open: boolean; onToggle: () => void; filledCount: number; needed: number; children: React.ReactNode }) {
+  return (
+    <div className="col-span-full flex flex-col">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls="more-options"
+        className="inline-flex min-h-10 items-center gap-2 self-start rounded-lg border border-[#BFD3FE] bg-[#EFF6FF] px-3.5 text-sm font-semibold text-[#1D4ED8] transition hover:bg-[#DBEAFE] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
+      >
+        {open ? 'Fewer options' : 'More options'}
+        <ChevronDown className={cx('h-4 w-4 transition-transform duration-300', open && 'rotate-180')} />
+        {!open && filledCount > 0 && <span className="text-xs font-medium text-[#526077]">({filledCount} filled)</span>}
+        {needed > 0 && <span className="rounded-full bg-[#FEF3C7] px-2 py-0.5 text-[11px] font-semibold text-[#92400E]">{needed} required</span>}
+      </button>
+      <div
+        id="more-options"
+        className={cx('grid transition-[grid-template-rows,opacity] duration-300 ease-out', open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0')}
+        style={{ visibility: open ? 'visible' : 'hidden', transition: open ? undefined : 'grid-template-rows 300ms ease-out, opacity 300ms ease-out, visibility 0s linear 300ms' }}
+        aria-hidden={!open}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="pt-4">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Sec({
   id, num, title, desc, chip, collapsible, startOpen = true, forceOpen, children,
 }: {
@@ -230,6 +266,11 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
   const typing = useMobileFormFocus(formRef);
   // phones: Delete / Duplicate / Save as draft / status live in the ••• menu of the slim header
   const [more, setMore] = useState(false);
+  // "More options" in Specifications: closed by default; opens by itself when a link (Still needed, CarGurus "Fix") points into it
+  const [moreOpen, setMoreOpen] = useState(false);
+  useEffect(() => {
+    if (hot && MORE_KEYS.includes(hot)) setMoreOpen(true);
+  }, [hot]);
   const moreRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!more) return;
@@ -326,7 +367,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
     const s = stockNow.toLowerCase();
     if (!s) return null;
     const a = all.find((x) => x.id !== v.id && x.status === 'PUBLISHED' && String(x.stockNumber || '').trim().toLowerCase() === s);
-    if (a) return { message: stockInUse(stockNow, nameOf(a)), vehicle: { id: a.id as string, name: nameOf(a), status: a.status } };
+    if (a) return { message: stockInUse(stockNow, a), vehicle: { id: a.id as string, name: nameOf(a), status: a.status } };
     return stockSrv;
   }, [all, v.id, stockNow, stockSrv]);
 
@@ -338,6 +379,8 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
     setHot(name);
     // a hidden section opens itself on setHot: scroll again once it is shown
     setTimeout(() => box.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
+    // …and once more after "More options" has finished opening (300 ms)
+    if (MORE_KEYS.includes(name)) setTimeout(() => box.scrollIntoView({ behavior: 'smooth', block: 'center' }), 360);
     setTimeout(() => setHot(''), 2600);
     const el = box.querySelector<HTMLElement>('input,textarea,select');
     if (el && name !== 'images') setTimeout(() => el.focus({ preventScroll: true }), 250);
@@ -411,7 +454,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
       router.push('/dealer/inventory');
     } catch (e) {
       const m = (e as Error).message;
-      if (/^Stock number .* is already in use/.test(m)) {
+      if (STOCK_TAKEN_RE.test(m)) {
         setStockSrv({ message: m, vehicle: { id: '', name: '', status: 'PUBLISHED' } });
         goField('stockNumber');
       }
@@ -645,7 +688,10 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
             aria-haspopup="menu"
             aria-expanded={more}
             onClick={() => setMore(!more)}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
+            className={cx(
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#2563EB] text-[#1D4ED8] transition hover:bg-[#DBEAFE]',
+              more ? 'bg-[#DBEAFE]' : 'bg-[#EFF6FF]',
+            )}
           >
             <MoreHorizontal className="h-5 w-5" />
           </button>
@@ -828,28 +874,38 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
               {field('drivetrain', 'Drivetrain', sel('drivetrain', DRIVETRAINS, 'Select drivetrain'))}
               {field('fuelType', 'Fuel type', sel('fuelType', FUEL_TYPES.length ? FUEL_TYPES : FUEL, 'Select fuel type'))}
               {field('engine', 'Engine', inp('engine', { placeholder: 'e.g. 3.5L V6' }))}
-              {field('horsepower', 'Horsepower', inp('horsepower', { placeholder: 'e.g. 300', inputMode: 'numeric' }), { suffix: 'hp' })}
               {field('cylinders', 'Cylinders', dl('cylinders', 'cylinders-list', CYLINDERS, { placeholder: 'e.g. 6' }))}
-              {field('interiorType', 'Interior material', sel('interiorType', INTERIOR_TYPES, 'Select material'))}
-              {field('mpg', 'Fuel economy', inp('mpg', { placeholder: 'e.g. 18 city / 24 hwy' }))}
-              {field('fuelTank', 'Tank size', inp('fuelTank', { placeholder: 'e.g. 23', inputMode: 'decimal' }), { suffix: 'gal' })}
-              {field('doors', 'Doors', inp('doors', { type: 'number', min: 0, placeholder: 'e.g. 4' }))}
-              {field('seats', 'Seats', inp('seats', { type: 'number', min: 0, placeholder: 'e.g. 5' }))}
-              {field('owners', 'Previous owners', inp('owners', { type: 'number', min: 0, placeholder: 'e.g. 1' }))}
-              {field('accidents', 'Accidents reported', inp('accidents', { type: 'number', min: 0, placeholder: 'e.g. 0' }))}
-              {field(
-                'features',
-                'Installed Options',
-                area(
-                  featText,
-                  (t) => {
-                    setDirty(true);
-                    setFeatText(t);
-                  },
-                  { id: 'in-features', rows: 6, placeholder: 'Heated seats\nApple CarPlay\nSunroof' },
-                ),
-                { full: true, after: <span className="text-xs text-[#526077]">One per line.</span> },
-              )}
+              {/* More options: hidden by default to keep the form short; the fields stay in the form (and are saved) as before */}
+              <MoreOptions
+                open={moreOpen}
+                onToggle={() => setMoreOpen(!moreOpen)}
+                filledCount={MORE_KEYS.filter((k) => (k === 'features' ? featText.trim() !== '' : filled(k))).length}
+                needed={MORE_KEYS.filter((k) => isReq(k) && !(k === 'features' ? featText.trim() : filled(k))).length}
+              >
+                <div className={GRID}>
+                  {field('horsepower', 'Horsepower', inp('horsepower', { placeholder: 'e.g. 300', inputMode: 'numeric' }), { suffix: 'hp' })}
+                  {field('interiorType', 'Interior material', sel('interiorType', INTERIOR_TYPES, 'Select material'))}
+                  {field('mpg', 'Fuel economy', inp('mpg', { placeholder: 'e.g. 18 city / 24 hwy' }))}
+                  {field('fuelTank', 'Tank size', inp('fuelTank', { placeholder: 'e.g. 23', inputMode: 'decimal' }), { suffix: 'gal' })}
+                  {field('doors', 'Doors', inp('doors', { type: 'number', min: 0, placeholder: 'e.g. 4' }))}
+                  {field('seats', 'Seats', inp('seats', { type: 'number', min: 0, placeholder: 'e.g. 5' }))}
+                  {field('owners', 'Previous owners', inp('owners', { type: 'number', min: 0, placeholder: 'e.g. 1' }))}
+                  {field('accidents', 'Accidents reported', inp('accidents', { type: 'number', min: 0, placeholder: 'e.g. 0' }))}
+                  {field(
+                    'features',
+                    'Installed Options',
+                    area(
+                      featText,
+                      (t) => {
+                        setDirty(true);
+                        setFeatText(t);
+                      },
+                      { id: 'in-features', rows: 6, placeholder: 'Heated seats\nApple CarPlay\nSunroof' },
+                    ),
+                    { full: true, after: <span className="text-xs text-[#526077]">One per line.</span> },
+                  )}
+                </div>
+              </MoreOptions>
             </div>
           </Sec>
 
@@ -887,7 +943,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
                           >
                             <Sparkles className="h-4 w-4" /> Write it for me
                           </button>
-                          <span className="text-xs text-[#526077]">Creates a draft from the details above. You can edit it freely.</span>
+                          <span className="text-xs text-[#526077]">Creates a draft from the details above. You can edit it anytime.</span>
                         </>
                       )}
                     </div>
@@ -985,7 +1041,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
                 <span className="flex flex-1 flex-col">
                   <span className="text-[13px] font-semibold text-[#0F172A]">CarGurus</span>
                   <span className="text-xs text-[#526077]">
-                    {cgSelected ? 'On for all your inventory (Business details) — included in your CarGurus feed automatically' : 'Off in Business details — not sent to CarGurus'}
+                    {cgSelected ? 'Your eligible vehicle listings are automatically sent to CarGurus.' : 'Off in Business details — not sent to CarGurus'}
                   </span>
                 </span>
                 {cgSelected && <Check className="mt-1.5 h-4 w-4 text-[#16A34A]" aria-label="Sent to CarGurus" />}

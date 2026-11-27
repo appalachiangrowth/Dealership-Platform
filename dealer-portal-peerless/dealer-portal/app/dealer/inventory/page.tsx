@@ -134,7 +134,7 @@ export default function InventoryPage() {
     <>
       <PageHeader
         title="Inventory"
-        desc="Everything on your lot. Published vehicles appear on your website and feeds straight away; drafts and sold vehicles stay hidden."
+        desc="Published vehicles appear online, while drafts and sold vehicles remain hidden."
         actions={
           <>
             <LinkButton href="/dealer/inventory/import" variant="secondary">

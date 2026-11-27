@@ -23,7 +23,7 @@ import { FbPostModal } from '@/components/fb/FbPostModal';
 import { AQ_CSS } from '@/components/ai/aqStyles';
 import { usePhotoSort } from '@/lib/use-photo-sort';
 import { api, mediaUrl } from '@/lib/api';
-import { BODY_STYLES, DRIVETRAINS, checkStock, checkVin, normBodyStyle, normDrive, normVin, StockDup, VinDup } from '@/lib/vin-check';
+import { BODY_STYLES, DRIVETRAINS, checkStock, checkVin, normBodyStyle, normDrive, normVin, StockDup, STOCK_TAKEN_RE, VinDup } from '@/lib/vin-check';
 import { trimOptions } from '@/lib/trims';
 import { PriceInput, rawPrice } from '@/components/PriceInput';
 import { useMobileFormFocus } from '@/lib/use-mobile-form';
@@ -92,6 +92,10 @@ const SECTIONS: [string, string, FieldDef[]][] = [
     ['slug', 'Web address', 0, 'The end of this vehicle’s web address.', '', '', 'wide'],
   ]],
 ];
+/** Specifications fields shown under "More options" (closed by default; still part of the form and saved as before) */
+const MORE_KEYS = ['hp', 'itype', 'mpg', 'tank', 'doors', 'seats', 'owners', 'accidents', 'options'];
+/** "Online search & Web address" fields (that card is closed by default) */
+const SEO_KEYS = ['seoTitle', 'slug'];
 const LABEL: Record<string, string> = {};
 const REQUIRED: string[] = [];
 SECTIONS.forEach((s) =>
@@ -118,10 +122,40 @@ type Note = { kind: 'ok' | 'bad' | 'warn' | 'info'; icon: string; html: React.Re
 type AiState = 'idle' | 'waiting' | 'running' | 'done' | 'error';
 /** manual = Add Manually (VIN + Decode VIN, photos, full form) · photos = Photos & VIN · video = Walkaround Video */
 type Mode = 'manual' | 'photos' | 'video';
-const MANUAL_HINT = 'Enter all 17 characters, then click Decode VIN.';
+const MANUAL_HINT = 'Enter VIN and click Decode VIN to continue.';
 const AUTO_HINT = 'Looks up automatically when all 17 characters are entered.';
 /** the VIN box with its Scan icon and phone layout (on top of AQ_CSS) */
 const ENTRY_CSS = `
+/* VIN box and Photos box: a soft animated outline around the card only (inside, layout and inputs are unchanged) */
+@property --aq-ang{syntax:'<angle>';inherits:false;initial-value:0deg}
+@keyframes aq-ring{to{--aq-ang:360deg}}
+@keyframes aq-halo{0%,100%{box-shadow:0 1px 2px rgba(15,23,42,.05),0 0 0 0 rgba(37,99,235,0)}50%{box-shadow:0 1px 2px rgba(15,23,42,.05),0 0 18px 1px rgba(37,99,235,.16)}}
+.aq .card.glow{position:relative;animation:aq-halo 4.5s ease-in-out infinite}
+.aq .card.glow::before{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1.5px;pointer-events:none;
+  background:conic-gradient(from var(--aq-ang),#2563EB,#60A5FA 25%,#A5B4FC 40%,#22C55E 55%,#60A5FA 75%,#2563EB);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;
+  animation:aq-ring 6s linear infinite;opacity:.85}
+@media (prefers-reduced-motion:reduce){.aq .card.glow,.aq .card.glow::before{animation:none}}
+/* "← Inventory": a bigger, bolder arrow that is easy to tap */
+.aq .backlink{display:inline-flex;align-items:center;gap:6px;font-size:14px;min-height:36px;margin-left:-4px;padding:0 6px;border-radius:8px;text-decoration:none}
+.aq .backlink:hover{background:#EFF6FF}
+.aq .backlink .arr{font-size:24px;line-height:1;font-weight:800;transform:translateY(-1px)}
+/* Publish vehicle: green · Save as draft: neutral gray */
+.aq .btn.pub{background:#16A34A;border-color:#16A34A;color:#fff}
+.aq .btn.pub:hover:not(:disabled){background:#15803D;border-color:#15803D}
+.aq .btn.pub .spin.w{border-color:rgba(255,255,255,.45);border-top-color:#fff}
+.aq .btn.draft{background:#E2E8F0;border-color:#CBD5E1;color:#1E293B}
+.aq .btn.draft:hover:not(:disabled){background:#CBD5E1}
+/* "More options" (Specifications) and the "Online search & Web address" card: open / close smoothly */
+.aq .more{grid-column:1/-1;display:flex;flex-direction:column}
+.aq .moreb{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 14px;border-radius:8px;border:1px solid #BFD3FE;background:#EFF6FF;color:#1D4ED8;font-weight:600;cursor:pointer}
+.aq .moreb:hover{background:#DBEAFE}
+.aq .moreb:focus-visible{outline:2px solid #2563EB;outline-offset:2px}
+.aq .chev{display:inline-block;transition:transform .3s ease}
+.aq .chev.up{transform:rotate(180deg)}
+.aq .aq-collapse{display:grid;grid-template-rows:0fr;opacity:0;visibility:hidden;transition:grid-template-rows .3s ease,opacity .3s ease,visibility 0s linear .3s}
+.aq .aq-collapse.on{grid-template-rows:1fr;opacity:1;visibility:visible;transition:grid-template-rows .3s ease,opacity .3s ease,visibility 0s}
+.aq .aq-collapse>div{min-height:0;overflow:hidden}
 /* Add Manually: VIN box + Decode VIN on one row; the "N fields filled" summary under it */
 .aq .vinrow{display:flex;gap:10px;align-items:stretch}
 .aq .vinrow .fld{flex:1 1 auto;min-width:0}
@@ -299,7 +333,11 @@ export default function AiAddVehiclePage() {
   const photosRef = useRef<Photo[]>([]);
   const manualOrder = useRef(false);
   const sentIds = useRef<number[]>([]);
-  const [dropOver, setDropOver] = useState(false);
+  /** which photo box a file is dragged over (the box at the top, or its copy above Publish) */
+  const [dropOver, setDropOver] = useState<'' | 'top' | 'bottom'>('');
+  /** "More options" in Specifications and the "Online search & Web address" card: both closed by default */
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [seoOpen, setSeoOpen] = useState(false);
 
   // AI
   const [ai, _setAi] = useState<any>(null);
@@ -987,9 +1025,16 @@ export default function AiAddVehiclePage() {
   const reqDone = reqTotal - missingReq.length;
 
   const goField = (k: string) => {
-    const box = document.getElementById(`f-${k}`);
-    box?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setTimeout(() => (document.getElementById(`r-${k}`) as HTMLElement | null)?.focus({ preventScroll: true }), 350);
+    // a field under "More options" or in the closed "Online search" card: open it first, then scroll once it has opened
+    const closed = (MORE_KEYS.includes(k) && !moreOpen) || (SEO_KEYS.includes(k) && !seoOpen);
+    if (MORE_KEYS.includes(k)) setMoreOpen(true);
+    if (SEO_KEYS.includes(k)) setSeoOpen(true);
+    const go = () => {
+      document.getElementById(`f-${k}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => (document.getElementById(`r-${k}`) as HTMLElement | null)?.focus({ preventScroll: true }), 350);
+    };
+    if (closed) setTimeout(go, 320);
+    else go();
   };
 
   const rewriteDesc = async () => {
@@ -1101,7 +1146,7 @@ export default function AiAddVehiclePage() {
       else setFbVehicle({ ...body, ...out });
     } catch (e) {
       const msg = (e as Error).message;
-      if (/^Stock number .* is already in use/.test(msg)) {
+      if (STOCK_TAKEN_RE.test(msg)) {
         setStockDup({ message: msg, vehicle: { id: '', name: '', status: 'PUBLISHED' } });
         goField('stock');
       }
@@ -1121,10 +1166,10 @@ export default function AiAddVehiclePage() {
 
   const saveButtons = (
     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-      <button type="button" className="btn" disabled={!!saving || !!dup} onClick={() => void save('DRAFT')}>
+      <button type="button" className="btn draft" disabled={!!saving || !!dup} onClick={() => void save('DRAFT')}>
         {savedDraft ? 'Update draft' : 'Save as draft'}
       </button>
-      <button type="button" className="btn p" disabled={!!saving || !!dup || !!stockDup} title={dup ? dup.message : stockDup ? stockDup.message : undefined} onClick={() => void save('PUBLISHED')}>
+      <button type="button" className="btn pub" disabled={!!saving || !!dup || !!stockDup} title={dup ? dup.message : stockDup ? stockDup.message : undefined} onClick={() => void save('PUBLISHED')}>
         {saving ? (
           <>
             <span className="spin w" /> {saving}
@@ -1279,10 +1324,10 @@ export default function AiAddVehiclePage() {
   };
 
   /** the photos card: step 2 of Photos & VIN, step 3 of the video (plain wording when AI is off: nothing reads them) */
-  const photosCard = (n: number | string) => {
+  const photosCard = (n: number | string, at: 'top' | 'bottom' = 'top') => {
     const manual = mode === 'manual' || (mode === 'photos' && !!status && !status.hasKey);
     return (
-                <div className={`card${mode === 'video' ? ' vmode' : ''}`}>
+                <div className={`card glow${mode === 'video' ? ' vmode' : ''}`} id={at === 'bottom' ? 'aq-photos-bottom' : 'aq-photos'}>
                   {!manual && (
                   <div className="hd">
                     {numMark(n, photos.length > 0)}
@@ -1294,21 +1339,21 @@ export default function AiAddVehiclePage() {
                   )}
                   <div className="bd">
                     <div
-                      className={`drop${dropOver ? ' over' : ''}`}
+                      className={`drop${dropOver === at ? ' over' : ''}`}
                       onDragEnter={(e) => {
                         if (!e.dataTransfer.types.includes('Files')) return;
                         e.preventDefault();
-                        setDropOver(true);
+                        setDropOver(at);
                       }}
                       onDragOver={(e) => {
                         if (!e.dataTransfer.types.includes('Files')) return;
                         e.preventDefault();
-                        setDropOver(true);
+                        setDropOver(at);
                       }}
-                      onDragLeave={() => setDropOver(false)}
+                      onDragLeave={() => setDropOver('')}
                       onDrop={(e) => {
                         e.preventDefault();
-                        setDropOver(false);
+                        setDropOver('');
                         if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files);
                       }}
                     >
@@ -1327,7 +1372,7 @@ export default function AiAddVehiclePage() {
                         />
                         Choose photos
                       </label>
-                      <span className="hint">{manual ? 'Upload as many as you like, all at once.' : 'Upload as many as you like, all at once. AI puts them in the best order.'}</span>
+                      <span className="hint">{manual ? 'Upload multiple photos at once.' : 'Upload multiple photos at once. AI puts them in the best order.'}</span>
                     </div>
                     <Thumbs photos={photos} onChange={changePhotos} />
                     {aiBar}
@@ -1347,8 +1392,11 @@ export default function AiAddVehiclePage() {
       <section>
           <div className="top">
             <div style={{ flex: '1 1 360px' }}>
-              <Link href="/dealer/inventory" className="link" style={{ fontSize: 13 }}>
-                ← Inventory
+              <Link href="/dealer/inventory" className="link backlink" aria-label="Back to Inventory">
+                <span className="arr" aria-hidden>
+                  ←
+                </span>
+                Inventory
               </Link>
               <h1 style={{ marginTop: 4 }}>Add a vehicle</h1>
               <p>
@@ -1496,7 +1544,7 @@ export default function AiAddVehiclePage() {
               )}
 
               {/* VIN */}
-              <div className="card">
+              <div className="card glow">
                 {mode !== 'manual' && (
                 <div className="hd">
                   {numMark(mode === 'video' ? 2 : 1, !!decoded)}
@@ -1529,7 +1577,7 @@ export default function AiAddVehiclePage() {
                             className="mono"
                             maxLength={17}
                             autoComplete="off"
-                            placeholder="17 characters"
+                            placeholder=""
                             value={vin}
                             onChange={(e) => onVin(e.target.value)}
                             onKeyDown={(e) => {
@@ -1555,7 +1603,7 @@ export default function AiAddVehiclePage() {
                       </div>
                     ) : (
                       <div className="fld vinfld">
-                        <input id="aq-vin" className="mono" maxLength={17} autoComplete="off" placeholder="17 characters" value={vin} onChange={(e) => onVin(e.target.value)} />
+                        <input id="aq-vin" className="mono" maxLength={17} autoComplete="off" placeholder="" value={vin} onChange={(e) => onVin(e.target.value)} />
                         {mode === 'photos' && scanBtn}
                       </div>
                     )}
@@ -1762,6 +1810,9 @@ export default function AiAddVehiclePage() {
                 const keys = sec[2].map((f) => f[0]);
                 const mi = sec[2].filter((f) => f[2] && missingReq.includes(f[0])).length;
                 const ck = keys.filter((k) => toCheck.includes(k)).length;
+                const isSpecs = sec[0] === 'Specifications';
+                const isSeo = sec[0] === 'Online search & Web address';
+                const moreFilled = isSpecs ? MORE_KEYS.filter((k) => String(res.v[k] || '').trim()).length : 0;
                 return (
                   <div className="card" key={si}>
                     <div className="hd">
@@ -1771,9 +1822,42 @@ export default function AiAddVehiclePage() {
                         {sec[1] ? <p>{sec[1]}</p> : null}
                       </div>
                       <span className={`chip ${mi ? 's-miss' : ck ? 's-unsure' : 's-ok'}`}>{mi ? `${mi} Required` : ck ? `${ck} worth a look` : '✓ Complete'}</span>
+                      {isSeo && (
+                        <button type="button" className="btn sm" aria-expanded={seoOpen} aria-controls="aq-seo-fields" onClick={() => setSeoOpen(!seoOpen)}>
+                          {seoOpen ? 'Hide' : 'Show'} <span className={`chev${seoOpen ? ' up' : ''}`} aria-hidden>▾</span>
+                        </button>
+                      )}
                     </div>
+                    {isSeo ? (
+                      <div id="aq-seo-fields" className={`aq-collapse${seoOpen ? ' on' : ''}`} aria-hidden={!seoOpen}>
+                        <div>
+                          <div className="bd">
+                            <div className="grid">{sec[2].map(fieldBox)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
                     <div className="bd">
-                      <div className="grid">{sec[2].map(fieldBox)}</div>
+                      {isSpecs ? (
+                        <div className="grid">
+                          {sec[2].filter((f) => !MORE_KEYS.includes(f[0])).map(fieldBox)}
+                          <div className="more">
+                            <button type="button" className="moreb" aria-expanded={moreOpen} aria-controls="aq-more-options" onClick={() => setMoreOpen(!moreOpen)}>
+                              {moreOpen ? 'Fewer options' : 'More options'} <span className={`chev${moreOpen ? ' up' : ''}`} aria-hidden>▾</span>
+                              {!moreOpen && moreFilled > 0 && <span className="hint">({moreFilled} filled)</span>}
+                            </button>
+                            <div id="aq-more-options" className={`aq-collapse${moreOpen ? ' on' : ''}`} aria-hidden={!moreOpen}>
+                              <div>
+                                <div className="grid" style={{ paddingTop: 14 }}>
+                                  {sec[2].filter((f) => MORE_KEYS.includes(f[0])).map(fieldBox)}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid">{sec[2].map(fieldBox)}</div>
+                      )}
                       {si === 3 && ai && (ai.visible_condition_notes || []).length > 0 && (
                         <NoteBox
                           n={{
@@ -1794,9 +1878,12 @@ export default function AiAddVehiclePage() {
                         />
                       )}
                     </div>
+                    )}
                   </div>
                 );
               })}
+                  {/* the same photos again (same photos, same order), so they can be added without scrolling back up */}
+                  {(mode !== 'video' || photos.length > 0) && photosCard(mode === 'video' ? 3 : 2, 'bottom')}
                   <div className="card" style={{ padding: '16px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
                     <div style={{ flex: '1 1 260px', display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <b>{dup ? dup.message : stockDup ? stockDup.message : savedDraft ? 'Saved as a draft' : missingReq.length ? `${missingReq.length} Field${missingReq.length > 1 ? 's' : ''} remaining` : 'Ready to publish'}</b>

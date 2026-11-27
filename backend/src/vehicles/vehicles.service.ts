@@ -8,8 +8,11 @@ import { CARGURUS_RULES, cleanVehicleInput, DEFAULT_RULES, normVin, publishProbl
 export const VIN_IN_INVENTORY = 'A vehicle with this VIN is already in your inventory.';
 export const VIN_SOLD = 'This vehicle (VIN) has already been sold.';
 /** published vehicles need a stock number of their own (trimmed, case-insensitive) within the dealership */
-export const stockInUse = (stock: string, name: string) =>
-  `Stock number ${stock} is already in use by ${name || 'another vehicle'}. Please enter a unique stock number before publishing.`;
+export const stockInUse = (stock: string, v: { year?: unknown; make?: unknown; model?: unknown } | null | undefined) => {
+  // year, make and model only: the trim is never part of this message
+  const ymm = [v?.year, v?.make, v?.model].map((x) => String(x ?? '').trim()).filter(Boolean).join(' ');
+  return `Stock number ${stock} is already assigned to ${ymm ? `a ${ymm}` : 'another vehicle'}. Please enter a different stock number to proceed.`;
+};
 import { CargurusService } from '../cargurus/cargurus.service.js';
 import { PhotoJobsService } from './photo-jobs.service.js';
 import type { PhotoJob } from './photo-jobs.service.js';
@@ -228,7 +231,7 @@ export class VehiclesService {
   /** publishing (or saving a published vehicle) with a stock number another published vehicle uses: 400 */
   private async assertStockFree(tenantId: string, stock: unknown, exceptId?: string) {
     const r = await this.stockCheck(tenantId, stock, exceptId);
-    if (r.status === 'active') throw new BadRequestException({ message: stockInUse(r.stock, r.vehicle.name), code: 'stock_in_use', vehicle: r.vehicle });
+    if (r.status === 'active') throw new BadRequestException({ message: stockInUse(r.stock, r.vehicle), code: 'stock_in_use', vehicle: r.vehicle });
   }
 
   async create(tenantId: string, body: Record<string, unknown>, user: AuthUser) {
