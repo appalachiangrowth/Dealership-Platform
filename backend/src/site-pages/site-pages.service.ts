@@ -9,7 +9,7 @@ import { UPLOAD_ROOT, sniffImage } from '../media/media.service.js';
 import { clean, randomHex } from '../common/util.js';
 import type { AuthUser } from '../common/auth.types.js';
 import type { Prisma, SitePage } from '../generated/prisma/client.js';
-import { sanitizeRichHtml } from '../posts/rich-html.js';
+import { sanitizeInlineHtml, sanitizeRichHtml } from '../posts/rich-html.js';
 import { DEFAULT_BY_KEY, DEFAULT_PAGES, LINK_URL, cleanFooter, resolveFooter, starterFooter, type FooterColumn, type FooterEntry } from './site-nav.js';
 
 /** Section types the website knows (frontend/lib/custom-pages.ts). */
@@ -232,6 +232,7 @@ export async function publishedNavFor(
 /* ───────────── Text / Picture & Text: headings (H1–H6) + rich text ───────────── */
 
 const HEADING_LEVELS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
+const SECTION_HEADING_TAGS = new Set(['h1', 'h2', 'h3', 'h4']);
 
 /**
  * content = [{ kind: "heading", level: "h1"…"h6", text } | { kind: "text", html }] — the headings and formatted text
@@ -246,12 +247,12 @@ function cleanContent(v: unknown): Record<string, unknown>[] | undefined {
     .map((x) => {
       const o = x as Record<string, unknown>;
       const id = String(o.id || randomHex(6)).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || randomHex(6);
-      if (o.kind === 'heading') return { id, kind: 'heading', level: HEADING_LEVELS.has(String(o.level)) ? String(o.level) : 'h2', text: clean(o.text, 300) };
+      if (o.kind === 'heading') return { id, kind: 'heading', level: HEADING_LEVELS.has(String(o.level)) ? String(o.level) : 'h2', text: sanitizeInlineHtml(clean(o.text, 600), { max: 600 }) };
       return { id, kind: 'text', html: sanitizeRichHtml(o.html, 60_000) };
     });
 }
 
-/** keeps the section list a list of plain objects with a known type (texts are escaped by the website) */
+/** keeps the section list a list of plain objects with a known type (inline HTML is sanitized) */
 function cleanSections(v: unknown): Prisma.InputJsonValue {
   if (!Array.isArray(v)) throw new BadRequestException('Sections must be a list');
   if (v.length > 80) throw new BadRequestException('A page can have at most 80 sections');
@@ -259,6 +260,20 @@ function cleanSections(v: unknown): Prisma.InputJsonValue {
     .filter((s) => s && typeof s === 'object' && (SECTION_TYPES as readonly string[]).includes(String((s as { type?: unknown }).type)))
     .map((s) => {
       const o: Record<string, unknown> = { ...(s as Record<string, unknown>), id: String((s as { id?: unknown }).id || randomHex(6)).slice(0, 40) };
+      if ('headingTag' in o) {
+        const tag = String(o.headingTag ?? '').toLowerCase();
+        if (SECTION_HEADING_TAGS.has(tag)) o.headingTag = tag;
+        else delete o.headingTag;
+      }
+      if (o.type === 'header' && 'level' in o) {
+        const lvl = String(o.level ?? '').toLowerCase();
+        o.level = SECTION_HEADING_TAGS.has(lvl) ? lvl : 'h1';
+      }
+      if (o.type !== 'html') {
+        for (const k of ['title', 'eyebrow', 'subtitle', 'intro', 'text'] as const) {
+          if (typeof o[k] === 'string') o[k] = sanitizeInlineHtml(o[k], { max: 4000 });
+        }
+      }
       if ((o.type === 'text' || o.type === 'split') && 'content' in o) {
         const content = cleanContent(o.content);
         if (content) o.content = content;

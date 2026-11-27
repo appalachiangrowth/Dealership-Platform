@@ -14,7 +14,7 @@ import { join } from 'path';
 import { rawTemplate, type Theme } from './engine';
 import { renderPage, type ThemeContext } from './page';
 import { h, safeUrl } from './php';
-import { sanitizeRichHtml } from './rich-html';
+import { sanitizeInlineHtml, sanitizeRichHtml } from './rich-html';
 import { absSiteUrl, siteTokens, siteTokensDisplay } from './tokens';
 
 /* ============================================================================ types */
@@ -1100,6 +1100,7 @@ if(window.MutationObserver)new MutationObserver(function(ms){for(var i=0;i<ms.le
 type Tokens = Record<string, any>;
 const sub = (s: unknown, t: Tokens) => String(s ?? '').replace(/\{([a-z_]+)\}/g, (m, k: string) => (k in t && typeof t[k] !== 'object' ? String(t[k] ?? '') : m));
 const txt = (s: unknown, t: Tokens) => h(sub(s, t));
+const inlineTxt = (s: unknown, t: Tokens) => sanitizeInlineHtml(sub(s, t), { linkClass: 'pa-inline-link' });
 
 /** **bold**, *italic*, [label](link) on already escaped text */
 function inline(escaped: string, links: Links, t: Tokens): string {
@@ -1210,12 +1211,18 @@ function buttons(list: unknown, rc: Rc, cls = ''): string {
   );
 }
 
-function headBlock(b: Block, rc: Rc, opts: { center?: boolean; tag?: string } = {}): string {
-  const tag = opts.tag || 'h2';
+const HEADING_TAGS = /^h[1-4]$/i;
+function headingTagOf(b: Block, fallback: 'h1' | 'h2' = 'h2'): 'h1' | 'h2' | 'h3' | 'h4' {
+  const raw = String(b.headingTag || b.level || '').toLowerCase();
+  return HEADING_TAGS.test(raw) ? (raw as 'h1' | 'h2' | 'h3' | 'h4') : fallback;
+}
+
+function headBlock(b: Block, rc: Rc, opts: { center?: boolean; tag?: 'h1' | 'h2' } = {}): string {
+  const tag = headingTagOf(b, opts.tag || 'h2');
   const parts = [
-    b.eyebrow ? `<p class="pa-eyebrow">${txt(b.eyebrow, rc.t)}</p>` : '',
-    b.title ? `<${tag} class="pa-title">${headline(b.title, rc.t)}</${tag}>` : '',
-    b.intro ? `<p class="pa-intro">${txt(b.intro, rc.t)}</p>` : '',
+    b.eyebrow ? `<p class="pa-eyebrow">${inlineTxt(b.eyebrow, rc.t)}</p>` : '',
+    b.title ? `<${tag} class="pa-title pa-${tag}">${headline(b.title, rc.t)}</${tag}>` : '',
+    b.intro ? `<p class="pa-intro">${inlineTxt(b.intro, rc.t)}</p>` : '',
   ].join('');
   return parts ? `<div class="pa-head${opts.center ? ' pa-center' : ''}">${parts}</div>` : '';
 }
@@ -1231,7 +1238,7 @@ function firstHeading(b: Block): string {
 }
 
 function eyebrowOf(b: Block, rc: Rc): string {
-  return b.eyebrow ? `<p class="pa-eyebrow">${txt(b.eyebrow, rc.t)}</p>` : '';
+  return b.eyebrow ? `<p class="pa-eyebrow">${inlineTxt(b.eyebrow, rc.t)}</p>` : '';
 }
 
 /**
@@ -1264,7 +1271,9 @@ function contentBlocks(b: Block, rc: Rc): string | null {
 
 /** "Find your *next* car" → the starred word in the brand colour (like the themes do) */
 function headline(s: unknown, t: Tokens): string {
-  return h(sub(s, t)).replace(/\*([^*\n]+)\*/g, '<span class="pa-hl">$1</span>');
+  return sanitizeInlineHtml(sub(s, t), { linkClass: 'pa-inline-link' }).replace(/(<[^>]+>)|\*([^*\n]+)\*/g, (_m, tag: string, w: string) =>
+    tag ? tag : `<span class="pa-hl">${w}</span>`,
+  );
 }
 
 const money = (n: unknown) => {
@@ -1396,13 +1405,13 @@ const SECTIONS: Record<string, (b: Block, rc: Rc) => string> = {
     const height = ['s', 'm', 'l', 'xl'].includes(b.height) ? b.height : 'm';
     const accent = cssColor(b.accent);
     const style = `--pa-ch-bg:${bg}${accent ? `;--pa-ch-accent:${accent}` : ''}`;
-    const tag = b.level === 'h2' ? 'h2' : 'h1';
+    const tag = headingTagOf(b, 'h1');
     return (
       (b.css ? `<style>${scopedCss(b.css, '#' + id)}</style>` : '') +
       `<div class="pa-ch pa-ch--${height} pa-ch--${align}${b.width === 'wide' ? ' pa-ch--wide' : ''}" id="${id}" data-fg="${fg}" style="${h(style)}"><div class="pa-wrap"><div class="pa-ch-inner">` +
-      (b.eyebrow ? `<p class="pa-eyebrow">${txt(b.eyebrow, rc.t)}</p>` : '') +
-      (b.title ? `<${tag} class="pa-title pa-title--xl">${headline(b.title, rc.t)}</${tag}>` : '') +
-      (b.subtitle ? `<p class="pa-lead">${txt(b.subtitle, rc.t)}</p>` : '') +
+      (b.eyebrow ? `<p class="pa-eyebrow">${inlineTxt(b.eyebrow, rc.t)}</p>` : '') +
+      (b.title ? `<${tag} class="pa-title pa-title--xl pa-${tag}">${headline(b.title, rc.t)}</${tag}>` : '') +
+      (b.subtitle ? `<p class="pa-lead">${inlineTxt(b.subtitle, rc.t)}</p>` : '') +
       buttons(b.buttons, rc) +
       // trusted: only platform owners can create pages
       (b.html ? `<div class="pa-ch-html">${String(b.html)}</div>` : '') +
@@ -1413,11 +1422,12 @@ const SECTIONS: Record<string, (b: Block, rc: Rc) => string> = {
     const pic = img(b.image);
     const overlay = Math.min(90, Math.max(0, b.overlay === undefined || b.overlay === '' ? 55 : Number(b.overlay)));
     const bg = pic ? ` style="--pa-hero-img:url('${h(pic)}');--pa-overlay:${overlay / 100}"` : '';
+    const tag = headingTagOf(b, 'h1');
     return (
       `<div class="pa-hero pa-hero--${['s', 'm', 'l'].includes(b.height) ? b.height : 'm'}${pic ? ' pa-hero--img' : ''}${b.align === 'center' ? ' pa-center' : ''}"${bg}><div class="pa-wrap">` +
-      (b.eyebrow ? `<p class="pa-eyebrow">${txt(b.eyebrow, rc.t)}</p>` : '') +
-      `<h1 class="pa-title pa-title--xl">${headline(b.title || '', rc.t)}</h1>` +
-      (b.text ? `<p class="pa-lead">${txt(b.text, rc.t)}</p>` : '') +
+      (b.eyebrow ? `<p class="pa-eyebrow">${inlineTxt(b.eyebrow, rc.t)}</p>` : '') +
+      `<${tag} class="pa-title pa-title--xl pa-${tag}">${headline(b.title || '', rc.t)}</${tag}>` +
+      (b.text ? `<p class="pa-lead">${inlineTxt(b.text, rc.t)}</p>` : '') +
       buttons(b.buttons, rc) +
       '</div></div>'
     );
@@ -1467,7 +1477,7 @@ const SECTIONS: Record<string, (b: Block, rc: Rc) => string> = {
     return `<div class="pa-wrap">${headBlock(b, rc, { center: b.align === 'center' })}${list.length ? `<div class="pa-grid pa-cols-${cols} pa-cars">${list.map((v) => vehicleCard(v, rc)).join('')}</div>` : empty}${btn}</div>`;
   },
   cta(b, rc) {
-    return `<div class="pa-wrap"><div class="pa-cta">${headBlock({ ...b, intro: undefined } as Block, rc)}${b.text ? `<p class="pa-lead">${txt(b.text, rc.t)}</p>` : ''}${buttons(b.buttons, rc)}</div></div>`;
+    return `<div class="pa-wrap"><div class="pa-cta">${headBlock({ ...b, intro: undefined } as Block, rc)}${b.text ? `<p class="pa-lead">${inlineTxt(b.text, rc.t)}</p>` : ''}${buttons(b.buttons, rc)}</div></div>`;
   },
   stats(b, rc) {
     return (
@@ -1589,6 +1599,9 @@ const BASE_CSS = `
 .pa-page .pa-title.pa-h{margin:0 0 .45em}.pa-page .pa-rich+.pa-title.pa-h{margin-top:1.1em}
 .pa-page .pa-title.pa-h1{font-size:clamp(34px,5vw,64px);line-height:1.04}.pa-page .pa-title.pa-h2{font-size:clamp(28px,3.6vw,46px);line-height:1.08}
 .pa-page .pa-title.pa-h3{font-size:clamp(23px,2.6vw,32px);line-height:1.15}.pa-page .pa-title.pa-h4{font-size:clamp(20px,2vw,25px);line-height:1.2;letter-spacing:-.01em}
+.pa-page .pa-title--xl.pa-h1{font-size:clamp(38px,6vw,76px);line-height:1.02}.pa-page .pa-title--xl.pa-h2{font-size:clamp(32px,4.5vw,56px);line-height:1.06}
+.pa-page .pa-title--xl.pa-h3{font-size:clamp(26px,3.4vw,42px);line-height:1.1}.pa-page .pa-title--xl.pa-h4{font-size:clamp(22px,2.4vw,30px);line-height:1.18}
+.pa-page .pa-inline-link{color:inherit;text-decoration:underline;text-underline-offset:.14em}
 .pa-page .pa-title.pa-h5{font-size:18px;line-height:1.3;letter-spacing:0}.pa-page .pa-title.pa-h6{font-size:14px;line-height:1.35;letter-spacing:.12em;text-transform:uppercase;color:var(--pa-muted)}
 .pa-rich u{text-decoration:underline;text-underline-offset:.15em}.pa-rich mark,.pa-rich span[style*="background"]{padding:.05em .25em;border-radius:3px;color:inherit}.pa-rich mark{background:color-mix(in srgb,var(--pa-accent) 28%,#fff3a0)}
 .pa-rich em{font-style:italic}.pa-rich h1,.pa-rich h2,.pa-rich h4{font-family:var(--pa-fh);color:var(--pa-head);margin:1.2em 0 .5em}

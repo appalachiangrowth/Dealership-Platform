@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, ChevronDown, Copy, Heading as HeadingIcon, ImagePlu
 import { api, mediaUrl } from '@/lib/api';
 import { CATEGORIES, DEF, LINKS, TONES, contentOf, newId, type ContentBlock, type Section } from '@/lib/page-sections';
 import { RichText } from './RichText';
+import { RichTextInlineEditor } from './RichTextInlineEditor';
 import { useToast } from './toast';
 import { Button, Field, Input, Select, Spinner, Textarea, Toggle, cx } from './ui';
 
@@ -20,11 +21,69 @@ function Txt({ s, k, set, label, hint, ph }: { s: Section; k: string; set: SetFn
   );
 }
 
-function Area({ s, k, set, label, hint, rows = 4, mono }: { s: Section; k: string; set: SetFn; label: string; hint?: string; rows?: number; mono?: boolean }) {
+function Area({ s, k, set, label, hint, rows = 4, mono, rich }: { s: Section; k: string; set: SetFn; label: string; hint?: string; rows?: number; mono?: boolean; rich?: boolean }) {
   return (
     <Field label={label} hint={hint}>
-      <Textarea value={s[k] ?? ''} onChange={(e) => set({ [k]: e.target.value })} rows={rows} className={mono ? 'font-mono text-xs' : ''} />
+      {rich ? (
+        <RichTextInlineEditor multiline rows={rows} value={s[k] ?? ''} onChange={(next) => set({ [k]: next })} />
+      ) : (
+        <Textarea value={s[k] ?? ''} onChange={(e) => set({ [k]: e.target.value })} rows={rows} className={mono ? 'font-mono text-xs' : ''} />
+      )}
     </Field>
+  );
+}
+
+function RichTxt({ s, k, set, label, hint, ph }: { s: Section; k: string; set: SetFn; label: string; hint?: string; ph?: string }) {
+  return (
+    <Field label={label} hint={hint}>
+      <RichTextInlineEditor multiline={false} value={s[k] ?? ''} onChange={(next) => set({ [k]: next })} placeholder={ph} />
+    </Field>
+  );
+}
+
+const HEADING_TAGS: [string, string][] = [
+  ['h1', 'H1'],
+  ['h2', 'H2'],
+  ['h3', 'H3'],
+  ['h4', 'H4'],
+];
+
+function HeadingWithTag({
+  s,
+  set,
+  label = 'Heading',
+  hint,
+  defaultTag = 'h2',
+  syncLevel = false,
+}: {
+  s: Section;
+  set: SetFn;
+  label?: string;
+  hint?: string;
+  defaultTag?: 'h1' | 'h2' | 'h3' | 'h4';
+  syncLevel?: boolean;
+}) {
+  const tag = String(s.headingTag || (syncLevel ? s.level : '') || defaultTag).toLowerCase();
+  const value = ['h1', 'h2', 'h3', 'h4'].includes(tag) ? tag : defaultTag;
+  const setTag = (next: string) => set(syncLevel ? { headingTag: next, level: next } : { headingTag: next });
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+        <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+          <span>Heading Tag</span>
+          <Select value={value} onChange={(e) => setTag(e.target.value)} aria-label="Heading Tag" className="w-20 py-1 text-xs">
+            {HEADING_TAGS.map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </Select>
+        </label>
+      </div>
+      <RichTextInlineEditor multiline={false} value={s.title ?? ''} onChange={(next) => set({ title: next })} />
+      {hint && <p className="text-xs text-slate-500">{hint}</p>}
+    </div>
   );
 }
 
@@ -250,12 +309,12 @@ function Gallery({ s, set }: { s: Section; set: SetFn }) {
   );
 }
 
-function Heading({ s, set, intro = true }: { s: Section; set: SetFn; intro?: boolean }) {
+function Heading({ s, set, intro = true, defaultTag = 'h2' }: { s: Section; set: SetFn; intro?: boolean; defaultTag?: 'h1' | 'h2' | 'h3' | 'h4' }) {
   return (
     <>
-      <Txt s={s} k="eyebrow" set={set} label="Small text above the heading" />
-      <Txt s={s} k="title" set={set} label="Heading" hint="Put *stars* around a word to show it in the brand colour." />
-      {intro && <Area s={s} k="intro" set={set} label="Intro (optional)" rows={2} />}
+      <RichTxt s={s} k="eyebrow" set={set} label="Small text above the heading" />
+      <HeadingWithTag s={s} set={set} label="Heading" hint="Put *stars* around a word to show it in the brand colour." defaultTag={defaultTag} />
+      {intro && <Area s={s} k="intro" set={set} label="Intro (optional)" rows={2} rich />}
     </>
   );
 }
@@ -308,17 +367,24 @@ function ContentFields({ s, set }: { s: Section; set: SetFn }) {
       )}
       {blocks.map((b, i) =>
         b.kind === 'heading' ? (
-          <div key={b.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2">
-            <HeadingIcon className="h-4 w-4 shrink-0 text-slate-400" />
-            <Select value={b.level} onChange={(e) => patch(i, { level: e.target.value })} className="w-36 shrink-0 py-1.5 text-xs" aria-label="Heading level">
-              {LEVELS.map(([v, l]) => (
-                <option key={v} value={v}>
-                  {l}
-                </option>
-              ))}
-            </Select>
-            <Input value={b.text} onChange={(e) => patch(i, { text: e.target.value.slice(0, 300) })} placeholder="Heading text — *stars* show a word in the brand colour" className="min-w-0 flex-1" />
-            {tools(i)}
+          <div key={b.id} className="space-y-2 rounded-lg border border-slate-200 bg-white p-2.5">
+            <div className="flex items-center gap-2">
+              <HeadingIcon className="h-4 w-4 shrink-0 text-slate-400" />
+              <Select value={b.level} onChange={(e) => patch(i, { level: e.target.value })} className="w-36 shrink-0 py-1.5 text-xs" aria-label="Heading level">
+                {LEVELS.map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </Select>
+              <div className="ml-auto">{tools(i)}</div>
+            </div>
+            <RichTextInlineEditor
+              multiline={false}
+              value={b.text}
+              onChange={(next) => patch(i, { text: next.slice(0, 600) })}
+              placeholder="Heading text — *stars* show a word in the brand colour"
+            />
           </div>
         ) : (
           <div key={b.id} className="rounded-lg border border-slate-200 bg-slate-50/60 p-2">
@@ -363,9 +429,9 @@ function CustomHeaderFields({ s, set }: { s: Section; set: SetFn }) {
   const bg = s.bg || 'gradient';
   return (
     <>
-      <Txt s={s} k="eyebrow" set={set} label="Small text above the heading (optional)" />
-      <Txt s={s} k="title" set={set} label="Heading" hint="Put *stars* around a word to show it in the accent colour." />
-      <Area s={s} k="subtitle" set={set} label="Subtitle" rows={2} />
+      <RichTxt s={s} k="eyebrow" set={set} label="Small text above the heading (optional)" />
+      <HeadingWithTag s={s} set={set} label="Heading" hint="Put *stars* around a word to show it in the accent colour." defaultTag="h1" syncLevel />
+      <Area s={s} k="subtitle" set={set} label="Subtitle" rows={2} rich />
 
       <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
         <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Background</div>
@@ -410,7 +476,6 @@ function CustomHeaderFields({ s, set }: { s: Section; set: SetFn }) {
         <Choice label="Alignment" value={s.align || 'left'} onChange={(v) => set({ align: v })} options={[['left', 'Left'], ['center', 'Centre'], ['right', 'Right']]} />
         <Choice label="Height" value={s.height || 'm'} onChange={(v) => set({ height: v })} options={[['s', 'Small'], ['m', 'Medium'], ['l', 'Large'], ['xl', 'Full screen']]} />
         <Choice label="Text width" value={s.width || 'narrow'} onChange={(v) => set({ width: v })} options={[['narrow', 'Easy to read'], ['wide', 'Full width']]} />
-        <Choice label="Heading level (SEO)" value={s.level || 'h1'} onChange={(v) => set({ level: v })} options={[['h1', 'H1 — main heading'], ['h2', 'H2 — section heading']]} />
       </div>
 
       <Buttons s={s} set={set} />
@@ -441,9 +506,9 @@ function Fields({ s, set }: { s: Section; set: SetFn }) {
     case 'hero':
       return (
         <>
-          <Txt s={s} k="eyebrow" set={set} label="Small text above the headline" />
-          <Txt s={s} k="title" set={set} label="Headline" hint="Put *stars* around a word to show it in the brand colour." />
-          <Area s={s} k="text" set={set} label="Text under the headline" rows={3} />
+          <RichTxt s={s} k="eyebrow" set={set} label="Small text above the headline" />
+          <HeadingWithTag s={s} set={set} label="Headline" hint="Put *stars* around a word to show it in the brand colour." defaultTag="h1" />
+          <Area s={s} k="text" set={set} label="Text under the headline" rows={3} rich />
           <ImageField value={s.image} onChange={(v) => set({ image: v })} label="Background picture (optional)" />
           {s.image && (
             <Field label={`Darken the picture: ${s.overlay ?? 55}%`}>
@@ -462,7 +527,7 @@ function Fields({ s, set }: { s: Section; set: SetFn }) {
     case 'text':
       return (
         <>
-          <Txt s={s} k="eyebrow" set={set} label="Small text above the headings (optional)" />
+          <RichTxt s={s} k="eyebrow" set={set} label="Small text above the headings (optional)" />
           <ContentFields s={s} set={set} />
           <div className="grid grid-cols-2 gap-3">
             <Choice label="Width" value={s.width || 'narrow'} onChange={(v) => set({ width: v })} options={[['narrow', 'Easy to read'], ['wide', 'Full width']]} />
@@ -474,7 +539,7 @@ function Fields({ s, set }: { s: Section; set: SetFn }) {
     case 'split':
       return (
         <>
-          <Txt s={s} k="eyebrow" set={set} label="Small text above the headings (optional)" />
+          <RichTxt s={s} k="eyebrow" set={set} label="Small text above the headings (optional)" />
           <ContentFields s={s} set={set} />
           <ImageField value={s.image} onChange={(v) => set({ image: v })} />
           <Choice label="Picture side" value={s.imageSide || 'right'} onChange={(v) => set({ imageSide: v })} options={[['right', 'Right'], ['left', 'Left']]} />
@@ -545,22 +610,22 @@ function Fields({ s, set }: { s: Section; set: SetFn }) {
     case 'cta':
       return (
         <>
-          <Txt s={s} k="title" set={set} label="Heading" />
-          <Area s={s} k="text" set={set} label="Text" rows={2} />
+          <HeadingWithTag s={s} set={set} label="Heading" defaultTag="h2" />
+          <Area s={s} k="text" set={set} label="Text" rows={2} rich />
           <Buttons s={s} set={set} />
         </>
       );
     case 'stats':
       return (
         <>
-          <Txt s={s} k="title" set={set} label="Heading (optional)" />
+          <HeadingWithTag s={s} set={set} label="Heading (optional)" defaultTag="h2" />
           <Items s={s} set={set} addLabel="Add number" blank={{ value: '100+', label: 'Label' }} fields={[{ k: 'value', label: 'Number' }, { k: 'label', label: 'Label' }]} max={6} />
         </>
       );
     case 'testimonials':
       return (
         <>
-          <Txt s={s} k="title" set={set} label="Heading" />
+          <HeadingWithTag s={s} set={set} label="Heading" defaultTag="h2" />
           <Items
             s={s}
             set={set}
@@ -574,14 +639,14 @@ function Fields({ s, set }: { s: Section; set: SetFn }) {
     case 'faq':
       return (
         <>
-          <Txt s={s} k="title" set={set} label="Heading" />
+          <HeadingWithTag s={s} set={set} label="Heading" defaultTag="h2" />
           <Items s={s} set={set} addLabel="Add question" blank={{ q: '', a: '' }} fields={[{ k: 'q', label: 'Question' }, { k: 'a', label: 'Answer', kind: 'area' }]} max={30} />
         </>
       );
     case 'gallery':
       return (
         <>
-          <Txt s={s} k="title" set={set} label="Heading (optional)" />
+          <HeadingWithTag s={s} set={set} label="Heading (optional)" defaultTag="h2" />
           <Choice label="Pictures per row" value={String(s.columns || 3)} onChange={(v) => set({ columns: Number(v) })} options={[['2', '2'], ['3', '3'], ['4', '4']]} />
           <Gallery s={s} set={set} />
         </>
@@ -590,7 +655,7 @@ function Fields({ s, set }: { s: Section; set: SetFn }) {
       return (
         <>
           <Heading s={s} set={set} intro={false} />
-          <Area s={s} k="text" set={set} label="Text next to the form" rows={3} />
+          <Area s={s} k="text" set={set} label="Text next to the form" rows={3} rich />
           <Txt s={s} k="topic" set={set} label="Subject of the inquiry" hint="Shown in Leads & inquiries, e.g. “Financing request”." />
           <Txt s={s} k="buttonLabel" set={set} label="Button text" />
           <Toggle checked={s.showPhone !== false} onChange={(v) => set({ showPhone: v })} label="Ask for a phone number" />
@@ -600,7 +665,7 @@ function Fields({ s, set }: { s: Section; set: SetFn }) {
       return (
         <>
           <Heading s={s} set={set} intro={false} />
-          <Area s={s} k="text" set={set} label="Text (optional)" rows={2} />
+          <Area s={s} k="text" set={set} label="Text (optional)" rows={2} rich />
           <p className="text-xs text-slate-500">Address, phone, email and hours come from the dealership&apos;s Business details.</p>
           <Buttons s={s} set={set} />
         </>
@@ -621,7 +686,7 @@ function Fields({ s, set }: { s: Section; set: SetFn }) {
 /** a short line shown on a closed section */
 function summary(s: Section) {
   const first = Array.isArray(s.content) ? (s.content as ContentBlock[]).find((b) => b.kind === 'heading' && b.text) : undefined;
-  const t = String((first && first.kind === 'heading' ? first.text : '') || s.title || s.eyebrow || s.text || s.subtitle || s.body || '').replace(/[*#\[\]]/g, '').trim();
+  const t = String((first && first.kind === 'heading' ? first.text : '') || s.title || s.eyebrow || s.text || s.subtitle || s.body || '').replace(/<[^>]+>/g, '').replace(/[*#\[\]]/g, '').trim();
   if (s.type === 'inventory') {
     const f = (s.filter || {}) as Record<string, string>;
     return [f.category || 'all vehicles', f.make, f.featured ? 'featured' : '', `${s.limit || 6} cars`].filter(Boolean).join(' · ');
