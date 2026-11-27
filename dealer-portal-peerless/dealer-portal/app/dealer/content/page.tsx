@@ -7,8 +7,9 @@ import { api, siteUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { useTenant } from '@/components/DealerShell';
 import { useToast } from '@/components/toast';
-import { Badge, Button, Drawer, ErrorBox, Field, Input, Loading, Textarea, cx } from '@/components/ui';
+import { Badge, Button, Drawer, ErrorBox, Field, Input, Loading, cx } from '@/components/ui';
 import { SingleImage } from '@/components/ImageUploader';
+import { RichTextInlineEditor } from '@/components/RichTextInlineEditor';
 import { LivePreview, type LivePreviewHandle } from '@/components/LivePreview';
 import { dateTime } from '@/lib/format';
 
@@ -273,7 +274,7 @@ export default function ContentPage() {
                         notShown === f.key
                           ? 'This text is not visible on this page of your design (it may be used on another page or for Google).'
                           : /\{[a-z_]+\}/.test(v)
-                            ? `Reads as: ${fill(v, data.tokens).replace(/\*/g, '')}`
+                            ? `Reads as: ${fill(v, data.tokens).replace(/\*/g, '').replace(/<[^>]+>/g, '')}`
                             : f.hint;
                       return (
                         <div
@@ -287,9 +288,9 @@ export default function ContentPage() {
                             {f.type === 'img' ? (
                               <SingleImage value={v} onChange={(u) => setValues({ ...values, [f.key]: u })} />
                             ) : f.type === 'para' || f.type === 'head' ? (
-                              <Textarea rows={f.type === 'head' ? 2 : 3} value={v} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
+                              <RichTextInlineEditor multiline rows={f.type === 'head' ? 2 : 3} value={v} onChange={(next) => setValues({ ...values, [f.key]: next })} />
                             ) : (
-                              <Input value={v} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
+                              <RichTextInlineEditor multiline={false} value={v} onChange={(next) => setValues({ ...values, [f.key]: next })} />
                             )}
                           </Field>
                           {f.saved && !reset.includes(f.key) && (

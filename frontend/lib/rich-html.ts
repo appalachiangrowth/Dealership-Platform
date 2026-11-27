@@ -232,3 +232,71 @@ export function richHtmlToText(html: string): string {
     .filter((p) => p && p !== '•')
     .join('\n\n');
 }
+
+const INLINE_ALLOWED = new Set(['strong', 'u', 'a', 'br']);
+const INLINE_RENAME: Record<string, string> = { b: 'strong' };
+
+/**
+ * Sanitizes inline formatted text from Website Content fields.
+ * Allows only <strong> (and <b>), <u>, <a href="..." target="..." rel="...">, and <br>.
+ * Strips <script>, unsafe tags, event handlers, and javascript:/data: URLs.
+ */
+export function sanitizeInlineHtml(input: unknown, opts?: { max?: number; linkClass?: string }): string {
+  const max = opts?.max ?? 8000;
+  let html = String(input ?? '').replace(/\r\n?/g, '\n');
+  if (!html) return '';
+  html = html.replace(/<!--[\s\S]*?-->/g, '');
+  const out: string[] = [];
+  const stack: string[] = [];
+  const re = /<\s*(\/?)\s*([a-z0-9]+)([^>]*)>/gi;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    if (m.index > last) out.push(escText(html.slice(last, m.index)));
+    last = re.lastIndex;
+    if (/\/\s*$/.test(m[3]) && m[2].toLowerCase() === 'br') {
+      out.push('<br>');
+      continue;
+    }
+    const closing = !!m[1];
+    const raw = m[2].toLowerCase();
+    if (DROP_WITH_CONTENT.has(raw)) {
+      if (!closing && !/\/\s*$/.test(m[3])) {
+        const end = new RegExp(`<\\s*/\\s*${raw}\\s*>`, 'i');
+        const rest = html.slice(re.lastIndex);
+        const e = end.exec(rest);
+        re.lastIndex = e ? re.lastIndex + e.index + e[0].length : html.length;
+      }
+      continue;
+    }
+    const tag = INLINE_RENAME[raw] || raw;
+    if (!INLINE_ALLOWED.has(tag)) continue;
+    if (closing) {
+      if (tag === 'br') continue;
+      const i = stack.lastIndexOf(tag);
+      if (i < 0) continue;
+      while (stack.length > i) out.push(`</${stack.pop()}>`);
+      continue;
+    }
+    if (tag === 'br') {
+      out.push('<br>');
+      continue;
+    }
+    if (tag === 'a') {
+      const attrs = parseAttrs(m[3]);
+      const href = safeHref(attrs.href || '');
+      if (!href) continue;
+      const ext = /^https?:\/\//i.test(href) ? ' target="_blank" rel="noopener noreferrer"' : '';
+      const cls = opts?.linkClass ? ` class="${escAttr(opts.linkClass)}"` : '';
+      out.push(`<a href="${escAttr(href)}"${ext}${cls}>`);
+      stack.push('a');
+      continue;
+    }
+    out.push(`<${tag}>`);
+    stack.push(tag);
+  }
+  if (last < html.length) out.push(escText(html.slice(last)));
+  while (stack.length) out.push(`</${stack.pop()}>`);
+  const result = out.join('');
+  return result.length > max ? sanitizeInlineHtml(result.slice(0, max), { ...opts, max: Infinity }) : result;
+}

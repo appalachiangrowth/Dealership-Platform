@@ -646,11 +646,17 @@ function shellSource(theme: Theme, kit: ThemeKit): string {
     if (m) header = homeHashes(m[0]);
   }
   if (a < 0 || b < 0) {
-    // unknown layout: the inside of <main>, or between the first </header> and the last <footer
+    // unknown layout: the inside of <main> (only when it wraps the page, not a tiny inner <main> like blog),
+    // or between the first </header> and the last <footer
     const main = src.search(/<main\b[^>]*>/i);
     if (main >= 0) {
-      a = src.indexOf('>', main) + 1;
-      b = src.indexOf('</main>', a);
+      const ma = src.indexOf('>', main) + 1;
+      const mb = src.indexOf('</main>', ma);
+      const foot = src.lastIndexOf('<footer');
+      if (mb > ma && mb - ma > 400 && (foot < 0 || foot > mb)) {
+        a = ma;
+        b = mb;
+      }
     }
     if (a < 0 || b < 0 || b < a) {
       const hEnd = src.search(/<\/header>/i);
@@ -667,9 +673,12 @@ function shellSource(theme: Theme, kit: ThemeKit): string {
   // the header must not mark another page (Home) as the current one
   let before = src.slice(0, a).replace(/(<body[^>]*>)([\s\S]*)$/i, (_m, body: string, rest: string) => body + rest.replace(/\saria-current="page"/g, ''));
   let after = src.slice(b);
-  if (sh.dropInlineScripts) after = after.replace(/<script(?![^>]*\ssrc=)[^>]*>[\s\S]*?<\/script>/gi, '');
+  const isSinglePage = !!(sh.singlePage || theme.manifest.hash_routes);
+  if (sh.dropInlineScripts || (sh.template === 'index.html' && isSinglePage)) {
+    after = after.replace(/<script(?![^>]*\ssrc=)[^>]*>[\s\S]*?<\/script>/gi, '');
+  }
   if (sh.headerScript) after = after.replace(/<\/body>/i, `<script>${sh.headerScript}</script></body>`);
-  if (sh.singlePage) {
+  if (isSinglePage) {
     before = before.replace(/(<body[^>]*>)([\s\S]*)$/i, (_m, body: string, rest: string) => body + homeHashes(rest));
     after = homeHashes(after);
   }

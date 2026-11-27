@@ -5,6 +5,7 @@ import { TenantsService } from '../tenants/tenants.service.js';
 import { CONTENT_FIELDS, CONTENT_SCHEMA } from './content.schema.js';
 import { siteTokens, substitute, withPlaceholders } from './site-tokens.js';
 import { cleanMl, clean } from '../common/util.js';
+import { sanitizeInlineHtml } from '../posts/rich-html.js';
 import type { AuthUser } from '../common/auth.types.js';
 
 const KEEP_VERSIONS = 40;
@@ -50,7 +51,12 @@ export class ContentService {
     for (const [k, v] of Object.entries(body.values || {})) {
       const f = CONTENT_FIELDS[k];
       if (!f) continue;
-      const value = f.type === 'para' || f.type === 'head' ? cleanMl(v, 4000) : clean(v, f.type === 'img' ? 600 : 400);
+      const value =
+        f.type === 'img'
+          ? clean(v, 600)
+          : f.type === 'para' || f.type === 'head'
+            ? sanitizeInlineHtml(cleanMl(v, 4000), { max: 4000 })
+            : sanitizeInlineHtml(clean(v, 400), { max: 400 });
       ops.push(
         this.prisma.contentValue.upsert({
           where: { tenantId_key: { tenantId, key: k } },

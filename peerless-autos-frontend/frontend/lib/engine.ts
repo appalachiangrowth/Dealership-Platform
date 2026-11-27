@@ -13,6 +13,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { CONTENT_FIELDS } from './content.schema';
 import { h, hDecode, isLocalAsset, jsonHex, nl2br, safeUrl } from './php';
+import { sanitizeInlineHtml } from './rich-html';
 
 const THEMES_DIR = join(process.cwd(), 'themes');
 const MARKER_RE = /\{%(text|para|head|link|img|js|site|siteurl|sitejs|asset|raw)\s+([A-Za-z0-9_.\/\-]+)((?:\s+[a-z]+="[^"]*")*)\s*(?:\|(.*?))?%\}/gs;
@@ -172,8 +173,11 @@ export function cval(type: string, key: string, def: string, values: Record<stri
   return String(def).trim();
 }
 
-function fmtHead(text: string, hl: string): string {
-  let out = h(text).replace(/\*([^*\n]+)\*/g, (_m, w: string) => (hl === 'em' ? `<em>${w}</em>` : `<span class="${h(hl !== '' ? hl : 'hl')}">${w}</span>`));
+function fmtHead(text: string, hl: string, inTextPos = true): string {
+  if (!inTextPos) return h(text.replace(/<[^>]*>/g, '')).replace(/\n/g, ' ');
+  let out = sanitizeInlineHtml(text, { linkClass: 'pa-inline-link' }).replace(/(<[^>]+>)|\*([^*\n]+)\*/g, (_m, tag: string, w: string) =>
+    tag ? tag : hl === 'em' ? `<em>${w}</em>` : `<span class="${h(hl !== '' ? hl : 'hl')}">${w}</span>`,
+  );
   out = out.replace(/\n/g, '<br>');
   return out;
 }
@@ -183,19 +187,22 @@ function fmtLinks(escaped: string): string {
     const u = safeUrl(hDecode(url));
     if (u === '' || u === '#') return label;
     const ext = /^https?:\/\//i.test(u) ? ' target="_blank" rel="noopener"' : '';
-    return `<a href="${h(u)}"${ext}>${label}</a>`;
+    return `<a href="${h(u)}" class="pa-inline-link"${ext}>${label}</a>`;
   });
 }
 
-function fmtValue(type: string, v: string, attrs: Record<string, string>, tokens: Record<string, unknown>): string {
+function fmtValue(type: string, v: string, attrs: Record<string, string>, tokens: Record<string, unknown>, inTextPos = true): string {
   v = subst(v, tokens);
+  if (!inTextPos && (type === 'text' || type === 'para' || type === 'head')) {
+    return h(v.replace(/<[^>]*>/g, '').replace(/\n/g, ' '));
+  }
   switch (type) {
     case 'text':
-      return h(v.replace(/\n/g, ' '));
+      return sanitizeInlineHtml(v.replace(/\n/g, ' '), { linkClass: 'pa-inline-link' });
     case 'para':
-      return nl2br(fmtLinks(h(v)));
+      return nl2br(fmtLinks(sanitizeInlineHtml(v, { linkClass: 'pa-inline-link' })));
     case 'head':
-      return fmtHead(v, attrs.hl ?? '');
+      return fmtHead(v, attrs.hl ?? '', inTextPos);
     case 'link': {
       const u = safeUrl(v);
       return h(u === '' ? '#' : u);
@@ -269,14 +276,15 @@ export function renderSource(theme: Theme, source: string, ctx: RenderCtx): stri
     return on !== (neg === '!') ? body : '';
   });
 
-  const plain = ctx.live ? plainRegions(src) : null;
+  const plain = plainRegions(src);
   return src.replace(MARKER_RE, (_m, type: string, key: string, attrStr: string, def: string | undefined, at: number) => {
     const attrs = markerAttrs(attrStr);
+    const inTextPos = isTextPosition(src, plain, at);
     if (ctx.live && (type === 'text' || type === 'para' || type === 'head')) {
       const k = map[key] ?? key;
       const f = CONTENT_FIELDS[k];
-      const out = fmtValue(type, cval(type, key, def ?? '', values, map), attrs, tokens);
-      if (!f || !plain || !isTextPosition(src, plain, at)) return out;
+      const out = fmtValue(type, cval(type, key, def ?? '', values, map), attrs, tokens, inTextPos);
+      if (!f || !inTextPos) return out;
       return `<!--pa:${k}:${type}:${f.type}:${liveAttr(attrs.hl ?? '')}-->${out}<!--/pa-->`;
     }
     switch (type) {
@@ -291,7 +299,7 @@ export function renderSource(theme: Theme, source: string, ctx: RenderCtx): stri
       case 'raw':
         return raw[key] ?? '';
     }
-    return fmtValue(type, cval(type, key, def ?? '', values, map), attrs, tokens);
+    return fmtValue(type, cval(type, key, def ?? '', values, map), attrs, tokens, inTextPos);
   });
 }
 
@@ -316,7 +324,8 @@ export function designCss(theme: Theme, saved: Record<string, string>): string {
     if (v === '' || !/^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(v)) continue;
     for (const cv of [c.var, ...(Array.isArray(c.also) ? c.also : [])]) if (/^--[a-z0-9\-]+$/.test(cv)) vars.push(`${cv}:${v}`);
   }
-  return vars.length ? `<style id="pa-design">:root{${vars.join(';')}}</style>` : '';
+  const inlineCss = '<style id="pa-inline-rich">.pa-inline-link{color:inherit;text-decoration:underline;text-underline-offset:.14em}</style>';
+  return (vars.length ? `<style id="pa-design">:root{${vars.join(';')}}</style>` : '') + inlineCss;
 }
 
 /** Content keys used by each page of a design — lets the editor open the page where a text appears. */
