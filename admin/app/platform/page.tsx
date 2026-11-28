@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { Building2, Car, CircleDollarSign, Inbox, Users, AlertTriangle, Rss, Palette } from 'lucide-react';
+import { Building2, Car, Inbox, Users, AlertTriangle, Rss, Palette } from 'lucide-react';
 import { useApi } from '@/lib/useApi';
 import { Card, Empty, ErrorBox, Loading, PageHeader, Stat, StatusBadge, Table, Td } from '@/components/ui';
-import { ago, money } from '@/lib/format';
+import { ago } from '@/lib/format';
 
 export default function PlatformOverview() {
   const { data, loading, error, reload } = useApi('/platform/overview');
@@ -18,12 +18,13 @@ export default function PlatformOverview() {
   return (
     <>
       <PageHeader title="Overview" desc="Every dealership on the platform at a glance." />
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Stat label="Dealerships" value={k.dealerships} sub={`${k.active} active`} icon={<Building2 className="h-5 w-5" />} />
         <Stat label="Vehicles for sale" value={k.vehiclesForSale} icon={<Car className="h-5 w-5" />} />
-        <Stat label="Inventory value" value={money(k.inventoryValue)} icon={<CircleDollarSign className="h-5 w-5" />} />
         <Stat label="Leads (7 days)" value={k.leads7} sub={`${k.unread} unread`} icon={<Inbox className="h-5 w-5" />} />
         <Stat label="Dealer logins" value={k.dealerLogins} icon={<Users className="h-5 w-5" />} />
+        {/* 5 cards: two per row on tablets (this last one full width), one row of five on wide screens */}
+        <div className="grid sm:col-span-2 xl:col-span-1">
         <Stat
           label="Waiting for you"
           value={k.pendingCargurus + k.pendingThemeRequests}
@@ -35,6 +36,7 @@ export default function PlatformOverview() {
           }
           icon={<AlertTriangle className="h-5 w-5" />}
         />
+        </div>
       </div>
 
       <div className="mb-6 grid gap-6 lg:grid-cols-3">

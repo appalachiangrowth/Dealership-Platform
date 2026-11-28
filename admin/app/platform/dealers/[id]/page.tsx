@@ -7,7 +7,7 @@ import { api, auth, siteUrl, DEALER_PORTAL_URL } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { useToast } from '@/components/toast';
 import { Badge, Button, Card, ErrorBox, Field, Input, LinkButton, Loading, Modal, PageHeader, Select, Stat, StatusBadge, Table, Tabs, Td, Toggle } from '@/components/ui';
-import { ago, dateTime, money } from '@/lib/format';
+import { ago, dateTime } from '@/lib/format';
 
 export default function DealerInspector() {
   const { id } = useParams<{ id: string }>();
@@ -111,10 +111,12 @@ export default function DealerInspector() {
 
       {tab === 'overview' && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat label="For sale" value={data.vehicles.PUBLISHED || 0} sub={`${data.vehicles.DRAFT || 0} drafts · ${data.vehicles.SOLD || 0} sold`} />
-          <Stat label="Inventory value" value={money(data.inventoryValue)} />
-          <Stat label="Inquiries" value={Object.values<number>(data.leads).reduce((a, b) => a + b, 0)} sub={`${data.leads.UNREAD || 0} unread`} />
-          <Stat label="CarGurus waiting" value={data.cargurusPending} sub={data.cargurusPending ? 'needs your approval' : ''} />
+          {/* the three numbers share one full-width row, evenly */}
+          <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3 lg:col-span-4">
+            <Stat label="For sale" value={data.vehicles.PUBLISHED || 0} sub={`${data.vehicles.DRAFT || 0} drafts · ${data.vehicles.SOLD || 0} sold`} />
+            <Stat label="Inquiries" value={Object.values<number>(data.leads).reduce((a, b) => a + b, 0)} sub={`${data.leads.UNREAD || 0} unread`} />
+            <Stat label="CarGurus waiting" value={data.cargurusPending} sub={data.cargurusPending ? 'needs your approval' : ''} />
+          </div>
           <Card title="Features" className="sm:col-span-2">
             {Object.entries<boolean>(data.features).map(([k, v]) => (
               <div key={k} className="flex justify-between py-1 text-sm">

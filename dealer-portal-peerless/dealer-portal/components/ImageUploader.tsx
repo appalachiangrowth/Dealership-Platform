@@ -1,9 +1,9 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, GripVertical, ImagePlus, Link2, Sparkles, Star, Trash2, Upload } from 'lucide-react';
+import { ImagePlus, Link2, Sparkles, Upload } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
-import { usePhotoSort } from '@/lib/use-photo-sort';
+import { PhotoGrid } from './PhotoGrid';
 import { STUDIO_SWITCH_VISIBLE, useStudioStatus, useStudioSwitch } from '@/lib/photo-studio';
 import { useToast } from './toast';
 import { Button, Input, Spinner, Toggle, cx } from './ui';
@@ -126,17 +126,6 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
     }
   }
 
-  const move = (i: number, d: number) => {
-    const j = i + d;
-    if (j < 0 || j >= value.length) return;
-    const next = [...value];
-    [next[i], next[j]] = [next[j], next[i]];
-    onChange(next);
-  };
-  const makeCover = (i: number) => i > 0 && onChange([value[i], ...value.filter((_, k) => k !== i)]);
-  // drag and drop ordering (mouse: drag the photo · touch: drag the grip) — the first photo is the cover
-  const sort = usePhotoSort(value, onChange);
-  const sd = sort.drag;
 
   return (
     <div>
@@ -155,78 +144,10 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
       >
         {value.length > 0 && (
           <>
-          {value.length > 1 && (
-            <p className="mb-2 text-xs text-slate-500">
-              <GripVertical className="-mt-0.5 inline h-3.5 w-3.5" /> Drag photos to change the order — drop one on the first spot to make it the <b>Cover Photo</b>.
-            </p>
-          )}
-          <div className="mb-4 grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6" role="list" aria-label="Vehicle photos, first photo is the cover">
-            {value.map((u, i) => {
-              const dragging = sd?.from === i;
-              const target = !!sd && sd.to === i && sd.from !== i;
-              const coverSlot = !!sd && i === 0 && sd.from !== 0;
-              return (
-              <div
-                key={u + i}
-                {...sort.tileProps(i)}
-                role="listitem"
-                aria-label={`Photo ${i + 1}${i === 0 ? ' (cover photo)' : ''}`}
-                className={cx(
-                  'group relative aspect-[4/3] cursor-grab select-none overflow-hidden rounded-lg bg-white ring-1 transition',
-                  i === 0 ? 'ring-2 ring-blue-600' : 'ring-slate-200',
-                  dragging && 'opacity-40 outline-2 outline-dashed outline-slate-400',
-                  target && 'ring-4 ring-blue-500 ring-offset-2',
-                )}
-              >
-                <img src={mediaUrl(u)} alt="" draggable={false} className="pointer-events-none h-full w-full object-cover" />
-                {target && <span className={cx('absolute inset-y-0 w-1.5 bg-blue-600', sd && sd.from > i ? 'left-0' : 'right-0')} aria-hidden />}
-                {coverSlot && (
-                  <span className={cx('absolute inset-0 flex items-center justify-center p-1 text-center text-[11px] font-bold text-white', target ? 'bg-blue-600/70' : 'bg-blue-600/35')} aria-hidden>
-                    {target ? 'Drop: new cover' : 'Drop here for cover'}
-                  </span>
-                )}
-                {i === 0 && (
-                  <span className="absolute left-1 top-1 inline-flex items-center gap-0.5 rounded bg-blue-700 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white shadow">
-                    <Star className="h-2.5 w-2.5 fill-current" /> Cover Photo
-                  </span>
-                )}
-                <span
-                  {...sort.handleProps(i)}
-                  title="Drag to reorder"
-                  className={cx(
-                    'absolute left-1 flex h-7 w-7 items-center justify-center rounded-md bg-black/45 text-white transition hover:bg-black/65',
-                    i === 0 ? 'top-6' : 'top-1',
-                    '[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100',
-                  )}
-                  aria-hidden
-                >
-                  <GripVertical className="h-4 w-4" />
-                </span>
-                <div className="absolute inset-x-0 bottom-0 flex justify-between bg-black/50 p-1 transition [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100">
-                  <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="rounded p-1 text-white hover:bg-white/20 disabled:opacity-30" title="Move left" aria-label={`Move photo ${i + 1} left`}>
-                    <ArrowLeft className="h-3.5 w-3.5" />
-                  </button>
-                  {i > 0 && (
-                    <button type="button" onClick={() => makeCover(i)} className="rounded p-1 text-white hover:bg-blue-500" title="Make cover photo" aria-label={`Make photo ${i + 1} the cover photo`}>
-                      <Star className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                  <button type="button" onClick={() => onChange(value.filter((_, k) => k !== i))} className="rounded p-1 text-white hover:bg-red-500" title="Remove" aria-label={`Remove photo ${i + 1}`}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                  <button type="button" onClick={() => move(i, 1)} disabled={i === value.length - 1} className="rounded p-1 text-white hover:bg-white/20 disabled:opacity-30" title="Move right" aria-label={`Move photo ${i + 1} right`}>
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-              );
-            })}
+          {/* shared PhotoGrid: same look and drag-and-drop as Add Vehicle (drag a photo anywhere; slot 1 = Cover Photo) */}
+          <div className="mb-4">
+            <PhotoGrid items={value} onChange={onChange} keyOf={(u) => u} srcOf={(u) => mediaUrl(u)} />
           </div>
-          {sd && sort.ghostStyle && (
-            <div style={sort.ghostStyle} aria-hidden>
-              {sd.src && <img src={sd.src} alt="" className="h-full w-full object-cover" />}
-            </div>
-          )}
           </>
         )}
         {studio && STUDIO_SWITCH_VISIBLE && (

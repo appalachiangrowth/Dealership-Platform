@@ -21,7 +21,7 @@ import { useToast } from '@/components/toast';
 import { PHOTO_ACCEPT, uploadFiles } from '@/components/ImageUploader';
 import { FbPostModal } from '@/components/fb/FbPostModal';
 import { AQ_CSS } from '@/components/ai/aqStyles';
-import { usePhotoSort } from '@/lib/use-photo-sort';
+import { PhotoGrid } from '@/components/PhotoGrid';
 import { api, mediaUrl } from '@/lib/api';
 import { BODY_STYLES, DRIVETRAINS, checkStock, checkVin, normBodyStyle, normDrive, normVin, StockDup, STOCK_TAKEN_RE, VinDup } from '@/lib/vin-check';
 import { trimOptions } from '@/lib/trims';
@@ -244,81 +244,20 @@ function Tip({ label, children }: { label: string; children: React.ReactNode }) 
  * Mouse: drag any photo. Touch: drag a photo by its grip (⠿), the rest of the strip still scrolls the page.
  * The first photo is the Cover Photo (website, CarGurus, Facebook); drop a photo on the first spot to make it the cover.
  */
+/** the photos (shared PhotoGrid: same look and drag-and-drop as Edit Vehicle) — photo 1 is the cover */
 function Thumbs({ photos, onChange }: { photos: Photo[]; onChange: (p: Photo[]) => void }) {
-  const n = photos.length;
-  const sort = usePhotoSort(photos, onChange);
-  const sd = sort.drag;
-  const move = (i: number, j: number) => {
-    if (j < 0 || j >= n) return;
-    const a = photos.slice();
-    [a[i], a[j]] = [a[j], a[i]];
-    onChange(a);
-  };
   return (
-    <>
-      <div className="thumbs" role="list" aria-label="Photos, first photo is the cover">
-        {photos.map((p, i) => {
-          const target = !!sd && sd.to === i && sd.from !== i;
-          return (
-            <div
-              key={p.id}
-              {...sort.tileProps(i)}
-              role="listitem"
-              aria-label={`Photo ${i + 1}${i === 0 ? ' (cover photo)' : ''}`}
-              className={`th${i === 0 ? ' cover' : ''}${sd?.from === i ? ' drag' : ''}${target ? ` over ${sd && sd.from > i ? 'before' : 'after'}` : ''}${sd && i === 0 && sd.from !== 0 ? ' slot' : ''}`}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={p.url} alt={`Photo ${i + 1}`} draggable={false} />
-              {i === 0 ? <span className="n cv">★ Cover Photo</span> : <span className="n">{i + 1}</span>}
-              {sd && i === 0 && sd.from !== 0 && <span className="slotx">{target ? 'Drop: new cover' : 'Drop here for cover'}</span>}
-              <span className="grip" {...sort.handleProps(i)} title="Drag to reorder" aria-hidden>
-                ⠿
-              </span>
-              {p.angle && (
-                <span className="ang">
-                  {ANGLE_LABEL[p.angle] || p.angle}
-                  {p.quality && p.quality <= 2 ? ' · blurry?' : ''}
-                </span>
-              )}
-              <span className="tb">
-                {i > 0 && (
-                  <button type="button" onClick={() => move(i, i - 1)} aria-label={`Move photo ${i + 1} left`}>
-                    ◀
-                  </button>
-                )}
-                {i < n - 1 && (
-                  <button type="button" onClick={() => move(i, i + 1)} aria-label={`Move photo ${i + 1} right`}>
-                    ▶
-                  </button>
-                )}
-              </span>
-              {i > 0 && (
-                <button type="button" className="c" title="Make cover photo" aria-label={`Make photo ${i + 1} the cover photo`} onClick={() => onChange([p, ...photos.filter((x) => x.id !== p.id)])}>
-                  ★
-                </button>
-              )}
-              <button
-                type="button"
-                className="x"
-                aria-label={`Remove photo ${i + 1}`}
-                onClick={() => {
-                  URL.revokeObjectURL(p.url);
-                  onChange(photos.filter((x) => x.id !== p.id));
-                }}
-              >
-                ×
-              </button>
-            </div>
-          );
-        })}
-      </div>
-      {sd && sort.ghostStyle && (
-        <div style={sort.ghostStyle} aria-hidden>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          {sd.src && <img src={sd.src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
-        </div>
-      )}
-    </>
+    <PhotoGrid
+      items={photos}
+      onChange={onChange}
+      keyOf={(p) => p.id}
+      srcOf={(p) => p.url}
+      onRemove={(p) => {
+        URL.revokeObjectURL(p.url);
+        onChange(photos.filter((x) => x.id !== p.id));
+      }}
+      badge={(p) => (p.angle ? `${ANGLE_LABEL[p.angle] || p.angle}${p.quality && p.quality <= 2 ? ' · blurry?' : ''}` : null)}
+    />
   );
 }
 

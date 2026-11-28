@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Car, Inbox, CircleDollarSign, Newspaper, CheckCircle2, Circle, ArrowRight, ExternalLink } from 'lucide-react';
+import { Car, Inbox, Newspaper, CheckCircle2, Circle, ArrowRight, ExternalLink } from 'lucide-react';
 import { useApi } from '@/lib/useApi';
 import { useSession } from '@/lib/session';
 import { useTenant } from '@/components/DealerShell';
@@ -50,9 +50,8 @@ export default function DealerOverview() {
         </Card>
       )}
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Stat label="Vehicles for sale" value={data.vehicles.published} sub={`${data.vehicles.draft} drafts · ${data.vehicles.sold} sold`} icon={<Car className="h-5 w-5" />} />
-        <Stat label="Inventory value" value={money(data.inventoryValue)} sub={`Average ${money(data.averagePrice)}`} icon={<CircleDollarSign className="h-5 w-5" />} />
         <Stat label="Inquiries (7 days)" value={data.leads.last7} sub={`${data.leads.unread} unread · ${data.leads.last30} in 30 days`} icon={<Inbox className="h-5 w-5" />} />
         <Stat label="Blog posts" value={data.posts} sub="published" icon={<Newspaper className="h-5 w-5" />} />
       </div>
