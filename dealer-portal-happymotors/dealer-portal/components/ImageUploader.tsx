@@ -140,7 +140,7 @@ export function ImageUploader({ value, onChange, max = 60, studio = false }: { v
           setDrag(false);
           void add(e.dataTransfer.files);
         }}
-        className={cx('rounded-xl border-2 border-dashed p-4 transition', drag ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-slate-50')}
+        className={cx('vf-drop rounded-xl border-2 border-dashed p-4 transition', drag ? 'vf-over border-blue-500 bg-blue-50' : 'border-slate-300 bg-slate-50')}
       >
         {value.length > 0 && (
           <>

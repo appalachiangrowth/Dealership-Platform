@@ -165,8 +165,8 @@ const MORE_KEYS = ['horsepower', 'interiorType', 'mpg', 'fuelTank', 'doors', 'se
  * The fields stay in the page while closed (their values are kept and saved; links to a field can still find it).
  */
 /**
- * Animated outlines (same look as the VIN / Photos boxes of Add Vehicle): the gradient border is drawn as the
- * border-box background, so boxes keep overflow:hidden. A field with a problem stays unmistakably red (crimson
+ * Animated outlines (same look as the VIN / Photos / Ready to Publish? cards of Add Vehicle, used here on every
+ * section card + the checklist card): the gradient border is drawn as the border-box background, so boxes keep overflow:hidden. A field with a problem stays unmistakably red (crimson
  * outline that pulses), never blue. Scoped under .vf so it wins over the Tailwind border / background utilities.
  */
 const VF_CSS = `
@@ -179,6 +179,11 @@ const VF_CSS = `
 .vf .vf-fld:focus-within{border-color:transparent;background:linear-gradient(#fff,#fff) padding-box,conic-gradient(from var(--aq-ang),#2563EB,#60A5FA 50%,#2563EB) border-box}
 .vf .vf-fld.vf-err,.vf .vf-fld.vf-err:focus-within{border-color:transparent;background:linear-gradient(#FFFBFB,#FFFBFB) padding-box,conic-gradient(from var(--aq-ang),#DC2626,#F87171 30%,#B91C1C 55%,#EF4444 80%,#DC2626) border-box;animation:aq-ring 4s linear infinite,vf-redpulse 1.8s ease-in-out infinite}
 @media (prefers-reduced-motion:reduce){.vf .vf-glow,.vf .vf-fld,.vf .vf-fld.vf-err{animation:none}.vf .vf-fld.vf-err{box-shadow:0 0 0 2px rgba(220,38,38,.2)}}
+/* the photo drop area (ImageUploader): the same travelling dashed border + light sweep as Add Vehicle's photo box */
+.vf .vf-drop{border-color:transparent;background-color:#F8FAFC;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cstyle%3Erect{animation:m 2.4s linear infinite}@keyframes m{to{stroke-dashoffset:-36}}@media (prefers-reduced-motion:reduce){rect{animation:none}}%3C/style%3E%3Crect width='100%25' height='100%25' fill='none' rx='12' ry='12' stroke='%2393C5FD' stroke-width='3' stroke-dasharray='10 8' stroke-linecap='round'/%3E%3C/svg%3E"),linear-gradient(110deg,rgba(239,246,255,0) 30%,rgba(219,234,254,.55) 50%,rgba(239,246,255,0) 70%);background-size:100% 100%,250% 100%;background-repeat:no-repeat;animation:aq-sheen 5s ease-in-out infinite}
+.vf .vf-drop.vf-over{background-color:#EFF6FF;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cstyle%3Erect{animation:m 0.9s linear infinite}@keyframes m{to{stroke-dashoffset:-36}}@media (prefers-reduced-motion:reduce){rect{animation:none}}%3C/style%3E%3Crect width='100%25' height='100%25' fill='none' rx='12' ry='12' stroke='%232563EB' stroke-width='3' stroke-dasharray='10 8' stroke-linecap='round'/%3E%3C/svg%3E")}
+@keyframes aq-sheen{0%{background-position:0 0,120% 0}60%,100%{background-position:0 0,-20% 0}}
+@media (prefers-reduced-motion:reduce){.vf .vf-drop{animation:none}}
 `;
 
 function MoreOptions({ open, onToggle, filledCount, needed, children }: { open: boolean; onToggle: () => void; filledCount: number; needed: number; children: React.ReactNode }) {
@@ -221,7 +226,7 @@ function Sec({
   }, [forceOpen]);
   const shown = !collapsible || open;
   return (
-    <section id={id} className={cx(CARD, 'scroll-mt-20 md:scroll-mt-28')}>
+    <section id={id} className={cx(CARD, 'vf-glow scroll-mt-20 md:scroll-mt-28')}>
       <div className={cx('flex flex-wrap items-center gap-3 px-5 py-4', shown && 'border-b border-[#E5E9F0]')}>
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#EAF1FF] text-[13px] font-bold text-[#1D4ED8]">{num}</span>
         <div className="flex min-w-[200px] flex-1 flex-col">
@@ -848,7 +853,7 @@ export function VehicleForm({ initial, focusField }: { initial: Vehicle; focusFi
                 <Tip text={TIPS.images} label="photos" />
               </>
             }
-            desc="The first photo is the cover. Use the arrows to change the order."
+            desc="The first photo is the cover. Drag photos to change the order."
             chip={photoN ? { text: `✓ ${photoN} photo${photoN === 1 ? '' : 's'}`, tone: 'ok' } : { text: 'At least 1 needed', tone: isReq('images') ? 'todo' : 'opt' }}
           >
             <div data-f="images" className={cx('scroll-mt-20 rounded-xl md:scroll-mt-28 transition', hot === 'images' && 'ring-2 ring-amber-400 ring-offset-4')}>
