@@ -282,12 +282,15 @@ export class PublicService {
     if (q.facets) {
       // optional ?body=suv / ?make=: facets of one body style or brand (the designs' "SUVs from $…" and brand links)
       const fw: Prisma.VehicleWhereInput = q.body || q.make ? this.vehicleWhere(t.id, { category: bodyCategory(q.body), make: q.make }) : base;
-      const [total, makes, models, bodies, price] = await Promise.all([
+      const [total, makes, models, bodies, price, years, transmissions] = await Promise.all([
         this.prisma.vehicle.count({ where: fw }),
         this.prisma.vehicle.groupBy({ by: ['make'], where: { ...fw, make: { not: '' } }, _count: true, orderBy: { make: 'asc' }, take: FACET_MAX }),
         this.prisma.vehicle.groupBy({ by: ['make', 'model'], where: { ...fw, model: { not: '' } }, _count: true, orderBy: [{ make: 'asc' }, { model: 'asc' }], take: FACET_MAX * 4 }),
         this.prisma.vehicle.groupBy({ by: ['bodyStyle'], where: { ...fw, bodyStyle: { not: '' } }, _count: true, orderBy: { bodyStyle: 'asc' }, take: FACET_MAX }),
         this.prisma.vehicle.aggregate({ where: { ...fw, price: { gt: 0 } }, _min: { price: true }, _max: { price: true } }),
+        // year / transmission dropdowns (Velora's inventory filters)
+        this.prisma.vehicle.groupBy({ by: ['year'], where: { ...fw, year: { not: null } }, _count: true, orderBy: { year: 'desc' }, take: 80 }),
+        this.prisma.vehicle.groupBy({ by: ['transmission'], where: { ...fw, transmission: { not: '' } }, _count: true, orderBy: { transmission: 'asc' }, take: 40 }),
       ]);
       return {
         total,
@@ -296,6 +299,8 @@ export class PublicService {
         bodies: bodies.map((b) => ({ body: b.bodyStyle, count: b._count })),
         minPrice: price._min.price === null ? 0 : Number(price._min.price),
         maxPrice: price._max.price === null ? 0 : Number(price._max.price),
+        years: years.map((y) => ({ year: y.year, count: y._count })),
+        transmissions: transmissions.map((x) => ({ trans: x.transmission, count: x._count })),
       };
     }
 
@@ -339,6 +344,11 @@ export class PublicService {
       const words: Record<string, string[]> = { awd: ['awd', 'all'], '4wd': ['4wd', '4x4', 'four'], '4x4': ['4wd', '4x4', 'four'], fwd: ['fwd', 'front'], rwd: ['rwd', 'rear'] };
       (where.AND as Prisma.VehicleWhereInput[]).push({ OR: (words[d] || [drive]).map((w) => ({ drivetrain: { contains: w, mode: 'insensitive' as const } })) });
     }
+    // transmission (?trans=Automatic) and condition (?cond=used) filters
+    const trans = clean(q.trans, 60);
+    if (trans) (where.AND as Prisma.VehicleWhereInput[]).push({ transmission: { contains: trans, mode: 'insensitive' as const } });
+    const cond = clean(q.cond, 30);
+    if (cond) (where.AND as Prisma.VehicleWhereInput[]).push({ condition: { startsWith: cond, mode: 'insensitive' as const } });
     const total = await this.prisma.vehicle.count({ where });
     const pages = Math.max(1, Math.ceil(total / limit));
     const cur = Math.min(page, pages);
@@ -388,6 +398,8 @@ export interface StorefrontFeedQuery {
   posts?: string;
   fuel?: string;
   drive?: string;
+  trans?: string;
+  cond?: string;
   id?: string;
 }
 

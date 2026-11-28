@@ -4,7 +4,7 @@ import { cleanInventoryPosts, hideCertified } from '@/lib/site-extras';
 export const dynamic = 'force-dynamic';
 
 /** query parameters of the paged storefront feed (passed to the backend's /public/feed) */
-const FEED_PARAMS = ['page', 'limit', 'make', 'model', 'body', 'minPrice', 'maxPrice', 'minYear', 'maxYear', 'maxMileage', 'fuel', 'drive', 'q', 'sort', 'featured', 'facets', 'posts', 'id'] as const;
+const FEED_PARAMS = ['page', 'limit', 'make', 'model', 'body', 'minPrice', 'maxPrice', 'minYear', 'maxYear', 'maxMileage', 'fuel', 'drive', 'trans', 'cond', 'q', 'sort', 'featured', 'facets', 'posts', 'id'] as const;
 
 /**
  * api/feed-public.php

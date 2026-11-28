@@ -136,6 +136,17 @@ function chromeOf(ctx: ThemeContext): ChromeOpts {
   return { full: ctx.menuMode === 'full', footer };
 }
 
+/** menu labels compared without case, spacing or a trailing arrow ("Cars ▾" = "cars") */
+const navLabelKey = (l: string) => String(l || '').toLowerCase().replace(/[▾▼›»→\s]+/g, ' ').trim();
+/** two menu entries that open the same page (custom page slug, standard page key or the same address) */
+function sameNavTarget(a: NavItem, b: NavItem): boolean {
+  if (a.slug && b.slug) return a.slug === b.slug;
+  if (a.key && b.key) return a.key === b.key;
+  const norm = (u?: string) => String(u || '').trim().toLowerCase().replace(/^https?:\/\/[^/]+/, '').replace(/^(\.?\/)+/, '').replace(/\.html?$/, '').replace(/\/+$/, '');
+  const ta = norm(a.url || a.slug), tb = norm(b.url || b.slug);
+  return !!ta && ta !== '#' && ta === tb;
+}
+
 function navItemsAll(ctx: ThemeContext): NavItem[] {
   if (Array.isArray(ctx.menu)) {
     const entry = (e: unknown, top: boolean): NavItem | null => {
@@ -148,7 +159,18 @@ function navItemsAll(ctx: ThemeContext): NavItem[] {
       if (typeof o.slug === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(o.slug)) item.slug = o.slug;
       else if (typeof o.url === 'string' && o.url) item.url = o.url;
       if (top && Array.isArray(o.children)) {
-        const kids = o.children.map((c) => entry(c, false)).filter((c): c is NavItem => !!c && !!(c.slug || c.url));
+        let kids = o.children.map((c) => entry(c, false)).filter((c): c is NavItem => !!c && !!(c.slug || c.url));
+        // a dropdown never repeats its own title: "Cars ▾" (→ /cars) lists Used Sedans, Used Trucks…, not "Cars" again.
+        // A dropdown title without a page of its own takes the page of the entry that repeats it.
+        const twin = kids.find((k) => sameNavTarget(k, item) || navLabelKey(k.label) === navLabelKey(label));
+        if (twin) {
+          if (!item.slug && !item.url && !item.key) {
+            if (twin.slug) item.slug = twin.slug;
+            else if (twin.url) item.url = twin.url;
+            if (twin.key) item.key = twin.key;
+          }
+          kids = kids.filter((k) => k !== twin && !sameNavTarget(k, item));
+        }
         if (kids.length) item.children = kids;
       }
       return item.slug || item.url || item.children ? item : null;
