@@ -1,6 +1,8 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
+import { ThemeSafetyReport, safetyOf, type ThemeSafety } from './ThemeSafetyReport';
+import type { ApiError } from '@/lib/api';
 import { Check, Globe, ImagePlus, Lock, PackageOpen, Search, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
@@ -122,6 +124,7 @@ export function AddCustomTheme({ open, onClose, onDone }: { open: boolean; onClo
   const [preview, setPreview] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [safety, setSafety] = useState<ThemeSafety | null>(null);
   const zipRef = useRef<HTMLInputElement>(null);
   const prevRef = useRef<HTMLInputElement>(null);
   const previewUrl = useMemo(() => (preview ? URL.createObjectURL(preview) : ''), [preview]);
@@ -137,6 +140,7 @@ export function AddCustomTheme({ open, onClose, onDone }: { open: boolean; onClo
 
   async function submit() {
     setErr('');
+    setSafety(null);
     if (f.name.trim().length < 2) return setErr('Enter the theme name.');
     if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(f.key)) return setErr('The key must use lowercase letters, numbers and hyphens (2–40 characters).');
     if (!zip) return setErr('Choose the theme package (.zip).');
@@ -154,13 +158,16 @@ export function AddCustomTheme({ open, onClose, onDone }: { open: boolean; onClo
       form.append('description', f.description.trim());
       form.append('visibility', f.isPrivate ? 'private' : 'public');
       form.append('allowedTenantIds', f.isPrivate ? f.ids.join(',') : '');
-      const r = await api<{ message: string }>('/platform/themes/custom', { form });
-      toast.ok(r.message || 'Custom theme installed');
+      const r = await api<{ message: string; safety?: ThemeSafety }>('/platform/themes/custom', { form });
+      const sr = safetyOf(r);
+      const extra = sr ? ` Safety check passed${sr.warnings.length ? ` with ${sr.warnings.length} warning${sr.warnings.length === 1 ? '' : 's'}` : ''}${sr.fixes.length ? `; ${sr.fixes.length} automatic fix${sr.fixes.length === 1 ? '' : 'es'} applied` : ''}.` : '';
+      toast.ok((r.message || 'Custom theme installed') + extra);
       onDone(await api('/platform/themes'));
       setBusy(false);
       close();
     } catch (e) {
       setErr((e as Error).message);
+      setSafety(safetyOf((e as ApiError).data));
       setBusy(false);
     }
   }
@@ -261,6 +268,7 @@ export function AddCustomTheme({ open, onClose, onDone }: { open: boolean; onClo
         </div>
 
         {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+        {safety && <ThemeSafetyReport safety={safety} />}
       </div>
     </Drawer>
   );

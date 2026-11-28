@@ -12,6 +12,7 @@ import { AuthGuard } from './common/auth.guard.js';
 import { PrismaService } from './prisma/prisma.service.js';
 import { FacebookService } from './facebook/facebook.service.js';
 import { attachFbViewSocket } from './facebook/fb-view-socket.js';
+import { thumbnailMiddleware } from './media/thumbs.js';
 
 // one failing Facebook step or e-mail must never take the whole API (and every dealer's Chrome) down
 process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
@@ -61,6 +62,8 @@ async function bootstrap() {
   // Photos: /uploads/<dealership>/<year>/<month>/<file>
   const uploads = join(process.cwd(), 'uploads');
   mkdirSync(uploads, { recursive: true });
+  // Card-size copies for the websites: /uploads/…/photo.jpeg?w=600 (media/thumbs.ts); without ?w= the original is served
+  app.use('/uploads', thumbnailMiddleware(uploads));
   app.useStaticAssets(uploads, {
     prefix: '/uploads/',
     maxAge: '30d',

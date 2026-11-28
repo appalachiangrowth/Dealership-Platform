@@ -1,6 +1,6 @@
 import { Body, Controller, ForbiddenException, Get, Header, Headers, Logger, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import { PublicService } from './public.service.js';
-import type { PublicVehicleQuery } from './public.service.js';
+import type { PublicVehicleQuery, StorefrontFeedQuery } from './public.service.js';
 import { LeadsService } from '../leads/leads.service.js';
 import type { PublicLeadInput } from '../leads/leads.service.js';
 import { FeedsService } from '../feeds/feeds.service.js';
@@ -62,7 +62,16 @@ export class PublicController {
     return this.pub.themeContext(this.host(host, h), theme);
   }
 
-  /** /inventory.json in the original format. */
+  /**
+   * Paged storefront feed for the designs (websites: api/feed-public.php?page=… / ?featured=1 / ?facets=1 / ?id=…).
+   * Never returns more than 16 vehicles (12 for ?featured=1), so a dealership with 30,000 cars stays light on phones.
+   */
+  @Get('feed')
+  feed(@Query() q: StorefrontFeedQuery & { host?: string }, @Headers('x-site-host') h: string) {
+    return this.pub.storefrontFeed(this.host(q.host, h), q);
+  }
+
+  /** /inventory.json in the original format (capped: INVENTORY_JSON_MAX, default 1000 vehicles). */
   @Get('inventory.json')
   inventoryJson(@Query('host') host: string, @Headers('x-site-host') h: string) {
     return this.pub.inventoryJson(this.host(host, h));

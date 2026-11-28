@@ -6,7 +6,7 @@ import { PlatformSettingsService } from '../platform-settings/platform-settings.
 import { clean } from '../common/util.js';
 import { isRichHtml, richHtmlToText } from '../posts/rich-html.js';
 import { mediaMetaFor } from '../media/media-meta.js';
-import type { Prisma, Tenant } from '../generated/prisma/client.js';
+import type { BlogPost, Prisma, Tenant, Vehicle } from '../generated/prisma/client.js';
 import { publishedNavFor, publishedPagesFor } from '../site-pages/site-pages.service.js';
 
 /** Vehicle categories used by the category pages (/used-sedans …). */
@@ -224,77 +224,126 @@ export class PublicService {
    */
   async inventoryJson(host: string) {
     const t = await this.tenantFor(host);
-    const [vehicles, posts, tenant] = await Promise.all([
-      this.prisma.vehicle.findMany({ where: { tenantId: t.id, status: 'PUBLISHED' }, orderBy: { createdAt: 'desc' } }),
+    const where = { tenantId: t.id, status: 'PUBLISHED' as const };
+    // iOS memory guard: a dealership with tens of thousands of vehicles would otherwise send all of them to every
+    // page (100+ MB of JSON → the iPhone tab crashes). The full list is capped (featured vehicles always included);
+    // designs that browse everything use the paged storefront feed (/public/feed, api/feed-public.php?page=…).
+    const cap = inventoryJsonCap();
+    const [latest, featured, total, posts, tenant] = await Promise.all([
+      this.prisma.vehicle.findMany({ where, orderBy: { createdAt: 'desc' }, take: cap }),
+      this.prisma.vehicle.findMany({ where: { ...where, featured: true }, orderBy: { createdAt: 'desc' }, take: 100 }),
+      this.prisma.vehicle.count({ where }),
       this.prisma.blogPost.findMany({ where: { tenantId: t.id, status: 'PUBLISHED' }, orderBy: { publishedAt: 'desc' } }),
       this.prisma.tenant.findUnique({ where: { id: t.id }, select: { leadForm: true } }),
     ]);
-    const rel = (u: string) => (u.startsWith('/uploads/') ? u.slice(1) : u);
-    const n = (x: unknown) => (x === null || x === undefined ? '' : Number(x));
+    const seen = new Set(latest.map((v) => v.id));
+    const vehicles = [...latest, ...featured.filter((v) => !seen.has(v.id))].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const updated = [...vehicles, ...posts].reduce((a, x) => (x.updatedAt > a ? x.updatedAt : a), new Date(0));
     return {
-      vehicles: vehicles.map((v) => ({
-        id: v.legacyId || v.id,
-        slug: v.slug,
-        title: v.title,
-        metaTitle: v.metaTitle,
-        metaDescription: v.metaDescription,
-        year: v.year ?? '',
-        make: v.make,
-        model: v.model,
-        trim: v.trim,
-        type: v.vehicleType,
-        body: v.bodyStyle,
-        price: n(v.price),
-        mileage: v.mileage ?? '',
-        stock: v.stockNumber,
-        vin: v.vin,
-        ext: v.exteriorColor,
-        int: v.interiorColor,
-        engine: v.engine,
-        hp: v.horsepower,
-        drivetrain: v.drivetrain,
-        trans: v.transmission,
-        fuel: v.fuelType,
-        mpg: v.mpg,
-        tank: v.fuelTank,
-        doors: v.doors,
-        seats: v.seats,
-        owners: v.owners,
-        accidents: v.accidents,
-        deal: v.dealLabel,
-        condition: v.condition,
-        certified: v.certified ? 'Yes' : 'No',
-        msrp: n(v.msrp),
-        status: 'published',
-        featured: v.featured,
-        description: v.description,
-        features: v.features,
-        safety: v.safetyFeatures,
-        images: v.images.map(rel),
-      })),
-      posts: posts.map((p) => ({
-        // the post's web address is /blog/<slug>: the designs open an article by this id
-        id: p.slug,
-        slug: p.slug,
-        legacyId: p.legacyId || '',
-        title: p.title,
-        tag: p.category,
-        date: p.publishedAt ? p.publishedAt.toISOString().slice(0, 10) : '',
-        image: rel(p.coverImage),
-        excerpt: p.excerpt,
-        // rich text editor articles: plain text for the designs (paragraphs, word counts) + the formatted HTML,
-        // which the website shows in place of the plain paragraphs (frontend lib/site-extras.ts)
-        content: isRichHtml(p.body) ? richHtmlToText(p.body) : p.body,
-        contentHtml: isRichHtml(p.body) ? p.body : '',
-        metaTitle: p.metaTitle,
-        metaDescription: p.metaDescription,
-      })),
+      vehicles: vehicles.map(feedVehicle),
+      posts: posts.map(feedPost),
+      /** total published vehicles; `truncated` = this list is capped (see INVENTORY_JSON_MAX) */
+      total,
+      truncated: total > vehicles.length,
       leadForm: leadFormFor(tenant?.leadForm ?? null, await this.tenants.features(t)),
       updated: updated.getTime() ? updated.toISOString().replace(/\.\d{3}Z$/, 'Z') : '',
       /** alt text / title per picture, used by the website for pictures the design draws (lib/site-extras.ts) */
       mediaMeta: await mediaMetaFor(this.prisma, t.id),
     };
+  }
+
+  /**
+   * Paged storefront feed for the designs (api/feed-public.php on the websites). Never sends the whole inventory:
+   *   ?page=1&limit=16&make=&model=&body=&minPrice=&maxPrice=&q=&sort=   one page (≤ 16 vehicles) + total + pages
+   *   ?featured=1&limit=12                                              featured first, then the newest (≤ 12)
+   *   ?facets=1                                                         makes, models, body styles, price range
+   *   ?id=<vehicle id or slug>                                          one vehicle with all its photos (VDP)
+ *   ?posts=1                                                          the blog posts (no vehicles)
+   * Vehicles use the same field names as /inventory.json, plus `thumb` (a ~600 px card photo).
+   */
+  async storefrontFeed(host: string, q: StorefrontFeedQuery) {
+    const t = await this.tenantFor(host);
+    const base: Prisma.VehicleWhereInput = { tenantId: t.id, status: 'PUBLISHED' };
+
+    if (q.id) {
+      const id = clean(q.id, 120);
+      const v = await this.prisma.vehicle.findFirst({ where: { ...base, OR: [{ slug: id }, { id }, { legacyId: id }] } });
+      if (!v) throw new NotFoundException('This vehicle is no longer available');
+      return { vehicle: feedVehicle(v), mediaMeta: await mediaMetaFor(this.prisma, t.id) };
+    }
+
+    if (q.posts) {
+      // blog list / article pages: the posts without the vehicles (newest first, at most 200)
+      const posts = await this.prisma.blogPost.findMany({ where: { tenantId: t.id, status: 'PUBLISHED' }, orderBy: { publishedAt: 'desc' }, take: 200 });
+      // mediaMeta: alt text / title of uploaded pictures, used by the website's article runtime (lib/site-extras.ts)
+      return { posts: posts.map(feedPost), total: posts.length, mediaMeta: await mediaMetaFor(this.prisma, t.id) };
+    }
+
+    if (q.facets) {
+      // optional ?body=suv / ?make=: facets of one body style or brand (the designs' "SUVs from $…" and brand links)
+      const fw: Prisma.VehicleWhereInput = q.body || q.make ? this.vehicleWhere(t.id, { category: bodyCategory(q.body), make: q.make }) : base;
+      const [total, makes, models, bodies, price] = await Promise.all([
+        this.prisma.vehicle.count({ where: fw }),
+        this.prisma.vehicle.groupBy({ by: ['make'], where: { ...fw, make: { not: '' } }, _count: true, orderBy: { make: 'asc' }, take: FACET_MAX }),
+        this.prisma.vehicle.groupBy({ by: ['make', 'model'], where: { ...fw, model: { not: '' } }, _count: true, orderBy: [{ make: 'asc' }, { model: 'asc' }], take: FACET_MAX * 4 }),
+        this.prisma.vehicle.groupBy({ by: ['bodyStyle'], where: { ...fw, bodyStyle: { not: '' } }, _count: true, orderBy: { bodyStyle: 'asc' }, take: FACET_MAX }),
+        this.prisma.vehicle.aggregate({ where: { ...fw, price: { gt: 0 } }, _min: { price: true }, _max: { price: true } }),
+      ]);
+      return {
+        total,
+        makes: makes.map((m) => ({ make: m.make, count: m._count })),
+        models: models.map((m) => ({ make: m.make, model: m.model, count: m._count })),
+        bodies: bodies.map((b) => ({ body: b.bodyStyle, count: b._count })),
+        minPrice: price._min.price === null ? 0 : Number(price._min.price),
+        maxPrice: price._max.price === null ? 0 : Number(price._max.price),
+      };
+    }
+
+    if (q.featured) {
+      const limit = clampInt(q.limit, 12, 1, 12);
+      const featured = await this.prisma.vehicle.findMany({ where: { ...base, featured: true }, orderBy: { createdAt: 'desc' }, take: limit });
+      const more = featured.length < limit
+        ? await this.prisma.vehicle.findMany({ where: { ...base, featured: false }, orderBy: { createdAt: 'desc' }, take: limit - featured.length })
+        : [];
+      const vehicles = [...featured, ...more].map(feedVehicle);
+      return { vehicles, total: vehicles.length };
+    }
+
+    const limit = clampInt(q.limit, 16, 1, 16);
+    const page = clampInt(q.page, 1, 1, 100000);
+    const where = this.vehicleWhere(t.id, {
+      category: bodyCategory(q.body),
+      make: q.make,
+      model: q.model,
+      q: q.q,
+      minPrice: q.minPrice,
+      maxPrice: q.maxPrice,
+      minYear: q.minYear,
+      maxYear: q.maxYear,
+      maxMileage: q.maxMileage,
+    });
+    const bodyText = clean(q.body, 40);
+    if (bodyText && !bodyCategory(q.body)) {
+      (where.AND as Prisma.VehicleWhereInput[]).push({
+        OR: [{ bodyStyle: { contains: bodyText, mode: 'insensitive' } }, { vehicleType: { contains: bodyText, mode: 'insensitive' } }],
+      });
+    }
+    // the designs' fuel / drivetrain shortcuts (e.g. ?fuel=electric-hybrid, ?drive=awd)
+    const fuel = clean(q.fuel, 40).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    if (fuel.length) {
+      (where.AND as Prisma.VehicleWhereInput[]).push({ OR: fuel.map((f) => ({ fuelType: { contains: f, mode: 'insensitive' as const } })) });
+    }
+    const drive = clean(q.drive, 40);
+    if (drive) {
+      const d = drive.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const words: Record<string, string[]> = { awd: ['awd', 'all'], '4wd': ['4wd', '4x4', 'four'], '4x4': ['4wd', '4x4', 'four'], fwd: ['fwd', 'front'], rwd: ['rwd', 'rear'] };
+      (where.AND as Prisma.VehicleWhereInput[]).push({ OR: (words[d] || [drive]).map((w) => ({ drivetrain: { contains: w, mode: 'insensitive' as const } })) });
+    }
+    const total = await this.prisma.vehicle.count({ where });
+    const pages = Math.max(1, Math.ceil(total / limit));
+    const cur = Math.min(page, pages);
+    const items = await this.prisma.vehicle.findMany({ where, orderBy: feedSort(q.sort), skip: (cur - 1) * limit, take: limit });
+    return { vehicles: items.map(feedVehicle), total, page: cur, pages, limit };
   }
 
   /** URLs for sitemap.xml */
@@ -317,4 +366,141 @@ function leadFormFor(form: unknown, features: Record<string, boolean>): unknown 
   if (features.financing === false) fields.financing = 0;
   if (features.tradeIn === false) fields.tradeIn = 0;
   return { ...f, fields };
+}
+
+/* ---------------- storefront feed helpers ---------------- */
+
+export interface StorefrontFeedQuery {
+  page?: string;
+  limit?: string;
+  make?: string;
+  model?: string;
+  body?: string;
+  q?: string;
+  minPrice?: string;
+  maxPrice?: string;
+  minYear?: string;
+  maxYear?: string;
+  maxMileage?: string;
+  sort?: string;
+  featured?: string;
+  facets?: string;
+  posts?: string;
+  fuel?: string;
+  drive?: string;
+  id?: string;
+}
+
+/** at most this many makes / body styles in ?facets=1 (models: 4×) */
+const FACET_MAX = 200;
+
+/** /inventory.json holds at most INVENTORY_JSON_MAX vehicles (default 1000, min 100, max 5000) */
+export function inventoryJsonCap(): number {
+  const v = parseInt(process.env.INVENTORY_JSON_MAX || '', 10);
+  return Number.isFinite(v) ? Math.min(5000, Math.max(100, v)) : 1000;
+}
+
+function clampInt(v: unknown, def: number, min: number, max: number): number {
+  const n = parseInt(String(v ?? ''), 10);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
+}
+
+/** "sedan" / "sedans" / "SUV" → a CATEGORIES key; anything else → undefined (free-text body filter) */
+function bodyCategory(body?: string): string | undefined {
+  const b = clean(body, 40).toLowerCase();
+  if (!b) return undefined;
+  if (CATEGORIES[b]) return b;
+  if (CATEGORIES[b + 's']) return b + 's';
+  if (b === 'car') return 'cars';
+  return undefined;
+}
+
+/** the designs' sort names (apex: price-asc …, vroomfox: lo / hi / mi / new) → database order */
+function feedSort(sort?: string): Prisma.VehicleOrderByWithRelationInput[] {
+  switch (String(sort || '').toLowerCase()) {
+    case 'price-asc': case 'price_asc': case 'lo': return [{ price: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }];
+    case 'price-desc': case 'price_desc': case 'hi': return [{ price: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }];
+    case 'year-desc': case 'year_desc': return [{ year: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }];
+    case 'year-asc': case 'year_asc': return [{ year: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }];
+    case 'mileage-asc': case 'mileage_asc': case 'mi': return [{ mileage: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }];
+    case 'new': case 'newest': return [{ createdAt: 'desc' }];
+    default: return [{ featured: 'desc' }, { createdAt: 'desc' }]; // "featured" (the designs' default)
+  }
+}
+
+const relUrl = (u: string) => (u.startsWith('/uploads/') ? u.slice(1) : u);
+const num = (x: unknown) => (x === null || x === undefined ? '' : Number(x));
+
+/** card photo: our own uploads get the ~600 px version (backend media/thumbs.ts); other links are left as they are */
+export function thumbUrl(u: string, w = 600): string {
+  const r = relUrl(u || '');
+  return /^uploads\/[^?#]+\.jpe?g$/i.test(r) ? `${r}?w=${w}` : r; // the thumbnail service resizes JPEG photos (uploads are stored as JPEG)
+}
+
+/** a blog post as /inventory.json and the storefront feed (?posts=1) publish it */
+export function feedPost(p: BlogPost) {
+  return {
+    // the post's web address is /blog/<slug>: the designs open an article by this id
+    id: p.slug,
+    slug: p.slug,
+    legacyId: p.legacyId || '',
+    title: p.title,
+    tag: p.category,
+    date: p.publishedAt ? p.publishedAt.toISOString().slice(0, 10) : '',
+    image: relUrl(p.coverImage),
+    excerpt: p.excerpt,
+    // rich text editor articles: plain text for the designs (paragraphs, word counts) + the formatted HTML,
+    // which the website shows in place of the plain paragraphs (frontend lib/site-extras.ts)
+    content: isRichHtml(p.body) ? richHtmlToText(p.body) : p.body,
+    contentHtml: isRichHtml(p.body) ? p.body : '',
+    metaTitle: p.metaTitle,
+    metaDescription: p.metaDescription,
+  };
+}
+
+/** one vehicle in the /inventory.json format (the original theme scripts read these exact field names) */
+export function feedVehicle(v: Vehicle) {
+  const images = (v.images || []).map(relUrl);
+  return {
+    id: v.legacyId || v.id,
+    slug: v.slug,
+    title: v.title,
+    metaTitle: v.metaTitle,
+    metaDescription: v.metaDescription,
+    year: v.year ?? '',
+    make: v.make,
+    model: v.model,
+    trim: v.trim,
+    type: v.vehicleType,
+    body: v.bodyStyle,
+    price: num(v.price),
+    mileage: v.mileage ?? '',
+    stock: v.stockNumber,
+    vin: v.vin,
+    ext: v.exteriorColor,
+    int: v.interiorColor,
+    engine: v.engine,
+    hp: v.horsepower,
+    drivetrain: v.drivetrain,
+    trans: v.transmission,
+    fuel: v.fuelType,
+    mpg: v.mpg,
+    tank: v.fuelTank,
+    doors: v.doors,
+    seats: v.seats,
+    owners: v.owners,
+    accidents: v.accidents,
+    deal: v.dealLabel,
+    condition: v.condition,
+    certified: v.certified ? 'Yes' : 'No',
+    msrp: num(v.msrp),
+    status: 'published',
+    featured: v.featured,
+    description: v.description,
+    features: v.features,
+    safety: v.safetyFeatures,
+    images,
+    /** ~600 px card photo (full-size photos stay in `images` for the vehicle page) */
+    thumb: images[0] ? thumbUrl(images[0]) : '',
+  };
 }

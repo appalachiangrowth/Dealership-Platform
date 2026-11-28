@@ -6,6 +6,7 @@ import { dirname, extname, join, resolve } from 'path';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { readZip, ZipError } from './zip-reader.js';
+import { auditTheme, hardenTheme, type ThemeFile, type ThemeSafetyReport } from './theme-safety.js';
 import type { AuthUser } from '../common/auth.types.js';
 import { ThemesService } from './themes.service.js';
 // plain helpers live in theme-files.ts so themes.service.ts never imports this file (no import cycle)
@@ -291,9 +292,9 @@ export class ThemeInstallerService implements OnModuleInit {
     if (existsSync(siteDest) || existsSync(join(ASSETS_ROOT, id, version))) fail('This theme version is already installed. Upload a new version number instead.');
     if (!existsSync(TEMPLATES_ROOT)) fail(`The website's themes folder was not found (${TEMPLATES_ROOT}). Set WEBSITE_DIR in backend/.env to the website app folder.`);
 
-    // 5. extract into a staging folder, check the text files, then move into place
-    const stage = join(TEMPLATES_ROOT, `.install-${randomBytes(6).toString('hex')}`);
-    const created: string[] = [];
+    // 5. read every file, run the Theme Safety Report (iOS memory limits, missing files), apply the auto-fixes,
+    //    then extract into a staging folder and move into place
+    let themeFiles: ThemeFile[] = [];
     try {
       for (const r of rel) {
         // a custom key / name is written into the installed theme.json too, so files and database agree
@@ -301,9 +302,28 @@ export class ThemeInstallerService implements OnModuleInit {
         if (/\.(html|css|js|json|svg)$/i.test(r.rel) && /<\?(php|=|\s)/i.test(data.toString('utf8'))) {
           fail(`PHP code is not allowed in theme files. Remove PHP tags from ${r.rel}.`);
         }
-        const target = r.rel.startsWith('assets/') ? join(stage, 'assets', r.rel.slice('assets/'.length)) : join(stage, 'site', r.rel);
+        themeFiles.push({ rel: r.rel, data });
+      }
+    } catch (e) {
+      if (e instanceof BadRequestException) throw e;
+      throw new BadRequestException((e as Error).message);
+    }
+    const safety: ThemeSafetyReport = auditTheme(themeFiles);
+    if (!safety.ok) {
+      this.log.warn(`theme ${id} ${version} refused by the safety check: ${safety.errors.join(' | ')}`);
+      throw new BadRequestException({ message: `The design did not pass the safety check: ${safety.errors[0]}`, safety });
+    }
+    const hardened = hardenTheme(themeFiles);
+    themeFiles = hardened.files;
+    safety.fixes = hardened.fixes;
+
+    const stage = join(TEMPLATES_ROOT, `.install-${randomBytes(6).toString('hex')}`);
+    const created: string[] = [];
+    try {
+      for (const f of themeFiles) {
+        const target = f.rel.startsWith('assets/') ? join(stage, 'assets', f.rel.slice('assets/'.length)) : join(stage, 'site', f.rel);
         await mkdir(dirname(target), { recursive: true });
-        await writeFile(target, data, { flag: 'wx' });
+        await writeFile(target, f.data, { flag: 'wx' });
       }
       await mkdir(join(TEMPLATES_ROOT, id), { recursive: true });
       await rename(join(stage, 'site'), siteDest);
@@ -358,7 +378,7 @@ export class ThemeInstallerService implements OnModuleInit {
     const failed = mirrors.filter((m) => m.error);
     await this.audit.record('theme.install', { actor: user.login, detail: { theme: id, version, file: fileName, mirrors: mirrors.map((m) => ({ dir: m.dir, ok: !m.error })) } });
     const note = failed.length ? ` Not copied to ${failed.map((m) => m.dir).join(', ')}: ${failed[0].error}. It is retried when the backend restarts.` : '';
-    return { ok: true, message: `Theme validated and installed. It has not been activated yet.${note}`, theme: { id, name, version, isNew: !existing }, mirrors };
+    return { ok: true, message: `Theme validated and installed. It has not been activated yet.${note}`, theme: { id, name, version, isNew: !existing }, mirrors, safety };
   }
 
   /** Colour slots of a new design from theme.json design.colors (keyed by CSS variable). */

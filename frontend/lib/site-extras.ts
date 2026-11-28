@@ -150,7 +150,7 @@ const ARTICLE_CSS =
 
 /**
  * The designs show an article as plain paragraphs (their own scripts read `content` from inventory.json). This script
- * reads the same inventory.json answer the design loads (no extra request), finds the paragraphs of an article that
+ * reads the same inventory.json / api/feed-public.php answer the design loads (no extra request), finds the paragraphs of an article that
  * has rich HTML and puts the formatted article in their place (.pa-article).
  */
 export function richPostRuntime(): string {
@@ -167,7 +167,8 @@ export function richPostRuntime(): string {
     'if(m&&m.a){var a=im.getAttribute("alt");if(!a||!a.trim()||oa){if(a!==m.a)im.setAttribute("alt",m.a);im.setAttribute("data-pa-alt","1")}}else if(oa){im.setAttribute("alt","");im.removeAttribute("data-pa-alt")}' +
     'if(m&&m.t){if(!im.getAttribute("title")||ot){if(im.getAttribute("title")!==m.t)im.setAttribute("title",m.t);im.setAttribute("data-pa-title","1")}}else if(ot){im.removeAttribute("title");im.removeAttribute("data-pa-title")}}' +
     'function alts(){if(!MM)return;var ims=document.getElementsByTagName("img");for(var i=0;i<ims.length;i++)one(ims[i])}' +
-    'function inv(u){return /(^|\\/)inventory\\.json([?#]|$)/.test(String(u||""))}' +
+    // inventory.json and the paged storefront feed (api/feed-public.php: ?posts=1 article lists, ?id= vehicles)
+    'function inv(u){u=String(u||"");return /(^|\\/)inventory\\.json([?#]|$)/.test(u)||/(^|\\/)api\\/feed-public\\.php\\?/.test(u)}' +
     'var F=window.fetch;if(F){window.fetch=function(i){var u=typeof i==="string"?i:(i&&i.url)||"",r=F.apply(this,arguments);' +
     'if(inv(u)&&r&&r.then)r.then(function(x){try{x.clone().json().then(take,function(){})}catch(e){}},function(){});return r}}' +
     'var X=window.XMLHttpRequest&&XMLHttpRequest.prototype;if(X){var O=X.open,S=X.send;X.open=function(m,u){this.__paInv=inv(u);return O.apply(this,arguments)};' +

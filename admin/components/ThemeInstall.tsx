@@ -6,6 +6,8 @@ import { api, siteUrl } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { useToast } from './toast';
 import { Button, Card, Field, Modal, Select } from './ui';
+import { ThemeSafetyReport, safetyOf, type ThemeSafety } from './ThemeSafetyReport';
+import type { ApiError } from '@/lib/api';
 
 type Theme = { id: string; name: string; installed: string[]; versions: { version: string }[]; stableVersion: string };
 
@@ -25,7 +27,7 @@ export function ThemeInstall({ themes, onChanged }: { themes: Theme[]; onChanged
   const [busy, setBusy] = useState('');
   const [ask, setAsk] = useState<'' | 'activate' | 'rollback'>('');
   const [file, setFile] = useState<File | null>(null);
-  const [result, setResult] = useState<{ ok: boolean; text: string; preview?: string } | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; text: string; preview?: string; safety?: ThemeSafety | null } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const list: any[] = tenants.data || [];
@@ -87,13 +89,14 @@ export function ThemeInstall({ themes, onChanged }: { themes: Theme[]; onChanged
         ok: true,
         text: `Installed ${r.theme.name} ${r.theme.version}. Not activated yet${r.theme.isNew ? ' — it now appears in every dealer’s Design & colours gallery' : ''}.`,
         preview: first ? siteUrl(first, `index.html?pa_theme_preview=${encodeURIComponent(r.theme.id)}`) : '',
+        safety: safetyOf(r),
       });
       toast.ok(`Installed ${r.theme.name} ${r.theme.version}. Not activated yet.`);
       setFile(null);
       if (fileRef.current) fileRef.current.value = '';
       onChanged();
     } catch (er) {
-      setResult({ ok: false, text: (er as Error).message });
+      setResult({ ok: false, text: (er as Error).message, safety: safetyOf((er as ApiError).data) });
     } finally {
       setBusy('');
     }
@@ -178,6 +181,7 @@ export function ThemeInstall({ themes, onChanged }: { themes: Theme[]; onChanged
             )}
           </div>
         )}
+        {result?.safety && <ThemeSafetyReport safety={result.safety} />}
         <details className="mt-4 text-xs text-slate-500">
           <summary className="cursor-pointer font-semibold text-slate-600">What the ZIP must contain</summary>
           <pre className="mt-2 rounded-lg bg-slate-50 p-3 leading-5">{`theme.json        { "id": "showroom", "version": "1.0.0", "name": "Showroom",
