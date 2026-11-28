@@ -250,7 +250,7 @@ function Thumbs({ photos, onChange }: { photos: Photo[]; onChange: (p: Photo[]) 
     <PhotoGrid
       items={photos}
       onChange={onChange}
-      keyOf={(p) => p.id}
+      keyOf={(p) => String(p.id)}
       srcOf={(p) => p.url}
       onRemove={(p) => {
         URL.revokeObjectURL(p.url);

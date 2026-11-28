@@ -54,12 +54,21 @@ export const normDrive = (v: unknown) => {
 /* ---------------- duplicate stock number (published vehicles; trimmed, case-insensitive) ---------------- */
 export type StockDup = { message: string; vehicle: { id: string; name: string; status: string; year?: number | string | null; make?: string | null; model?: string | null } };
 
+/**
+ * Any vehicle-like object (a Vehicle, the stock-check API's { id, name, status, year?, make?, model? }…).
+ * Typed as `object` on purpose: an all-optional type like { year?, make?, model? } is a TypeScript "weak type"
+ * and rejects objects that share none of those keys at compile time.
+ */
+type VehicleLike = object | null | undefined;
+
 /** "2019 Honda Accord": year, make and model only (never the trim) */
-export const yearMakeModel = (v: { year?: unknown; make?: unknown; model?: unknown } | null | undefined) =>
-  [v?.year, v?.make, v?.model].map((x) => String(x ?? '').trim()).filter(Boolean).join(' ');
+export const yearMakeModel = (vehicle: VehicleLike) => {
+  const v = (vehicle ?? {}) as { year?: unknown; make?: unknown; model?: unknown };
+  return [v.year, v.make, v.model].map((x) => String(x ?? '').trim()).filter(Boolean).join(' ');
+};
 
 /** the error under Stock number: names the other vehicle by year, make and model (no trim) */
-export const stockInUse = (stock: string, v: { year?: unknown; make?: unknown; model?: unknown } | null | undefined) => {
+export const stockInUse = (stock: string, v: VehicleLike) => {
   const ymm = yearMakeModel(v);
   return `Stock number ${stock} is already assigned to ${ymm ? `a ${ymm}` : 'another vehicle'}. Please enter a different stock number to proceed.`;
 };
@@ -71,7 +80,7 @@ export async function checkStock(stock: string, exceptId?: string): Promise<Stoc
   const s = String(stock ?? '').trim();
   if (!s) return null;
   try {
-    const r = await api<{ stock: string; status: 'none' | 'active'; vehicle: { id: string; name: string; status: string } | null }>(
+    const r = await api<{ stock: string; status: 'none' | 'active'; vehicle: StockDup['vehicle'] | null }>(
       `/dealer/vehicles/stock-check?stock=${encodeURIComponent(s)}${exceptId ? `&id=${encodeURIComponent(exceptId)}` : ''}`,
     );
     if (r.status !== 'active' || !r.vehicle) return null;
